@@ -1,0 +1,12 @@
+node_modules
+client/node_modules
+client/dist
+release
+bin
+coverage
+package-lock.json
+client/package-lock.json
+website
+docs
+build
+*.min.js

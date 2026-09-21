@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
+    <title>k8sight</title>
+    <!-- Pre-paint theme: sets data-theme before React renders (CSP forbids inline scripts). -->
+    <script type="module" src="/src/theme-init.js"></script>
+  </head>
+  <body>
+    <a href="#main" class="skip-link">Skip to content</a>
+    <div id="root"></div>
+    <div id="modal-root"></div>
+    <div id="live-region" class="sr-only">
+      <div id="live-region-polite" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div id="live-region-assertive" role="alert" aria-live="assertive" aria-atomic="true"></div>
+    </div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

@@ -1,0 +1,431 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import './App.css';
+import Navigation from './components/Navigation';
+import TopBar from './components/TopBar';
+import ClusterRail from './components/ClusterRail';
+import CommandPalette from './components/CommandPalette';
+import KubeConfigModal from './components/KubeConfigModal';
+import AuthErrorModal from './components/AuthErrorModal';
+import AzureIntegration from './components/AzureIntegration';
+import AwsIntegration from './components/AwsIntegration';
+import Assistant from './components/Assistant';
+import AgentPanel from './components/AgentPanel';
+import Loader from './components/Loader';
+import { useToast } from './components/Toast';
+import TokenPrompt from './components/ui/TokenPrompt';
+import ErrorBoundary from './components/ui/ErrorBoundary';
+import useHashRoute from './hooks/useHashRoute';
+import useDocumentTitle from './hooks/useDocumentTitle';
+import useRequest from './hooks/useRequest';
+import { bootstrapTokenFromHash, getToken, onUnauthorized, getJson } from './lib/api';
+import { RESOURCE_TYPES, byKey, pluralKey } from './lib/kinds';
+import { refreshMs } from './components/RefreshControl';
+import useAuthGate from './components/shell/useAuthGate';
+import useContexts from './components/shell/useContexts';
+import useNamespaces from './components/shell/useNamespaces';
+import useResourceFanOut from './components/shell/useResourceFanOut';
+import useNavDrawer from './components/shell/useNavDrawer';
+import ShortcutsSheet from './components/shell/ShortcutsSheet';
+import ViewOutlet from './components/shell/ViewOutlet';
+import {
+  ALL, nsFromQuery, nsToQuery, isKnownView, isResourceView,
+  selectionFromRoute, selectionToParams, crSelectionFromRoute, crSelectionToParams, namespaceTargetView,
+} from './components/shell/routes';
+
+// Pull `#token=…` into sessionStorage before the first request (main.jsx does
+// this too; calling it again is a no-op once the hash is scrubbed).
+bootstrapTokenFromHash();
+
+const isEditable = (el) => {
+  if (!el || el === document.body) return false;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable
+    || el.getAttribute?.('role') === 'textbox' || !!el.closest?.('.xterm');
+};
+
+const byPlural = Object.fromEntries(RESOURCE_TYPES.map((t) => [t.plural, t]));
+
+function App() {
+  const toast = useToast();
+
+  // ---- token gate --------------------------------------------------------
+  const [tokenOk, setTokenOk] = useState(() => !!getToken());
+  const [session, setSession] = useState(0); // bumps after a (re)connect so the gate re-runs
+  useEffect(() => onUnauthorized(() => setTokenOk(false)), []);
+  const onTokenSuccess = useCallback(() => { setTokenOk(true); setSession((s) => s + 1); }, []);
+
+  // ---- routing -----------------------------------------------------------
+  const { route, navigate, back, forward, canBack, canForward, setQuery } = useHashRoute();
+  const view = route.view;
+  const selectedNamespaces = useMemo(() => nsFromQuery(route.query), [route.query]);
+  const selectedKey = useMemo(() => selectionFromRoute(route), [route]);
+  const crSelection = useMemo(() => crSelectionFromRoute(route), [route]);
+  const subView = view === 'argocd' ? (route.params[0] || 'dashboard') : view === 'security' ? (route.params[0] || 'overview') : null;
+  const prefSection = view === 'preferences' ? (route.params[0] || 'general') : null;
+  const focusNode = view === 'nodes' ? (route.params[0] || null) : null;
+  const nsQuery = route.query.ns;
+
+  // Unknown view key in the hash → overview.
+  useEffect(() => {
+    if (!isKnownView(view)) navigate('overview', [], {}, { replace: true });
+  }, [view, navigate]);
+
+  // ---- theme -------------------------------------------------------------
+  const [theme, setTheme] = useState(() => { try { return localStorage.getItem('theme') || 'system'; } catch { return 'system'; } });
+  useEffect(() => {
+    try { localStorage.setItem('theme', theme); } catch { /* ignore */ }
+    const mq = window.matchMedia('(prefers-color-scheme: light)');
+    const apply = () => {
+      const eff = theme === 'system' ? (mq.matches ? 'light' : 'dark') : theme;
+      document.documentElement.setAttribute('data-theme', eff);
+    };
+    apply();
+    if (theme !== 'system') return undefined;
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, [theme]);
+
+  // ---- auth gate / contexts / data ---------------------------------------
+  const gate = useAuthGate({ enabled: tokenOk, session, toast });
+  const { configStatus, authOk } = gate;
+  const contextKey = configStatus.currentContext || '';
+
+  const onBeforeSwitch = useCallback(() => { navigate('overview', [], {}); }, [navigate]);
+  const { switchContext, startDemo } = useContexts({ gate, toast, onBeforeSwitch });
+
+  const ns = useNamespaces({ enabled: tokenOk && authOk, contextKey, toast });
+  const namespaces = ns.namespaces;
+
+  const fanOut = useResourceFanOut({ enabled: tokenOk && authOk, contextKey, view, selectedNamespaces, allNamespaces: namespaces });
+  const { allResources, partialErrors } = fanOut;
+  const resources = useMemo(() => (isResourceView(view) ? (allResources[pluralKey(view)] || []) : null), [view, allResources]);
+  const selectedResource = useMemo(() => {
+    if (!selectedKey || !resources) return null;
+    return resources.find((r) => r.name === selectedKey.name && (r.namespace || '') === (selectedKey.namespace || '')) || null;
+  }, [selectedKey, resources]);
+
+  // Surface backend `partial: true` results without blocking the view.
+  const partialKey = partialErrors.map((e) => `${e.kind}:${e.namespace || ''}`).join('|');
+  useEffect(() => {
+    if (!partialKey) return;
+    const kinds = Array.from(new Set(partialErrors.filter((e) => e.kind !== '*').map((e) => byPlural[e.kind]?.label || e.kind)));
+    const nsFailed = Array.from(new Set(partialErrors.filter((e) => e.kind === '*').map((e) => e.namespace)));
+    const parts = [];
+    if (kinds.length) parts.push(kinds.join(', '));
+    if (nsFailed.length) parts.push(`namespace${nsFailed.length > 1 ? 's' : ''} ${nsFailed.join(', ')}`);
+    toast.warning(`Some resources could not be loaded: ${parts.join('; ')}`, { title: 'Partial results' });
+  // partialKey summarises partialErrors; toast is stable
+  }, [partialKey, partialErrors, toast]);
+
+  // Optional integrations (Argo CD) on the active cluster.
+  const argo = useRequest(
+    ({ signal }) => getJson('/api/argocd/status', { signal }).then((d) => !!d?.installed),
+    { deps: [contextKey], enabled: tokenOk && authOk, dedupeKey: `argocd-status:${contextKey}`, keepPreviousData: false },
+  );
+  const argocdInstalled = !!argo.data;
+
+  // ---- refresh -----------------------------------------------------------
+  const [refreshInterval, setRefreshInterval] = useState(() => { try { return localStorage.getItem('refreshInterval') || 'auto'; } catch { return 'auto'; } });
+  useEffect(() => { try { localStorage.setItem('refreshInterval', refreshInterval); } catch { /* ignore */ } }, [refreshInterval]);
+  const [refreshSignal, setRefreshSignal] = useState(0);
+  const refreshing = ns.refetching || fanOut.refetching;
+  const nsRefetch = ns.refetch;
+  const fanRefetch = fanOut.refetch;
+  const fanActive = fanOut.active;
+  const handleRefresh = useCallback(() => {
+    setRefreshSignal((n) => n + 1);
+    nsRefetch();
+    if (fanActive) fanRefetch();
+  }, [nsRefetch, fanRefetch, fanActive]);
+  const refreshRef = useRef(handleRefresh); refreshRef.current = handleRefresh;
+  useEffect(() => {
+    const ms = refreshMs(refreshInterval);
+    if (!ms || !authOk) return undefined;
+    const id = setInterval(() => refreshRef.current(), ms);
+    return () => clearInterval(id);
+  }, [refreshInterval, authOk]);
+
+  // ---- navigation helpers (stable) ----------------------------------------
+  const nsQueryRef = useRef(nsQuery); nsQueryRef.current = nsQuery;
+  const routeRef = useRef(route); routeRef.current = route;
+
+  const goView = useCallback((key, params = []) => {
+    navigate(key, params, { ns: nsQueryRef.current });
+  }, [navigate]);
+
+  const setSelectedNamespaces = useCallback((list) => {
+    const r = routeRef.current;
+    const keepParams = r.view === 'argocd' || r.view === 'security' || r.view === 'preferences' || r.view === 'customResources';
+    navigate(r.view, keepParams ? r.params : [], { ...r.query, ns: nsToQuery(list) });
+  }, [navigate]);
+
+  const onSelectResource = useCallback((res) => {
+    const r = routeRef.current;
+    navigate(r.view, selectionToParams(res), r.query);
+  }, [navigate]);
+
+  const onSelectCustomResource = useCallback((sel) => {
+    navigate('customResources', crSelectionToParams(sel), { ns: nsQueryRef.current });
+  }, [navigate]);
+
+  const onSubViewChange = useCallback((sub) => {
+    const r = routeRef.current;
+    if (r.params[0] === sub) return;
+    navigate(r.view, [sub], r.query);
+  }, [navigate]);
+
+  const openPreferences = useCallback((section = 'general') => navigate('preferences', [section], {}), [navigate]);
+  const onPrefSectionChange = useCallback((section) => navigate('preferences', [section], {}, { replace: true }), [navigate]);
+  const closePreferences = useCallback(() => { if (canBack) back(); else navigate('overview'); }, [canBack, back, navigate]);
+  const onFocusHandled = useCallback(() => {
+    const r = routeRef.current;
+    if (r.view === 'nodes' && r.params.length) navigate('nodes', [], r.query, { replace: true });
+  }, [navigate]);
+  const goEvents = useCallback(() => goView('events'), [goView]);
+  const goAiSettings = useCallback(() => openPreferences('external-tools'), [openPreferences]);
+  const goPrefs = useCallback(() => openPreferences('general'), [openPreferences]);
+
+  // Cross-navigation used by tables, drawers and the topology/nodes views.
+  const nav = useMemo(() => ({
+    toNamespace: (namespace) => {
+      if (!namespace) return;
+      navigate(namespaceTargetView(routeRef.current.view), [], { ns: namespace });
+    },
+    toNode: (name) => { if (name) navigate('nodes', [name], { ns: nsQueryRef.current }); },
+    toResource: ({ type, namespace, name }) => {
+      if (!type || !name) return;
+      navigate(type, selectionToParams({ namespace, name }), { ns: nsToQuery(namespace ? [namespace] : [ALL]) });
+    },
+    // Open the Pods view scoped to a workload. We rarely have the exact pod name
+    // (e.g. Trivy attributes CVEs to the owning ReplicaSet), so filter the pod
+    // list by the owner name — pods are named `<owner>-<hash>` and match.
+    toPods: (namespace, nameFilter) => {
+      navigate('pod', [], { ns: nsToQuery(namespace ? [namespace] : [ALL]), q: nameFilter || undefined });
+    },
+  }), [navigate]);
+
+  // ---- overlays -----------------------------------------------------------
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [cloud, setCloud] = useState(null); // null | { kind: 'azure', mode: null|'az' } | { kind: 'aws' }
+  // When the failing cluster uses kubelogin/azurecli, the fix is `az login`, so
+  // the auth-error "Sign in to Azure" opens the modal in CLI-login mode.
+  const openAzure = useCallback((mode) => setCloud({ kind: 'azure', mode: mode === 'az' ? 'az' : null }), []);
+  const openAws = useCallback(() => setCloud({ kind: 'aws' }), []);
+  const closeCloud = useCallback(() => setCloud(null), []);
+  const { setForceConfigModal } = gate;
+  const openLocal = useCallback(() => setForceConfigModal(true), [setForceConfigModal]);
+  const closePalette = useCallback(() => setPaletteOpen(false), []);
+  const openPalette = useCallback(() => setPaletteOpen(true), []);
+  const closeShortcuts = useCallback(() => setShortcutsOpen(false), []);
+  const { fetchConfigStatus, retryAuth } = gate;
+  const onCloudImported = useCallback(async () => { await fetchConfigStatus(); retryAuth(); }, [fetchConfigStatus, retryAuth]);
+
+  // Global keyboard: ⌘K palette, ? shortcuts, / focus search.
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); setPaletteOpen((o) => !o); return; }
+      if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+      if (isEditable(e.target)) return;
+      if (e.key === '?') { e.preventDefault(); setShortcutsOpen(true); }
+      else if (e.key === '/') {
+        const el = document.querySelector('#main input[type="search"], #main .ui-search-input');
+        if (el) { e.preventDefault(); el.focus(); }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // ---- responsive nav drawer ---------------------------------------------
+  const drawer = useNavDrawer({ routeKey: `${view}/${route.params.join('/')}` });
+
+  // ---- document title -----------------------------------------------------
+  const title = useMemo(() => {
+    const label = byKey[view]?.label || 'k8sight';
+    const nsLabel = selectedNamespaces.includes(ALL) ? 'all namespaces' : selectedNamespaces.join(', ');
+    const ctx = configStatus.currentContext;
+    return [label, isResourceView(view) || view === 'overview' || view === 'events' ? nsLabel : null, ctx].filter(Boolean).join(' · ') + ' — k8sight';
+  }, [view, selectedNamespaces, configStatus.currentContext]);
+  useDocumentTitle(title, { suffix: false });
+
+  // ---- render -------------------------------------------------------------
+  const { serverError, showConfigModal, showAuthError, checkingAuth, configChecked, autoRecovering } = gate;
+  const assistantContext = useMemo(() => ({
+    view,
+    namespaces: selectedNamespaces,
+    selected: selectedKey ? { type: view, namespace: selectedKey.namespace, name: selectedKey.name } : null,
+  }), [view, selectedNamespaces, selectedKey]);
+  const agentContext = useMemo(() => ({ currentContext: configStatus.currentContext }), [configStatus.currentContext]);
+  const linkQuery = useMemo(() => (nsQuery ? { ns: nsQuery } : undefined), [nsQuery]);
+
+  return (
+    <div className="app-shell" data-nav={drawer.navState}>
+      <TokenPrompt onSuccess={onTokenSuccess} />
+
+      {tokenOk && authOk && (
+        <TopBar
+          onBack={back}
+          onForward={forward}
+          canBack={canBack}
+          canForward={canForward}
+          onNotifications={goEvents}
+          onConfigureAi={goAiSettings}
+          onRefresh={handleRefresh}
+          refreshing={refreshing}
+          refreshInterval={refreshInterval}
+          onSetRefreshInterval={setRefreshInterval}
+          onOpenPalette={openPalette}
+          navOpen={drawer.open}
+          onToggleNav={drawer.toggle}
+          navToggleRef={drawer.toggleRef}
+        />
+      )}
+
+      {tokenOk && serverError && (
+        <AuthErrorModal auth={serverError} onRetry={retryAuth} retrying={gate.authRetrying} />
+      )}
+
+      {tokenOk && !serverError && showConfigModal && (
+        <KubeConfigModal
+          defaultPath={configStatus.defaultPath}
+          exists={configStatus.exists}
+          onSubmit={gate.loadConfigFromPath}
+          onDemo={startDemo}
+          onClose={configStatus.loaded ? () => gate.setForceConfigModal(false) : undefined}
+        />
+      )}
+
+      {tokenOk && !serverError && showAuthError && (
+        <AuthErrorModal
+          auth={gate.authState}
+          onRetry={retryAuth}
+          onChangeConfig={openLocal}
+          retrying={gate.authRetrying}
+          contexts={configStatus.contexts || []}
+          contextsInfo={configStatus.contextsInfo}
+          currentContext={configStatus.currentContext}
+          onSwitchContext={switchContext}
+          onAddAzure={openAzure}
+          onAddAws={openAws}
+          onDemo={startDemo}
+        />
+      )}
+
+      {tokenOk && authOk && <Assistant context={assistantContext} />}
+
+      {cloud?.kind === 'azure' && (
+        <AzureIntegration initialLogin={cloud.mode} onClose={closeCloud} onImported={onCloudImported} />
+      )}
+      {cloud?.kind === 'aws' && (
+        <AwsIntegration onClose={closeCloud} onImported={onCloudImported} />
+      )}
+
+      {tokenOk && authOk ? (
+        <div className="layout-main">
+          <ClusterRail
+            contexts={configStatus.contexts || []}
+            currentContext={configStatus.currentContext}
+            onSwitch={switchContext}
+          />
+          <Navigation
+            ref={drawer.navRef}
+            configStatus={configStatus}
+            onSwitchContext={switchContext}
+            view={view}
+            subView={subView}
+            linkQuery={linkQuery}
+            onNavigate={goView}
+            crSelection={crSelection}
+            onSelectCustomResource={onSelectCustomResource}
+            argocdInstalled={argocdInstalled}
+            onAddAzure={openAzure}
+            onAddAws={openAws}
+            onAddLocal={openLocal}
+            onOpenPreferences={goPrefs}
+          />
+          <div className="nav-backdrop" onClick={drawer.close} aria-hidden="true" />
+
+          <div className="content-col">
+            <main id="main" className="app-main" tabIndex={-1}>
+              <ErrorBoundary resetKey={view} title="This view crashed">
+                <ViewOutlet
+                  view={view}
+                  route={route}
+                  navigate={navigate}
+                  setQuery={setQuery}
+                  refreshSignal={refreshSignal}
+                  onRefresh={handleRefresh}
+                  configStatus={configStatus}
+                  theme={theme}
+                  onSetTheme={setTheme}
+                  namespaces={namespaces}
+                  selectedNamespaces={selectedNamespaces}
+                  onNamespaceChange={setSelectedNamespaces}
+                  allResources={allResources}
+                  resources={resources}
+                  loading={fanOut.loading}
+                  refetching={fanOut.refetching}
+                  error={fanOut.error}
+                  partialErrors={partialErrors}
+                  selectedResource={selectedResource}
+                  selectedKey={selectedKey}
+                  onSelectResource={onSelectResource}
+                  focusNode={focusNode}
+                  onFocusHandled={onFocusHandled}
+                  crSelection={crSelection}
+                  onSelectCustomResource={onSelectCustomResource}
+                  subView={subView}
+                  onSubViewChange={onSubViewChange}
+                  prefSection={prefSection}
+                  onPrefSectionChange={onPrefSectionChange}
+                  onClosePreferences={closePreferences}
+                  onChangeConfig={openLocal}
+                  onAddAzure={openAzure}
+                  onAddAws={openAws}
+                  onResourceTypeChange={goView}
+                  nav={nav}
+                />
+              </ErrorBoundary>
+            </main>
+            <ErrorBoundary title="The agent panel crashed">
+              <AgentPanel context={agentContext} />
+            </ErrorBoundary>
+          </div>
+        </div>
+      ) : !tokenOk ? (
+        <div className="loading-state" />
+      ) : !configChecked ? (
+        <div className="loading-state">
+          <Loader label="Loading kubeconfig…" size={36} />
+        </div>
+      ) : checkingAuth ? (
+        <div className="loading-state">
+          <Loader label={autoRecovering ? 'Reconnecting — refreshing credentials…' : 'Checking cluster authentication…'} size={36} />
+        </div>
+      ) : (
+        // A modal (config / auth / server error) is overlaid above; keep a
+        // neutral backdrop underneath it.
+        <div className="loading-state" />
+      )}
+
+      {tokenOk && authOk && (
+        <CommandPalette
+          open={paletteOpen}
+          onClose={closePalette}
+          onNavigate={goView}
+          contexts={configStatus.contexts || []}
+          currentContext={configStatus.currentContext}
+          onSwitchContext={switchContext}
+          onOpenPreferences={goPrefs}
+          onRefresh={handleRefresh}
+          onSetTheme={setTheme}
+          argocdInstalled={argocdInstalled}
+        />
+      )}
+      <ShortcutsSheet open={shortcutsOpen} onClose={closeShortcuts} />
+    </div>
+  );
+}
+
+export default App;

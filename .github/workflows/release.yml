@@ -1,0 +1,317 @@
+name: Build & Release
+
+# Build the k8sight desktop app for macOS, Windows and Linux in parallel, then
+# publish a GitHub Release (installers + SHA256SUMS.txt + CycloneDX SBOM, each
+# installer with a signed build-provenance attestation) and push the Docker
+# image to GHCR. Trigger it either way:
+#   * push a version tag that matches the VERSION file (`git push origin v1.5.1`), or
+#   * Actions -> Build & Release -> Run workflow, on `main` only; the tag is
+#     `v<VERSION>` and is created at the current main commit.
+# A tag that does not equal `v$(cat VERSION)` fails the run before anything is
+# built, so a release can never carry a version the app itself doesn't report.
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+permissions: {}
+
+# Never cancel a release that is already publishing.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FORCE_COLOR: 1
+
+jobs:
+  # ---------------------------------------------------------------------------
+  verify:
+    name: Verify tag == VERSION
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.ver.outputs.tag }}
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Resolve and validate the release tag
+        id: ver
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          VERSION="$(tr -d ' \t\r\n' < VERSION)"
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "::error::VERSION file '$VERSION' is not semver"; exit 1; }
+          EXPECTED="v${VERSION}"
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            if [ "$REF" != "refs/heads/main" ]; then
+              echo "::error::Manual releases may only be started from main (got $REF)"; exit 1
+            fi
+            TAG="$EXPECTED"
+          else
+            [ "$REF_TYPE" = "tag" ] || { echo "::error::unexpected ref type $REF_TYPE"; exit 1; }
+            TAG="$REF_NAME"
+            if [ "$TAG" != "$EXPECTED" ]; then
+              echo "::error::Tag '$TAG' does not match VERSION file ('$EXPECTED'). Bump VERSION (npm run version:sync <ver>) and re-tag."; exit 1
+            fi
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Release tag: $TAG (VERSION=$VERSION)"
+
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build ${{ matrix.name }}
+    needs: verify
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    strategy:
+      # Build every platform even if one fails, so a single flaky OS doesn't
+      # block the others. Each matrix leg runs on its own runner in parallel.
+      fail-fast: false
+      matrix:
+        include:
+          # macos-14 is Apple Silicon, so the arm64 .dmg builds natively.
+          - os: macos-14
+            name: macOS (arm64)
+            artifact: mac
+          - os: windows-latest
+            name: Windows (x64)
+            artifact: windows
+          - os: ubuntu-latest
+            name: Linux (x64)
+            artifact: linux
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            client/package-lock.json
+
+      # Lifecycle scripts stay off; the two things we need from them (the
+      # Electron binary download and the node-pty native build) run explicitly.
+      - name: Install root dependencies
+        shell: bash
+        run: |
+          npm ci --ignore-scripts
+          npm rebuild node-pty --foreground-scripts
+          node node_modules/electron/install.js
+          node scripts/fix-pty-helper.mjs
+
+      - name: Install client dependencies
+        run: npm ci --prefix client --ignore-scripts
+
+      # Gate the release on the test suite — never ship a build whose tests fail.
+      - name: Run tests
+        run: npm test
+
+      - name: Build & package
+        # `npm run dist` fetches trivy (checksum-verified), builds the client
+        # and runs electron-builder for the host OS with --publish never; the
+        # release job below publishes. No GitHub token is exposed here.
+        run: npm run dist
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: k8sight-${{ matrix.artifact }}
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            release/*.dmg
+            release/*.exe
+            release/*.AppImage
+            release/*.deb
+            release/latest*.yml
+
+  # ---------------------------------------------------------------------------
+  release:
+    name: Publish GitHub Release
+    needs: [verify, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Manual approval gate: this job targets the `release` environment, which has
+    # required reviewers. After every platform builds, the workflow PAUSES here
+    # until a reviewer approves it in the Actions run — then it publishes.
+    # (Configure reviewers in Settings → Environments → release.)
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            client/package-lock.json
+
+      # The SBOM describes the shipped dependency tree; install it (production
+      # deps only, no scripts) so the generator sees resolved packages.
+      - name: Install production dependencies for the SBOM
+        shell: bash
+        run: |
+          npm ci --omit=dev --ignore-scripts
+          npm ci --prefix client --omit=dev --ignore-scripts
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS.txt
+        shell: bash
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(*.dmg *.exe *.AppImage *.deb)
+          [ ${#files[@]} -gt 0 ] || { echo "::error::no installers found"; exit 1; }
+          sha256sum "${files[@]}" > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Generate CycloneDX SBOM
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: dist/k8sight-${{ needs.verify.outputs.tag }}.cdx.json
+          artifact-name: k8sight-${{ needs.verify.outputs.tag }}.cdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      # Signed SLSA provenance for every installer (verifiable with
+      # `gh attestation verify <file> --repo <owner>/k8sight`).
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: |
+            dist/*.dmg
+            dist/*.exe
+            dist/*.AppImage
+            dist/*.deb
+            dist/SHA256SUMS.txt
+
+      - name: Publish release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        with:
+          # Reuse a pushed tag; otherwise create this tag + release at this commit.
+          tag_name: ${{ needs.verify.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          draft: false
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/*.dmg
+            dist/*.exe
+            dist/*.AppImage
+            dist/*.deb
+            dist/SHA256SUMS.txt
+            dist/*.cdx.json
+
+  # ---------------------------------------------------------------------------
+  docker:
+    name: Publish Docker image (GHCR)
+    needs: [verify, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: release
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Image name
+        id: img
+        shell: bash
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: echo "name=ghcr.io/${OWNER,,}/k8sight" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU (arm64 emulation)
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata (tags & labels)
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+        with:
+          images: ${{ steps.img.outputs.name }}
+          tags: |
+            type=semver,pattern=v{{version}},value=${{ needs.verify.outputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.verify.outputs.tag }}
+            type=raw,value=latest
+          labels: |
+            org.opencontainers.image.title=k8sight
+            org.opencontainers.image.version=${{ needs.verify.outputs.version }}
+            org.opencontainers.image.licenses=MIT
+
+      - name: Build and push (amd64 + arm64)
+        id: push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          target: runtime
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            APP_VERSION=${{ needs.verify.outputs.version }}
+          provenance: true
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Attest image provenance
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-name: ${{ steps.img.outputs.name }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true

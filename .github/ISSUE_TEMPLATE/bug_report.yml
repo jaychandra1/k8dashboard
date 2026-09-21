@@ -1,0 +1,46 @@
+name: Bug report
+description: Something is broken.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. **Never paste kubeconfigs, tokens, or the `#token=` login URL.**
+  - type: input
+    id: version
+    attributes:
+      label: k8sight version
+      description: Preferences → About, or `GET /api/version`.
+      placeholder: 1.5.1
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How are you running it?
+      options:
+        - Desktop app (macOS)
+        - Desktop app (Windows)
+        - Desktop app (Linux)
+        - Docker image
+        - From source (npm start / npm run dev)
+    validations:
+      required: true
+  - type: input
+    id: cluster
+    attributes:
+      label: Cluster type & Kubernetes version
+      placeholder: EKS 1.31 / kind 0.24 / AKS …
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: Steps to reproduce, what you expected, what you saw.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Backend output (`[server] …` lines, or `docker logs`). Redact anything sensitive.
+      render: shell

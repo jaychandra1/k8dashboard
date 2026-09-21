@@ -1,0 +1,151 @@
+import React, { useMemo } from 'react';
+
+// Minimal, dependency-free Markdown renderer for assistant messages.
+// Returns real React nodes (no dangerouslySetInnerHTML → no XSS from LLM output).
+// Supports: fenced code blocks, inline code, bold, italic, links, headings,
+// unordered / ordered lists, blockquotes, horizontal rules, and paragraphs.
+
+// Inline: `code`, **bold**, *italic* / _italic_, [text](url)
+// `_italic_` only matches when the underscores sit on word boundaries, so
+// `snake_case_names` are left alone. `*italic*` may not start/end with space.
+const INLINE = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*\s][^*]*\*)|((?<![\w])_[^_\s][^_]*_(?![\w]))|(\[[^\]]+\]\([^)]+\))/;
+
+// Only allow safe link schemes — the text comes from LLM/agent output, so a
+// `[x](javascript:…)` link would otherwise be a click-to-execute XSS.
+// Protocol-relative `//evil` is rejected too. Unsafe hrefs render as text.
+export const safeHref = (url) => {
+  const u = String(url ?? '').trim();
+  if (!u) return null;
+  if (/^https?:\/\//i.test(u)) return u;
+  if (/^mailto:[^\s]+$/i.test(u)) return u;
+  if (/^#/.test(u)) return u; // in-page anchor
+  if (/^\/(?!\/)/.test(u)) return u; // site-relative (not protocol-relative)
+  return null;
+};
+
+function parseInline(text, kp = '') {
+  const out = [];
+  let rest = text;
+  let k = 0;
+  while (rest) {
+    const m = rest.match(INLINE);
+    if (!m) { out.push(rest); break; }
+    if (m.index > 0) out.push(rest.slice(0, m.index));
+    const tok = m[0];
+    if (tok[0] === '`') {
+      out.push(<code key={`${kp}c${k++}`}>{tok.slice(1, -1)}</code>);
+    } else if (tok.startsWith('**')) {
+      out.push(<strong key={`${kp}b${k++}`}>{tok.slice(2, -2)}</strong>);
+    } else if (tok[0] === '[') {
+      const l = tok.match(/\[([^\]]+)\]\(([^)]+)\)/);
+      const href = safeHref(l[2]);
+      out.push(href
+        ? <a key={`${kp}a${k++}`} href={href} target="_blank" rel="noreferrer noopener">{l[1]}</a>
+        : <span key={`${kp}a${k++}`}>{l[1]}</span>);
+    } else {
+      out.push(<em key={`${kp}i${k++}`}>{tok.slice(1, -1)}</em>);
+    }
+    rest = rest.slice(m.index + tok.length);
+  }
+  return out;
+}
+
+const isUL = (l) => /^\s*[-*+]\s+/.test(l);
+const isOL = (l) => /^\s*\d+\.\s+/.test(l);
+const isSpecial = (l) =>
+  /^```/.test(l.trim()) || /^#{1,6}\s/.test(l) || isUL(l) || isOL(l) || /^\s*>\s?/.test(l) || /^\s*([-*_])\1{2,}\s*$/.test(l);
+
+// Block parse. Keys are positional: the block list for a given `text` is
+// static (recomputed only when `text` changes), so index keys are safe here.
+function parseBlocks(text) {
+  const lines = text.replace(/\r\n/g, '\n').split('\n');
+  const blocks = [];
+  let i = 0;
+  let key = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // fenced code block
+    if (/^```/.test(line.trim())) {
+      const lang = line.trim().slice(3).trim();
+      const buf = [];
+      i++;
+      while (i < lines.length && !/^```/.test(lines[i].trim())) { buf.push(lines[i]); i++; }
+      i++; // closing fence
+      blocks.push(
+        <pre key={key++} className="md-pre">
+          {lang && <span className="md-pre-lang">{lang}</span>}
+          <code>{buf.join('\n')}</code>
+        </pre>,
+      );
+      continue;
+    }
+
+    // heading
+    const h = line.match(/^(#{1,6})\s+(.*)$/);
+    if (h) {
+      const lvl = Math.min(h[1].length + 2, 6); // # → h3 (keeps it compact in the panel)
+      const Tag = `h${lvl}`;
+      blocks.push(<Tag key={key++} className="md-h">{parseInline(h[2], `h${key}`)}</Tag>);
+      i++; continue;
+    }
+
+    // horizontal rule
+    if (/^\s*([-*_])\1{2,}\s*$/.test(line)) { blocks.push(<hr key={key++} className="md-hr" />); i++; continue; }
+
+    // blockquote
+    if (/^\s*>\s?/.test(line)) {
+      const buf = [];
+      while (i < lines.length && /^\s*>\s?/.test(lines[i])) { buf.push(lines[i].replace(/^\s*>\s?/, '')); i++; }
+      blocks.push(<blockquote key={key++} className="md-quote">{parseInline(buf.join(' '), `q${key}`)}</blockquote>);
+      continue;
+    }
+
+    // unordered list
+    if (isUL(line)) {
+      const items = [];
+      while (i < lines.length && isUL(lines[i])) { items.push(lines[i].replace(/^\s*[-*+]\s+/, '')); i++; }
+      blocks.push(
+        <ul key={key++} className="md-ul">
+          {items.map((it, j) => <li key={j}>{parseInline(it, `ul${key}-${j}`)}</li>)}
+        </ul>,
+      );
+      continue;
+    }
+
+    // ordered list
+    if (isOL(line)) {
+      const items = [];
+      while (i < lines.length && isOL(lines[i])) { items.push(lines[i].replace(/^\s*\d+\.\s+/, '')); i++; }
+      blocks.push(
+        <ol key={key++} className="md-ol">
+          {items.map((it, j) => <li key={j}>{parseInline(it, `ol${key}-${j}`)}</li>)}
+        </ol>,
+      );
+      continue;
+    }
+
+    // blank line
+    if (line.trim() === '') { i++; continue; }
+
+    // paragraph (consecutive plain lines joined with soft breaks)
+    const para = [];
+    while (i < lines.length && lines[i].trim() !== '' && !isSpecial(lines[i])) { para.push(lines[i]); i++; }
+    const content = [];
+    para.forEach((ptxt, j) => {
+      if (j > 0) content.push(<br key={`br${key}-${j}`} />);
+      content.push(...parseInline(ptxt, `p${key}-${j}`));
+    });
+    blocks.push(<p key={key++} className="md-p">{content}</p>);
+  }
+  return blocks;
+}
+
+function Markdown({ text }) {
+  const blocks = useMemo(() => (text ? parseBlocks(String(text)) : null), [text]);
+  if (!blocks) return null;
+  return <div className="md">{blocks}</div>;
+}
+
+export default React.memo(Markdown);

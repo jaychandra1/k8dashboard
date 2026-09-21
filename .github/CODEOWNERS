@@ -1,0 +1,11 @@
+# Default owner for everything in the repo.
+* @praveenraghav01
+
+# Security-sensitive surfaces: require the maintainer's review.
+/server.js                 @praveenraghav01
+/lib/auth.mjs              @praveenraghav01
+/lib/validate.mjs          @praveenraghav01
+/electron/                 @praveenraghav01
+/Dockerfile                @praveenraghav01
+/.github/                  @praveenraghav01
+/SECURITY.md               @praveenraghav01
