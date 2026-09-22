@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import {render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import DataTable from './DataTable';
 
@@ -103,6 +103,7 @@ describe('DataTable', () => {
     await user.click(screen.getByRole('button', { name: 'Actions for beta' }));
     const menu = await screen.findByRole('menu');
     expect(within(menu).getAllByRole('menuitem')).toHaveLength(2);
+    await waitFor(() => expect(menu.contains(document.activeElement)).toBe(true));
     await user.keyboard('{Enter}');
     expect(onSelect).toHaveBeenCalled();
     expect(screen.queryByRole('menu')).toBeNull();

@@ -52,7 +52,11 @@ function MenuList({ items, onClose, onSelectDone, x, y, level = 0, anchorRect, f
     if (!autoFocus) return;
     const first = enabled[0]?.i ?? -1;
     setActive(first);
-    afterPaint(() => ref.current?.focus({ preventScroll: true }));
+    // The menu is a portal that already exists in this commit, so focus it now;
+    // the deferred call only matters if the first attempt was too early.
+    try { ref.current?.focus({ preventScroll: true }); } catch { /* ignore */ }
+    const cancel = afterPaint(() => { if (ref.current && !ref.current.contains(document.activeElement)) ref.current.focus({ preventScroll: true }); });
+    return cancel;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const move = (delta) => {
