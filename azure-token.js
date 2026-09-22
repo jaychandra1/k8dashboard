@@ -8,19 +8,19 @@
 // AAD-enabled AKS cluster without any Azure CLI. It works like kubelogin's
 // azurecli mode — take the signed-in user's refresh token and exchange it for an
 // access token scoped to the cluster's AAD server app — except the refresh token
-// comes from the app's own browser sign-in, persisted at ~/.config/k8s-manager/
+// comes from the app's own browser sign-in, persisted at ~/.config/k8dashboard/
 // azure-auth.json, instead of az's MSAL cache.
 //
 // Usage: node azure-token.js --server-id <aad-server-app-id> [--tenant <tenant>]
 import fs from 'fs';
-import os from 'os';
-import path from 'path';
+import { CONFIG_DIR, configFile, findConfigFile } from './lib/paths.mjs';
 
 const AAD = 'https://login.microsoftonline.com';
 // Azure CLI's well-known first-party public client — the same one the app's
 // browser sign-in uses; it permits cross-resource refresh-token redemption.
 const CLIENT_ID = '04b07795-8ddb-461a-bbee-02f9e1bf7b46';
-const AUTH_FILE = path.join(os.homedir(), '.config', 'k8s-manager', 'azure-auth.json');
+const AUTH_FILE = findConfigFile('azure-auth.json');
+const AUTH_FILE_WRITE = configFile('azure-auth.json');
 
 const argv = process.argv.slice(2);
 const arg = (name) => { const i = argv.indexOf(`--${name}`); return i >= 0 ? argv[i + 1] : undefined; };
@@ -30,10 +30,11 @@ const arg = (name) => { const i = argv.indexOf(`--${name}`); return i >= 0 ? arg
 function saveRefreshToken(store, refreshToken) {
   try {
     const next = { ...store, refreshToken };
-    const tmp = `${AUTH_FILE}.${process.pid}.tmp`;
+    fs.mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
+    const tmp = `${AUTH_FILE_WRITE}.${process.pid}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(next), { mode: 0o600 });
-    fs.renameSync(tmp, AUTH_FILE);
-    try { fs.chmodSync(AUTH_FILE, 0o600); } catch { /* best effort */ }
+    fs.renameSync(tmp, AUTH_FILE_WRITE);
+    try { fs.chmodSync(AUTH_FILE_WRITE, 0o600); } catch { /* best effort */ }
   } catch { /* non-fatal: the current token still authenticated this call */ }
 }
 
@@ -43,8 +44,8 @@ async function main() {
 
   let store;
   try { store = JSON.parse(fs.readFileSync(AUTH_FILE, 'utf-8')); }
-  catch { throw new Error('Not signed in to Azure — open k8sight and sign in to Azure.'); }
-  if (!store.refreshToken) throw new Error('No Azure session — sign in to Azure in k8sight.');
+  catch { throw new Error('Not signed in to Azure — open k8dashboard and sign in to Azure.'); }
+  if (!store.refreshToken) throw new Error('No Azure session — sign in to Azure in k8dashboard.');
 
   const tenant = arg('tenant') || store.tenant || 'organizations';
   const r = await fetch(`${AAD}/${tenant}/oauth2/v2.0/token`, {

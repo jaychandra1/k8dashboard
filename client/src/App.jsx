@@ -242,10 +242,10 @@ function App() {
 
   // ---- document title -----------------------------------------------------
   const title = useMemo(() => {
-    const label = byKey[view]?.label || 'k8sight';
+    const label = byKey[view]?.label || 'k8dashboard';
     const nsLabel = selectedNamespaces.includes(ALL) ? 'all namespaces' : selectedNamespaces.join(', ');
     const ctx = configStatus.currentContext;
-    return [label, isResourceView(view) || view === 'overview' || view === 'events' ? nsLabel : null, ctx].filter(Boolean).join(' · ') + ' — k8sight';
+    return [label, isResourceView(view) || view === 'overview' || view === 'events' ? nsLabel : null, ctx].filter(Boolean).join(' · ') + ' — k8dashboard';
   }, [view, selectedNamespaces, configStatus.currentContext]);
   useDocumentTitle(title, { suffix: false });
 

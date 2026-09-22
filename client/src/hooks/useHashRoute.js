@@ -59,18 +59,26 @@ function currentHash() {
   return typeof location !== 'undefined' ? location.hash : '';
 }
 
+function historyIdx(st) {
+  if (!st) return undefined;
+  if (typeof st.k8dashboardIdx === 'number') return st.k8dashboardIdx;
+  if (typeof st.k8sightIdx === 'number') return st.k8sightIdx;
+  return undefined;
+}
+
 function ensureIndexed() {
   const h = currentHash() || buildHash(DEFAULT_VIEW);
   const st = typeof history !== 'undefined' ? history.state : null;
-  if (st && typeof st.k8sightIdx === 'number' && stack[st.k8sightIdx] === h) {
-    idx = st.k8sightIdx;
+  const stored = historyIdx(st);
+  if (typeof stored === 'number' && stack[stored] === h) {
+    idx = stored;
     return;
   }
   // Unknown entry (fresh load, external hash change): append.
   if (idx >= 0 && stack[idx] === h) return;
   stack = stack.slice(0, idx + 1).concat(h);
   idx = stack.length - 1;
-  try { history.replaceState({ ...(history.state || {}), k8sightIdx: idx }, ''); } catch { /* ignore */ }
+  try { history.replaceState({ ...(history.state || {}), k8dashboardIdx: idx }, ''); } catch { /* ignore */ }
 }
 
 function onHashChange() {
@@ -97,13 +105,13 @@ export function navigateTo(view, params, query, { replace = false } = {}) {
   if (next === cur) return;
   if (replace) {
     stack[idx] = next;
-    try { history.replaceState({ ...(history.state || {}), k8sightIdx: idx }, '', next); } catch { location.hash = next; }
+    try { history.replaceState({ ...(history.state || {}), k8dashboardIdx: idx }, '', next); } catch { location.hash = next; }
     notify();
     return;
   }
   stack = stack.slice(0, idx + 1).concat(next);
   idx = stack.length - 1;
-  try { history.pushState({ k8sightIdx: idx }, '', next); } catch { location.hash = next; }
+  try { history.pushState({ k8dashboardIdx: idx }, '', next); } catch { location.hash = next; }
   // pushState doesn't fire hashchange; notify manually.
   notify();
 }

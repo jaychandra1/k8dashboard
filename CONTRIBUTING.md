@@ -1,4 +1,4 @@
-# Contributing to k8sight
+# Contributing to k8dashboard
 
 Thanks for helping. This page covers the local setup, the checks CI runs, and how releases work.
 
@@ -19,7 +19,7 @@ npm run dev                      # UI on :3000, API on :3001
 ```
 
 The backend prints `open http://127.0.0.1:3001/#token=…`. Use that `#token=` fragment on the
-Vite URL too, or set `K8SIGHT_TOKEN=dev-token-…` in your shell so it is stable across restarts.
+Vite URL too, or set `K8DASHBOARD_TOKEN=dev-token-…` in your shell so it is stable across restarts.
 
 `./run.sh dev` does the same from one command (never with `sudo` and never via `curl | sh`).
 
@@ -73,14 +73,14 @@ Trivy scan of the image (fails on CRITICAL).
 
 ## Releases
 
-1. `node scripts/sync-version.mjs 1.6.0` — updates `VERSION`, both `package.json`s, the lockfiles
+1. `node scripts/sync-version.mjs 1.2.0` — updates `VERSION`, both `package.json`s, the lockfiles
    and the Dockerfile `ARG APP_VERSION`. Move the **Unreleased** section of `CHANGELOG.md` to the
    new version.
-2. Commit, then `git tag v1.6.0 && git push origin main v1.6.0`.
+2. Commit, then `git tag v1.2.0 && git push origin main v1.2.0`.
 3. The **Build & Release** workflow verifies the tag equals `v$(cat VERSION)` (it fails otherwise),
    builds all installers, pauses for approval on the `release` environment, then publishes the
    GitHub Release (installers, `SHA256SUMS.txt`, CycloneDX SBOM, provenance attestations) and pushes
-   `ghcr.io/praveenraghav01/k8sight:{v1.6.0,1.6,latest}` for amd64 + arm64.
+   `ghcr.io/jaychandra1/k8dashboard:{v1.2.0,1.2,latest}` for amd64 + arm64.
 
 Manual runs (Actions → Build & Release → Run workflow) are only accepted from `main`.
 

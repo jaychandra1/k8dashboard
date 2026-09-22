@@ -145,7 +145,7 @@ const Navigation = forwardRef(function Navigation({
             <Icon name="logo" size={19} strokeWidth={1.8} />
           </div>
           <div className="nav-brand-text">
-            <span className="nav-brand-title">k8sight</span>
+            <span className="nav-brand-title">k8dashboard</span>
             <span className="nav-brand-sub">
               Kubernetes
               {typeof __APP_VERSION__ !== 'undefined' && (

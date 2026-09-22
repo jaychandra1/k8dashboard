@@ -61,7 +61,7 @@ export default function TokenPrompt({ open: controlledOpen, onSuccess, onClose, 
       showClose={!!onClose}
       closeOnBackdrop={false}
       closeOnEscape={!!onClose}
-      title={reason === 'rejected' ? 'Session token rejected' : 'Connect to k8sight'}
+      title={reason === 'rejected' ? 'Session token rejected' : 'Connect to k8dashboard'}
       icon="shield"
       size="sm"
       className="token-prompt"
@@ -81,7 +81,7 @@ export default function TokenPrompt({ open: controlledOpen, onSuccess, onClose, 
         <ul className="token-prompt-hints">
           <li><Icon name="terminal" size={13} /> Printed in the server console when it starts</li>
           <li><Icon name="monitor" size={13} /> The desktop app opens the UI with it automatically</li>
-          <li><Icon name="box" size={13} /> Docker: <code>docker logs k8sight</code></li>
+          <li><Icon name="box" size={13} /> Docker: <code>docker logs k8dashboard</code></li>
         </ul>
         <label htmlFor={`${id}-input`} className="ui-modal-label">Session token</label>
         <input

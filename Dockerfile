@@ -104,12 +104,12 @@ COPY --from=client-build /app/client/dist ./client/dist
 # The server binds 127.0.0.1 by default (so a local install isn't exposed to the
 # LAN). Inside a container it must bind all interfaces for the published port to
 # work, so HOST is set here. Every request to /api, /mcp and /ws/exec still
-# requires the bearer token: pass one with `-e K8SIGHT_TOKEN=…`, or let the app
+# requires the bearer token: pass one with `-e K8DASHBOARD_TOKEN=…`, or let the app
 # generate one — it is printed at boot, so `docker logs <container>` shows the
 # login URL. Prefer publishing to loopback on the host as well:
 #   docker run -p 127.0.0.1:8080:3001 …
 # When reaching the container through another hostname (a reverse proxy),
-# allow it with `-e ALLOWED_HOSTS=k8sight.internal` or requests get HTTP 421.
+# allow it with `-e ALLOWED_HOSTS=k8dashboard.internal` or requests get HTTP 421.
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3001
@@ -128,17 +128,17 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 # links the package to its GitHub repo. docker/metadata-action overrides
 # source/revision/created automatically.
 # ------------------------------------------------------------------
-ARG APP_VERSION="1.5.1"
-LABEL org.opencontainers.image.title="k8sight" \
+ARG APP_VERSION="1.1.0"
+LABEL org.opencontainers.image.title="k8dashboard" \
       org.opencontainers.image.description="Browse and operate Kubernetes clusters — workloads, nodes, events, logs, in-browser exec/terminal, service port-forwarding, Helm releases, RBAC and CRDs. Reads your kubeconfig and serves the UI + token-protected REST API on port 3001." \
       org.opencontainers.image.version="${APP_VERSION}" \
-      org.opencontainers.image.source="https://github.com/praveenraghav01/k8sight" \
+      org.opencontainers.image.source="https://github.com/jaychandra1/k8dashboard" \
       org.opencontainers.image.licenses="MIT"
 
 # Drop root — run as the unprivileged `node` user shipped in the base image.
 # Its home (/home/node) is writable, so the default kubeconfig path becomes
 # /home/node/.kube/config and the app's config (incl. the generated token)
-# lands in /home/node/.config/k8sight.
+# lands in /home/node/.config/k8dashboard.
 #
 # HOME is set explicitly because Docker does NOT derive it from USER — without
 # this it can be unset for the `node` user, so the app wouldn't know where to

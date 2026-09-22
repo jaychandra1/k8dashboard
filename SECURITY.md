@@ -1,6 +1,6 @@
 # Security Policy
 
-k8sight runs with the full privileges of your kubeconfig. We treat anything that lets an
+k8dashboard runs with the full privileges of your kubeconfig. We treat anything that lets an
 unauthorised party reach the API, the MCP endpoint, the exec WebSocket, or the Electron main
 process as a security issue.
 
@@ -9,8 +9,8 @@ process as a security issue.
 **Please do not open a public issue for security problems.**
 
 - Preferred: open a private report via
-  [GitHub Security Advisories](https://github.com/praveenraghav01/k8sight/security/advisories/new).
-- Or email **security@k8sight.in** (placeholder — replace with the maintainer's monitored address).
+  [GitHub Security Advisories](https://github.com/jaychandra1/k8dashboard/security/advisories/new).
+- Or email **security@k8dashboard.in** (placeholder — replace with the maintainer's monitored address).
 
 Include the version (`GET /api/version` or Preferences → About), how you are running it
 (desktop app / Docker / source), reproduction steps and, if you have one, a suggested fix.
@@ -25,7 +25,7 @@ You will get an acknowledgement within **5 working days** and a fix or mitigatio
 | older `1.x` | ❌ upgrade to the latest release |
 
 Only the most recent release receives fixes. Releases are published for macOS (Apple Silicon),
-Windows, Linux and as `ghcr.io/praveenraghav01/k8sight`.
+Windows, Linux and as `ghcr.io/jaychandra1/k8dashboard`.
 
 ## Scope
 
@@ -43,12 +43,12 @@ Out of scope:
 
 - Anything requiring an already-compromised machine or a malicious kubeconfig you chose to load.
 - Vulnerabilities in the clusters you connect to, or in third-party tools (`kubectl`, `trivy`)
-  unless k8sight invokes them unsafely.
+  unless k8dashboard invokes them unsafely.
 - The marketing website (static HTML) beyond content injection.
 
 ## Hardening summary (what the app does)
 
-- Bearer token (`K8SIGHT_TOKEN` or `~/.config/k8sight/token`, mode 0600) on every non-public route.
+- Bearer token (`K8DASHBOARD_TOKEN` or `~/.config/k8dashboard/token`, mode 0600) on every non-public route.
 - Loopback bind by default; `Host` allowlist (HTTP 421 otherwise); strict same-origin checks.
 - CSP, `X-Frame-Options: DENY`, `nosniff`, rate limiting, body-size limits, strict input validation.
 - Electron: sandboxed renderer, `contextIsolation`, no `nodeIntegration`, navigation pinned to the

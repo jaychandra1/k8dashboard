@@ -9,9 +9,9 @@ body:
   - type: input
     id: version
     attributes:
-      label: k8sight version
+      label: k8dashboard version
       description: Preferences → About, or `GET /api/version`.
-      placeholder: 1.5.1
+      placeholder: 1.1.0
     validations:
       required: true
   - type: dropdown

@@ -33,10 +33,12 @@ after(() => {
 });
 
 function tokenInChild(env = {}) {
-  const home = env.HOME || fs.mkdtempSync(path.join(os.tmpdir(), 'k8sight-auth-'));
+  const home = env.HOME || fs.mkdtempSync(path.join(os.tmpdir(), 'k8dashboard-auth-'));
   if (!env.HOME) tmpHomes.push(home);
   const childEnv = { ...process.env, HOME: home, USERPROFILE: home, ...env };
+  delete childEnv.K8DASHBOARD_TOKEN;
   delete childEnv.K8SIGHT_TOKEN;
+  if (env.K8DASHBOARD_TOKEN) childEnv.K8DASHBOARD_TOKEN = env.K8DASHBOARD_TOKEN;
   if (env.K8SIGHT_TOKEN) childEnv.K8SIGHT_TOKEN = env.K8SIGHT_TOKEN;
   const r = spawnSync(
     process.execPath,
@@ -48,11 +50,11 @@ function tokenInChild(env = {}) {
     { env: childEnv, encoding: 'utf8' }
   );
   assert.equal(r.status, 0, `child failed: ${r.stderr}`);
-  return { token: r.stdout, home, file: path.join(home, '.config', 'k8sight', 'token') };
+  return { token: r.stdout, home, file: path.join(home, '.config', 'k8dashboard', 'token') };
 }
 
 describe('getAuthToken', () => {
-  test('generates a 32-byte base64url token and persists it under ~/.config/k8sight/token', () => {
+  test('generates a 32-byte base64url token and persists it under ~/.config/k8dashboard/token', () => {
     const { token, file } = tokenInChild();
     assert.match(token, /^[A-Za-z0-9_-]{43}$/, 'expected base64url of 32 random bytes');
     assert.ok(fs.existsSync(file), 'token file should be written');
@@ -73,16 +75,32 @@ describe('getAuthToken', () => {
     assert.equal(second.token, first.token);
   });
 
-  test('K8SIGHT_TOKEN env wins and nothing is written to disk', () => {
-    const { token, file } = tokenInChild({ K8SIGHT_TOKEN: 'env-token-0123456789abcdef' });
+  test('K8DASHBOARD_TOKEN env wins and nothing is written to disk', () => {
+    const { token, file } = tokenInChild({ K8DASHBOARD_TOKEN: 'env-token-0123456789abcdef' });
     assert.equal(token, 'env-token-0123456789abcdef');
     assert.equal(fs.existsSync(file), false, 'no token file expected when the env var is set');
   });
 
-  test('a malformed token file is replaced by a fresh token', () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'k8sight-auth-'));
+  test('legacy K8SIGHT_TOKEN env is still accepted', () => {
+    const { token, file } = tokenInChild({ K8SIGHT_TOKEN: 'legacy-token-0123456789ab' });
+    assert.equal(token, 'legacy-token-0123456789ab');
+    assert.equal(fs.existsSync(file), false);
+  });
+
+  test('re-uses a token persisted under the legacy ~/.config/k8sight path', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'k8dashboard-auth-'));
     tmpHomes.push(home);
     const dir = path.join(home, '.config', 'k8sight');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'token'), 'legacy-file-token-0123456789\n');
+    const { token } = tokenInChild({ HOME: home });
+    assert.equal(token, 'legacy-file-token-0123456789');
+  });
+
+  test('a malformed token file is replaced by a fresh token', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'k8dashboard-auth-'));
+    tmpHomes.push(home);
+    const dir = path.join(home, '.config', 'k8dashboard');
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'token'), 'short\n'); // < 16 chars: rejected
     const { token } = tokenInChild({ HOME: home });
@@ -91,8 +109,8 @@ describe('getAuthToken', () => {
   });
 });
 
-describe('tokenMatches / verifyWsAuth (in-process, K8SIGHT_TOKEN=fixed)', () => {
-  process.env.K8SIGHT_TOKEN = 'in-process-token-0123456789';
+describe('tokenMatches / verifyWsAuth (in-process, K8DASHBOARD_TOKEN=fixed)', () => {
+  process.env.K8DASHBOARD_TOKEN = 'in-process-token-0123456789';
   test('constant-time compare accepts only the exact token', () => {
     assert.equal(tokenMatches('in-process-token-0123456789'), true);
     assert.equal(tokenMatches('in-process-token-012345678'), false);
@@ -176,7 +194,7 @@ describe('isAllowedHost', () => {
         '10.0.0.5:3001',
         '',
         undefined,
-        'k8sight.internal',
+        'k8dashboard.internal',
       ]) {
         assert.equal(isAllowedHost(h), false, String(h));
       }
@@ -184,10 +202,10 @@ describe('isAllowedHost', () => {
   });
 
   test('ALLOWED_HOSTS adds exact host:port or bare hostname entries', () => {
-    withEnv({ ALLOWED_HOSTS: 'k8sight.internal, proxy.example:8443' }, () => {
-      assert.equal(isAllowedHost('k8sight.internal'), true);
-      assert.equal(isAllowedHost('k8sight.internal:3001'), true, 'bare hostname entry matches any port');
-      assert.equal(isAllowedHost('K8SIGHT.INTERNAL:3001'), true, 'case-insensitive');
+    withEnv({ ALLOWED_HOSTS: 'k8dashboard.internal, proxy.example:8443' }, () => {
+      assert.equal(isAllowedHost('k8dashboard.internal'), true);
+      assert.equal(isAllowedHost('k8dashboard.internal:3001'), true, 'bare hostname entry matches any port');
+      assert.equal(isAllowedHost('K8DASHBOARD.INTERNAL:3001'), true, 'case-insensitive');
       assert.equal(isAllowedHost('proxy.example:8443'), true);
       assert.equal(isAllowedHost('proxy.example:8444'), false, 'host:port entry is exact');
       assert.equal(isAllowedHost('evil.example:3001'), false);

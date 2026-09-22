@@ -27,7 +27,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Where we cache an auto-downloaded trivy so users need neither the operator
 // nor a manual install.
-const CACHE_DIR = path.join(os.homedir(), '.config', 'k8s-manager', 'bin');
+const CACHE_DIR = path.join(os.homedir(), '.config', 'k8dashboard', 'bin');
 const CACHED_TRIVY = path.join(CACHE_DIR, process.platform === 'win32' ? 'trivy.exe' : 'trivy');
 // Pinned release for auto-download. TRIVY_VERSION=x.y.z pins another one;
 // TRIVY_VERSION=latest opts in to asking GitHub for the newest release.
@@ -49,7 +49,7 @@ function run(bin, args, opts = {}) {
 
 // Persist each cluster's last scan so results survive an app restart. One JSON
 // file per context under the app config dir (same place as other app state).
-const SCAN_DIR = path.join(os.homedir(), '.config', 'k8s-manager', 'security-scans');
+const SCAN_DIR = path.join(os.homedir(), '.config', 'k8dashboard', 'security-scans');
 const scanFile = (context) => path.join(SCAN_DIR, `${String(context || 'default').replace(/[^a-zA-Z0-9_.@+-]/g, '_').slice(0, 200)}.json`);
 const scanCache = new Map(); // file → { mtimeMs, size, data } — parsed once per on-disk version
 
@@ -123,7 +123,7 @@ export async function trivyAvailable() {
 // Opt-in only (TRIVY_VERSION=latest): ask GitHub for the newest release.
 async function latestVersion() {
   try {
-    const r = await fetch('https://api.github.com/repos/aquasecurity/trivy/releases/latest', { headers: { 'user-agent': 'k8sight' }, signal: AbortSignal.timeout(8000) });
+    const r = await fetch('https://api.github.com/repos/aquasecurity/trivy/releases/latest', { headers: { 'user-agent': 'k8dashboard' }, signal: AbortSignal.timeout(8000) });
     const j = await r.json();
     const v = String(j.tag_name || '').replace(/^v/, '');
     return /^\d+\.\d+\.\d+$/.test(v) ? v : TRIVY_VERSION;

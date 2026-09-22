@@ -32,6 +32,7 @@ import { createCache } from './lib/cache.mjs';
 import {
   getAuthToken, authMiddleware, verifyWsAuth, isAllowedHost, isAllowedOrigin, hostGuard, originGuard, pathCaseGuard,
 } from './lib/auth.mjs';
+import { CONFIG_DIR, configFile, findConfigFile, isMcpSource, nodeBin } from './lib/paths.mjs';
 import {
   createKubectl, positional, spawnBin, collectChild, commandExists, resolveBinSync, loginShellPath,
 } from './lib/kubectl.mjs';
@@ -218,10 +219,10 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-// MCP write gate: mcp.js calls this REST API with `X-K8sight-Source: mcp`;
+// MCP write gate: mcp.js calls this REST API with `X-K8dashboard-Source: mcp`;
 // when the UI toggle is off, every mutating route refuses those calls.
 const mcpWriteGate = (req, res, next) => {
-  if (req.get('X-K8sight-Source') === 'mcp' && !mcpAllowWrite) {
+  if (isMcpSource(req) && !mcpAllowWrite) {
     return res.status(403).json({ error: 'MCP write access is disabled', code: 'mcp_write_disabled' });
   }
   next();
@@ -244,7 +245,7 @@ app.use((req, res, next) => {
   if (p === '/api/config/auth') return res.json({ ok: true, currentContext: demo.DEMO_CONTEXT });
   // Assistant: report enabled + stream canned answers (no LLM required).
   if (p === '/api/assistant/status') {
-    return res.json({ enabled: true, source: 'demo', editable: false, baseUrl: '', model: 'k8sight-demo (canned)' });
+    return res.json({ enabled: true, source: 'demo', editable: false, baseUrl: '', model: 'k8dashboard-demo (canned)' });
   }
   if (p === '/api/assistant/chat' && req.method === 'POST') return demoAssistantChat(req, res);
   // Cloud sign-in, agent detection, MCP, version and non-API paths are unchanged.
@@ -252,7 +253,7 @@ app.use((req, res, next) => {
       p.startsWith('/api/ai-agents') || p === '/mcp' || p === '/api/version' ||
       !p.startsWith('/api/')) return next();
   // The MCP write gate applies to (pretend) mutations in demo mode too.
-  if (req.method !== 'GET' && req.get('X-K8sight-Source') === 'mcp' && !mcpAllowWrite) {
+  if (req.method !== 'GET' && isMcpSource(req) && !mcpAllowWrite) {
     return res.status(403).json({ error: 'MCP write access is disabled', code: 'mcp_write_disabled' });
   }
   // Everything else under /api (incl. POST /api/exec) is cluster data → the
@@ -408,16 +409,16 @@ app.get('/api/version', (req, res) => {
 
 // Persisted app settings (small JSON in the user config dir). Used so the
 // desktop app can toggle MCP write tools from the UI instead of an env var.
-const SETTINGS_DIR = path.join(os.homedir(), '.config', 'k8s-manager');
-const SETTINGS_FILE = path.join(SETTINGS_DIR, 'settings.json');
+const SETTINGS_FILE = findConfigFile('settings.json');
 function readSettings() {
   try { return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8')); } catch { return {}; }
 }
 function writeSettings(patch) {
   const next = { ...readSettings(), ...patch };
   try {
-    fs.mkdirSync(SETTINGS_DIR, { recursive: true });
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(next, null, 2), { mode: 0o600 });
+    const dest = configFile('settings.json');
+    fs.mkdirSync(CONFIG_DIR, { recursive: true });
+    fs.writeFileSync(dest, JSON.stringify(next, null, 2), { mode: 0o600 });
   } catch (e) { /* best-effort */ }
   return next;
 }
@@ -765,8 +766,8 @@ function nativizeAksExec(kcYaml) {
       apiVersion: 'client.authentication.k8s.io/v1beta1',
       // Node binary for the helper. Under Electron, process.execPath is the app
       // itself; ELECTRON_RUN_AS_NODE makes it behave as plain node. A packaged
-      // build may point K8SIGHT_NODE_BIN at a dedicated binary instead.
-      command: process.env.K8SIGHT_NODE_BIN || process.execPath,
+      // build may point K8DASHBOARD_NODE_BIN at a dedicated binary instead.
+      command: nodeBin(),
       args: [AZURE_TOKEN_HELPER, '--server-id', serverId, '--tenant', tenant],
       env: [{ name: 'ELECTRON_RUN_AS_NODE', value: '1' }],
       interactiveMode: 'Never',
@@ -778,7 +779,7 @@ function nativizeAksExec(kcYaml) {
 
 // Safe kubeconfig merge + write:
 //   • an existing file that does not parse → 409 (never overwrite it),
-//   • first write of the session → copy to <file>.k8sight-backup-<timestamp>,
+//   • first write of the session → copy to <file>.k8dashboard-backup-<timestamp>,
 //   • write via a temp file + rename, mode 0600.
 const backedUpKubeconfigs = new Set();
 function mergeKubeconfigYaml(existingPath, incomingYaml) {
@@ -810,7 +811,7 @@ function writeKubeconfigAtomically(p, config) {
   fs.mkdirSync(path.dirname(p), { recursive: true, mode: 0o700 });
   if (fs.existsSync(p) && !backedUpKubeconfigs.has(p)) {
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    fs.copyFileSync(p, `${p}.k8sight-backup-${stamp}`);
+    fs.copyFileSync(p, `${p}.k8dashboard-backup-${stamp}`);
     backedUpKubeconfigs.add(p);
   }
   const tmp = `${p}.${process.pid}.${Date.now()}.tmp`;
@@ -2750,7 +2751,7 @@ app.post('/api/argocd/application/:namespace/:name/sync', mcpWriteGate, async (r
     if (o.replace) syncOptions.push('Replace=true');
     if (o.force) syncOptions.push('Force=true');
     if (syncOptions.length) sync.syncOptions = syncOptions;
-    const patch = JSON.stringify({ operation: { initiatedBy: { username: 'k8sight' }, sync } });
+    const patch = JSON.stringify({ operation: { initiatedBy: { username: 'k8dashboard' }, sync } });
     const out = await runKubectl(['patch', `--namespace=${namespace}`, '--type=merge', `--patch=${patch}`, ...positional('applications.argoproj.io', name)]);
     cache.clear();
     res.json({ success: true, message: out || 'Sync triggered' });
@@ -3898,6 +3899,6 @@ server.listen(PORT, HOST, () => {
   const shown = HOST === '0.0.0.0' ? '127.0.0.1' : HOST;
   const base = `http://${shown}:${PORT}`;
   // The login URL (token in the fragment): the client stores it from the hash.
-  log.raw(`k8sight listening on ${base}  —  open ${base}/#token=${getAuthToken()}`);
+  log.raw(`k8dashboard listening on ${base}  —  open ${base}/#token=${getAuthToken()}`);
   log.info('listening', { host: HOST, port: PORT, bound: HOST === '0.0.0.0' ? '0.0.0.0' : HOST });
 });

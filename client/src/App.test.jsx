@@ -60,14 +60,14 @@ describe('App routing', () => {
     expect(screen.getByRole('main')).toHaveAttribute('id', 'main');
     expect(screen.getByRole('banner')).toBeInTheDocument();
     await waitFor(() => expect(screen.getByTestId('overview')).toHaveAttribute('data-pods', '2'));
-    expect(document.title).toMatch(/^Overview · all namespaces · demo-cluster — k8sight$/);
+    expect(document.title).toMatch(/^Overview · all namespaces · demo-cluster — k8dashboard$/);
 
     const user = userEvent.setup();
     await user.click(screen.getByRole('link', { name: 'Pods' }));
     expect(window.location.hash).toBe('#/pod');
     await waitFor(() => expect(screen.getByTestId('rv')).toHaveAttribute('data-type', 'pod'));
     expect(screen.getByRole('link', { name: 'Pods' })).toHaveAttribute('aria-current', 'page');
-    expect(document.title).toMatch(/^Pods · all namespaces · demo-cluster — k8sight$/);
+    expect(document.title).toMatch(/^Pods · all namespaces · demo-cluster — k8dashboard$/);
 
     // Back button in the top bar → previous view.
     await user.click(screen.getByRole('button', { name: 'Back' }));
@@ -82,7 +82,7 @@ describe('App routing', () => {
     renderApp();
     await waitFor(() => expect(screen.getByTestId('rv')).toHaveAttribute('data-selected', 'web-1'));
     expect(screen.getByTestId('rv')).toHaveAttribute('data-count', '1');
-    expect(document.title).toMatch(/^Pods · default · demo-cluster — k8sight$/);
+    expect(document.title).toMatch(/^Pods · default · demo-cluster — k8dashboard$/);
     // Partial results from the backend surface as a non-blocking toast.
     window.location.hash = '#/pod';
     await settle();

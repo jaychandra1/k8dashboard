@@ -8,7 +8,7 @@
 // caching. Read tools are always available; write/destructive tools are gated
 // behind MCP_ALLOW_WRITE=1 (off by default) so an agent can't mutate a cluster
 // unless the operator opts in. Every self-HTTP call carries the app's bearer
-// token plus `X-K8sight-Source: mcp`, so the server enforces the write gate on
+// token plus `X-K8dashboard-Source: mcp`, so the server enforces the write gate on
 // mutation routes itself — the tool registration here is a convenience, the
 // server is the authority.
 //
@@ -16,11 +16,11 @@
 // HTTP at /mcp, and mcp-stdio.js serves the same tools over stdio.
 // ============================================================
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import { envToken, findConfigFile } from './lib/paths.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -29,11 +29,11 @@ function packageVersion() {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')).version; } catch { return undefined; }
 }
 
-// The API bearer token: K8SIGHT_TOKEN, else ~/.config/k8sight/token (the same
-// places server.js reads it from). Returns '' when neither exists.
-export const TOKEN_FILE = path.join(os.homedir(), '.config', 'k8sight', 'token');
+// The API bearer token: K8DASHBOARD_TOKEN / K8DASHBOARD_TOKEN, else the token file
+// (the same places server.js reads it from). Returns '' when neither exists.
+export const TOKEN_FILE = findConfigFile('token');
 export function readApiToken() {
-  const env = String(process.env.K8SIGHT_TOKEN || '').trim();
+  const env = envToken();
   if (env) return env;
   try { return fs.readFileSync(TOKEN_FILE, 'utf8').trim(); } catch { return ''; }
 }
@@ -70,7 +70,7 @@ export function createMcpServer({ version, allowWrite, apiBase, token, baseURL }
         .join('&');
       if (qs) url += (url.includes('?') ? '&' : '?') + qs;
     }
-    const headers = { 'X-K8sight-Source': 'mcp' };
+    const headers = { 'X-K8dashboard-Source': 'mcp' };
     if (bearer) headers.Authorization = `Bearer ${bearer}`;
     if (body) headers['Content-Type'] = 'application/json';
     const r = await fetch(url, {
@@ -91,7 +91,7 @@ export function createMcpServer({ version, allowWrite, apiBase, token, baseURL }
   };
 
   const server = new McpServer({
-    name: 'k8sight',
+    name: 'k8dashboard',
     version: version || process.env.APP_VERSION || packageVersion() || '0.0.0',
   });
 

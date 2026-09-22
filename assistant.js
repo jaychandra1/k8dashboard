@@ -5,7 +5,7 @@
 // The user supplies a base URI, an API key, and a model name — in the chat
 // panel or via env (LLM_BASE_URL / LLM_API_KEY / LLM_MODEL, which take
 // precedence). Saved config is persisted locally to
-// ~/.config/k8s-manager/config.json (chmod 600).
+// ~/.config/k8dashboard/config.json (chmod 600).
 //
 // The model investigates the cluster via the read-only tools below (function
 // calling) and its answer is streamed back to the browser over SSE. Nothing
@@ -14,23 +14,22 @@
 import dns from 'dns';
 import fs from 'fs';
 import { isIP, isIPv4, isIPv6 } from 'net';
-import os from 'os';
-import path from 'path';
+import { CONFIG_DIR, configFile, findConfigFile } from './lib/paths.mjs';
 
 const MAX_TOOL_ITERATIONS = 12;
 const MAX_TOOL_OUTPUT = 14000; // chars — keep tool results bounded
 
 // --- persisted config (used only when env vars are not set) ----------
-const CONFIG_DIR = path.join(os.homedir(), '.config', 'k8s-manager');
-const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
+const CONFIG_FILE = findConfigFile('config.json');
 
 const readConfig = () => {
   try { return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8')); } catch { return {}; }
 };
 const writeConfig = (cfg) => {
+  const dest = configFile('config.json');
   fs.mkdirSync(CONFIG_DIR, { recursive: true });
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2), { mode: 0o600 });
-  try { fs.chmodSync(CONFIG_FILE, 0o600); } catch {}
+  fs.writeFileSync(dest, JSON.stringify(cfg, null, 2), { mode: 0o600 });
+  try { fs.chmodSync(dest, 0o600); } catch {}
 };
 
 let stored = readConfig().llm || null; // { baseUrl, apiKey, model }

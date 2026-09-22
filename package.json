@@ -1,13 +1,13 @@
 {
-  "name": "k8sight",
-  "version": "1.5.1",
+  "name": "k8dashboard",
+  "version": "1.1.0",
   "description": "A native desktop UI for browsing and operating Kubernetes clusters",
   "author": {
     "name": "Praveen Kumar",
     "email": "praveensinghraghav96@gmail.com"
   },
   "license": "MIT",
-  "desktopName": "k8sight",
+  "desktopName": "k8dashboard",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -68,8 +68,8 @@
     "prettier": "^3.9.8"
   },
   "build": {
-    "appId": "com.k8sight.desktop",
-    "productName": "k8sight",
+    "appId": "com.k8dashboard.desktop",
+    "productName": "k8dashboard",
     "asar": false,
     "afterPack": "electron/after-pack.cjs",
     "directories": {
@@ -122,7 +122,7 @@
       "category": "Development",
       "icon": "build/icon.png",
       "synopsis": "A desktop UI for browsing and operating Kubernetes clusters",
-      "description": "k8sight is a native desktop app for browsing and operating any Kubernetes cluster from your local kubeconfig — live dashboards, logs, an in-pod shell, topology, Helm, Argo CD, a Security Center and one-click EKS/AKS onboarding.",
+      "description": "k8dashboard is a native desktop app for browsing and operating any Kubernetes cluster from your local kubeconfig — live dashboards, logs, an in-pod shell, topology, Helm, Argo CD, a Security Center and one-click EKS/AKS onboarding.",
       "maintainer": "Praveen Kumar <praveensinghraghav96@gmail.com>",
       "vendor": "Praveen Kumar",
       "syncDesktopName": true,
@@ -140,15 +140,19 @@
       ]
     },
     "nsis": {
-      "shortcutName": "k8sight",
-      "uninstallDisplayName": "k8sight"
+      "shortcutName": "k8dashboard",
+      "uninstallDisplayName": "k8dashboard"
     },
     "deb": {
       "fpm": [
         "--replaces",
         "k8s-manager-ui",
+        "--replaces",
+        "k8sight",
         "--conflicts",
-        "k8s-manager-ui"
+        "k8s-manager-ui",
+        "--conflicts",
+        "k8sight"
       ]
     }
   },

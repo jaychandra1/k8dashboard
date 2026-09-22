@@ -1,10 +1,10 @@
 name: Build & Release
 
-# Build the k8sight desktop app for macOS, Windows and Linux in parallel, then
+# Build the k8dashboard desktop app for macOS, Windows and Linux in parallel, then
 # publish a GitHub Release (installers + SHA256SUMS.txt + CycloneDX SBOM, each
 # installer with a signed build-provenance attestation) and push the Docker
 # image to GHCR. Trigger it either way:
-#   * push a version tag that matches the VERSION file (`git push origin v1.5.1`), or
+#   * push a version tag that matches the VERSION file (`git push origin v1.1.0`), or
 #   * Actions -> Build & Release -> Run workflow, on `main` only; the tag is
 #     `v<VERSION>` and is created at the current main commit.
 # A tag that does not equal `v$(cat VERSION)` fails the run before anything is
@@ -136,7 +136,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
-          name: k8sight-${{ matrix.artifact }}
+          name: k8dashboard-${{ matrix.artifact }}
           if-no-files-found: error
           retention-days: 7
           path: |
@@ -206,13 +206,13 @@ jobs:
         with:
           path: .
           format: cyclonedx-json
-          output-file: dist/k8sight-${{ needs.verify.outputs.tag }}.cdx.json
-          artifact-name: k8sight-${{ needs.verify.outputs.tag }}.cdx.json
+          output-file: dist/k8dashboard-${{ needs.verify.outputs.tag }}.cdx.json
+          artifact-name: k8dashboard-${{ needs.verify.outputs.tag }}.cdx.json
           upload-artifact: false
           upload-release-assets: false
 
       # Signed SLSA provenance for every installer (verifiable with
-      # `gh attestation verify <file> --repo <owner>/k8sight`).
+      # `gh attestation verify <file> --repo <owner>/k8dashboard`).
       - name: Attest build provenance
         uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
         with:
@@ -263,7 +263,7 @@ jobs:
         shell: bash
         env:
           OWNER: ${{ github.repository_owner }}
-        run: echo "name=ghcr.io/${OWNER,,}/k8sight" >> "$GITHUB_OUTPUT"
+        run: echo "name=ghcr.io/${OWNER,,}/k8dashboard" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU (arm64 emulation)
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
@@ -288,7 +288,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}},value=${{ needs.verify.outputs.tag }}
             type=raw,value=latest
           labels: |
-            org.opencontainers.image.title=k8sight
+            org.opencontainers.image.title=k8dashboard
             org.opencontainers.image.version=${{ needs.verify.outputs.version }}
             org.opencontainers.image.licenses=MIT
 

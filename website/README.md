@@ -27,8 +27,8 @@ python3 -m http.server 4321 -d website
 - **AI assistant** band (read-only Claude assistant).
 - **Download section**:
   - macOS → **GitHub releases**
-    (`https://github.com/praveenraghav01/k8sight/releases/latest`).
-  - Docker commands using the image **`praveenraghav/k8s-manager-ui`**
+    (`https://github.com/jaychandra1/k8dashboard/releases/latest`).
+  - Docker commands using the image **`ghcr.io/jaychandra1/k8dashboard`**
     (copy-to-clipboard buttons).
 
 ## Updating
@@ -37,7 +37,7 @@ python3 -m http.server 4321 -d website
   `/releases/latest`. Publish the `.dmg` as a GitHub Release asset; no site
   change is needed. Update the version badge in `index.html` if you want it shown.
 - **Docker image** — the pull/run commands reference
-  `praveenraghav/k8s-manager-ui:latest`. Change the tag in `index.html` if needed.
+  `ghcr.io/jaychandra1/k8dashboard:latest`. Change the tag in `index.html` if needed.
 
 ## Hosting
 

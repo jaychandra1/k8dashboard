@@ -38,7 +38,7 @@ const TARGETS = {
 };
 
 async function download(url) {
-  const r = await fetch(url, { redirect: 'follow', headers: { 'user-agent': 'k8sight-fetch-trivy' } });
+  const r = await fetch(url, { redirect: 'follow', headers: { 'user-agent': 'k8dashboard-fetch-trivy' } });
   if (!r.ok) throw new Error(`download failed: ${url} (HTTP ${r.status})`);
   return Buffer.from(await r.arrayBuffer());
 }

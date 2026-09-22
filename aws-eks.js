@@ -76,7 +76,7 @@ export async function resolveCredentials(method, opts = {}) {
     if (!roleArn) throw new Error('Role ARN is required');
     // Base credentials come from the ambient chain / source profile.
     const sts = new STSClient({ region: region || 'us-east-1', ...(opts.sourceProfile ? { profile: opts.sourceProfile } : {}) });
-    const out = await sts.send(new AssumeRoleCommand({ RoleArn: roleArn, RoleSessionName: sessionName || 'k8sight', DurationSeconds: 3600 }));
+    const out = await sts.send(new AssumeRoleCommand({ RoleArn: roleArn, RoleSessionName: sessionName || 'k8dashboard', DurationSeconds: 3600 }));
     const c = out.Credentials;
     return { credentials: { accessKeyId: c.AccessKeyId, secretAccessKey: c.SecretAccessKey, sessionToken: c.SessionToken }, region };
   }
@@ -121,7 +121,7 @@ export async function ssoStartDeviceFlow({ startUrl, ssoRegion }) {
   for (const region of regions) {
     try {
       const oidc = new SSOOIDCClient({ region });
-      const reg = await oidc.send(new RegisterClientCommand({ clientName: 'k8sight', clientType: 'public' }));
+      const reg = await oidc.send(new RegisterClientCommand({ clientName: 'k8dashboard', clientType: 'public' }));
       const auth = await oidc.send(new StartDeviceAuthorizationCommand({ clientId: reg.clientId, clientSecret: reg.clientSecret, startUrl }));
       return {
         ssoRegion: region, startUrl,
@@ -207,13 +207,13 @@ function loadKube() {
 }
 
 // Before the first overwrite in this process, keep a copy of the user's
-// kubeconfig next to it (<file>.k8sight-backup-YYYYMMDD-HHmmss).
+// kubeconfig next to it (<file>.k8dashboard-backup-YYYYMMDD-HHmmss).
 let kubeconfigBackedUp = false;
 function backupKubeconfigOnce(p) {
   if (kubeconfigBackedUp) return;
   if (fs.existsSync(p)) {
     const ts = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
-    const backup = `${p}.k8sight-backup-${ts}`;
+    const backup = `${p}.k8dashboard-backup-${ts}`;
     fs.copyFileSync(p, backup);
     try { fs.chmodSync(backup, 0o600); } catch { /* best effort */ }
   }
@@ -249,7 +249,7 @@ export async function writeCluster({ credentials, region, name, alias, profile }
       exec: {
         apiVersion: 'client.authentication.k8s.io/v1beta1',
         // node — or the Electron binary, which ELECTRON_RUN_AS_NODE turns into plain node.
-        command: process.env.K8SIGHT_NODE_BIN || process.execPath,
+        command: process.env.K8DASHBOARD_NODE_BIN || process.env.K8DASHBOARD_NODE_BIN || process.execPath,
         args: [EKS_TOKEN_HELPER, '--cluster', name, '--region', region, ...(profile ? ['--profile', profile] : [])],
         env: [{ name: 'ELECTRON_RUN_AS_NODE', value: '1' }],
         interactiveMode: 'Never',

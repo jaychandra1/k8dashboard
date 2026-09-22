@@ -12,12 +12,12 @@
 import http from 'http';
 import crypto from 'crypto';
 import fs from 'fs';
-import os from 'os';
-import path from 'path';
+import { CONFIG_DIR, configFile, findConfigFile } from './lib/paths.mjs';
 
 // Where the CLI-free AKS token helper (azure-token.js) reads the refresh token.
 // Persisted so kubelogin/az are never needed for app-imported AAD clusters.
-export const AZURE_AUTH_FILE = path.join(os.homedir(), '.config', 'k8s-manager', 'azure-auth.json');
+export const AZURE_AUTH_FILE = findConfigFile('azure-auth.json');
+const AZURE_AUTH_FILE_WRITE = configFile('azure-auth.json');
 
 const AAD = 'https://login.microsoftonline.com';
 const ARM = 'https://management.azure.com';
@@ -54,11 +54,11 @@ function setSession(tok, tenant) {
 function persistAuth() {
   try {
     if (!session?.refreshToken) return;
-    fs.mkdirSync(path.dirname(AZURE_AUTH_FILE), { recursive: true });
-    const tmp = `${AZURE_AUTH_FILE}.${process.pid}.tmp`;
+    fs.mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
+    const tmp = `${AZURE_AUTH_FILE_WRITE}.${process.pid}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify({ refreshToken: session.refreshToken, tenant: session.tenant, account: session.account }), { mode: 0o600 });
-    fs.renameSync(tmp, AZURE_AUTH_FILE);
-    try { fs.chmodSync(AZURE_AUTH_FILE, 0o600); } catch { /* best effort */ }
+    fs.renameSync(tmp, AZURE_AUTH_FILE_WRITE);
+    try { fs.chmodSync(AZURE_AUTH_FILE_WRITE, 0o600); } catch { /* best effort */ }
   } catch { /* non-fatal */ }
 }
 export function getTenant() { return session?.tenant; }
@@ -82,7 +82,7 @@ const successPage = (ok, msg) => `<!doctype html><meta charset="utf-8"><meta nam
 <div style="font-size:34px;margin-bottom:8px">${ok ? '&#10003;' : '&#9888;'}</div>
 <h2 style="margin:0 0 8px">${ok ? 'Signed in to Azure' : 'Sign-in failed'}</h2>
 <p style="color:#9aa1ad;margin:0 0 6px">${escapeHtml(msg)}</p>
-<p style="color:#6b7280;font-size:13px">You can close this tab and return to k8sight.</p>
+<p style="color:#6b7280;font-size:13px">You can close this tab and return to k8dashboard.</p>
 </div></body>`;
 
 // Begin the browser auth-code flow. Returns { authUrl } for the client to open

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# k8sight — install & run helper
+# k8dashboard — install & run helper
 #
 # Usage:
 #   ./run.sh                 Install deps (first run), build the UI, start the app (production)
@@ -24,7 +24,7 @@
 #
 # The app reads your local kubeconfig (default ~/.kube/config, or $KUBECONFIG).
 # Every request to the API needs the bearer token the server prints at boot
-# ("open http://127.0.0.1:3001/#token=…"); set K8SIGHT_TOKEN to choose it.
+# ("open http://127.0.0.1:3001/#token=…"); set K8DASHBOARD_TOKEN to choose it.
 #
 set -euo pipefail
 
@@ -328,7 +328,7 @@ warn_if_busy() {
 # ------------------------------------------------------------------
 run_prod() {
   warn_if_busy "$BACKEND_PORT" "backend + UI"
-  info "Starting k8sight (production)"
+  info "Starting k8dashboard (production)"
   printf '%s\n' "${DIM}The server prints a login URL with your access token — open that URL, not the bare port. Ctrl+C to stop.${RESET}"
   exec node server.js
 }
@@ -336,7 +336,7 @@ run_prod() {
 run_dev() {
   warn_if_busy "$BACKEND_PORT" "backend/API"
   warn_if_busy "$DEV_UI_PORT" "Vite dev server"
-  info "Starting k8sight (dev — hot reload)"
+  info "Starting k8dashboard (dev — hot reload)"
   printf '%s\n' "${DIM}UI: ${RESET}${BOLD}http://localhost:${DEV_UI_PORT}${RESET}${DIM}  (API proxied to :${BACKEND_PORT}; append the #token=… fragment printed by the server) — Ctrl+C to stop.${RESET}"
   exec npm run dev
 }

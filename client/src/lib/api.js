@@ -7,13 +7,27 @@
 //   const ws = new WebSocket(wsUrl('/ws/exec', { namespace, pod, container }));
 import axios from 'axios';
 
-const STORAGE_KEY = 'k8sight.token';
+const STORAGE_KEY = 'k8dashboard.token';
+const LEGACY_STORAGE_KEY = 'k8sight.token';
 let memToken = null;
 
 const storage = {
-  get() { try { return sessionStorage.getItem(STORAGE_KEY); } catch { return null; } },
-  set(v) { try { sessionStorage.setItem(STORAGE_KEY, v); } catch { /* fall back to memory */ } },
-  del() { try { sessionStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ } },
+  get() {
+    try { return sessionStorage.getItem(STORAGE_KEY) || sessionStorage.getItem(LEGACY_STORAGE_KEY); }
+    catch { return null; }
+  },
+  set(v) {
+    try {
+      sessionStorage.setItem(STORAGE_KEY, v);
+      sessionStorage.removeItem(LEGACY_STORAGE_KEY);
+    } catch { /* fall back to memory */ }
+  },
+  del() {
+    try {
+      sessionStorage.removeItem(STORAGE_KEY);
+      sessionStorage.removeItem(LEGACY_STORAGE_KEY);
+    } catch { /* ignore */ }
+  },
 };
 
 export function getToken() {
@@ -111,7 +125,7 @@ export function resetUnauthorized() { unauthorizedFired = false; }
 // ---- axios instance -------------------------------------------------------
 
 export const authHeaders = () => {
-  const h = { 'X-Requested-With': 'k8sight' };
+  const h = { 'X-Requested-With': 'k8dashboard' };
   const t = getToken();
   if (t) h.Authorization = `Bearer ${t}`;
   return h;

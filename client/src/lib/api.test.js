@@ -7,9 +7,16 @@ describe('token storage', () => {
   it('stores in sessionStorage and memory', () => {
     setToken(' abc ');
     expect(getToken()).toBe('abc');
-    expect(sessionStorage.getItem('k8sight.token')).toBe('abc');
+    expect(sessionStorage.getItem('k8dashboard.token')).toBe('abc');
     clearToken();
     expect(getToken()).toBeNull();
+  });
+  it('reads a legacy k8sight.token and migrates it on the next write', () => {
+    sessionStorage.setItem('k8sight.token', 'old-tok');
+    expect(getToken()).toBe('old-tok');
+    setToken('new-tok');
+    expect(sessionStorage.getItem('k8dashboard.token')).toBe('new-tok');
+    expect(sessionStorage.getItem('k8sight.token')).toBeNull();
   });
   it('bootstraps from #token= and scrubs the hash', () => {
     window.location.hash = '#token=xyz';
@@ -58,7 +65,7 @@ describe('axios instance', () => {
     let cfg = { url: '/api/x', headers: {} };
     for (const h of handlers) cfg = await h(cfg);
     expect(cfg.headers.Authorization).toBe('Bearer t1');
-    expect(cfg.headers['X-Requested-With']).toBe('k8sight');
+    expect(cfg.headers['X-Requested-With']).toBe('k8dashboard');
     spy.mockRestore();
   });
   it('normalises errors to ApiError and fires onUnauthorized once', async () => {
@@ -86,7 +93,7 @@ describe('sseFetch', () => {
     await expect(sseFetch('/api/assistant', { q: 1 })).rejects.toMatchObject({ status: 421, message: 'Host not allowed' });
     const [, init] = fetchMock.mock.calls[0];
     expect(init.headers.Authorization).toBe('Bearer sse');
-    expect(init.headers['X-Requested-With']).toBe('k8sight');
+    expect(init.headers['X-Requested-With']).toBe('k8dashboard');
     expect(init.method).toBe('POST');
     vi.unstubAllGlobals();
   });
