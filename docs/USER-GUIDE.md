@@ -2,7 +2,7 @@
 
 This guide covers three things: **running and using the application**, **developing it locally**, and **producing a new release version** (desktop installers and the Docker image).
 
-Current version: `1.1.0` (see the `VERSION` file). Node.js **22 or newer** is required to build or run from source.
+Current version: `1.2.0` (see the `VERSION` file). Node.js **22 or newer** is required to build or run from source.
 
 ---
 
@@ -268,7 +268,7 @@ Conventions: ESM everywhere except `electron/*.cjs`; validate every external inp
 
 ## Part 3 — Producing a new version
 
-Versions follow **Semantic Versioning**: patch for fixes (`1.1.0 → 1.1.1`), minor for features (`→ 1.2.0`), major for breaking changes (`→ 2.0.0`). The single source of truth is the `VERSION` file; everything else is derived from it.
+Versions follow **Semantic Versioning**: patch for fixes (`1.2.0 → 1.2.1`), minor for features (`→ 1.3.0`), major for breaking changes (`→ 2.0.0`). The single source of truth is the `VERSION` file; everything else is derived from it.
 
 ### 3.1 Release checklist
 
@@ -343,10 +343,10 @@ The image is multi-stage: the client is built, production dependencies are insta
 
 ### 3.5 Hotfix flow
 
-1. Branch from the release tag: `git checkout -b hotfix/1.1.1 v1.1.0`.
+1. Branch from the release tag: `git checkout -b hotfix/1.2.1 v1.2.0`.
 2. Fix, add a test, update `CHANGELOG.md`.
-3. `node scripts/sync-version.mjs 1.1.1`, commit, open a PR to `main`, merge.
-4. Tag the merged commit `v1.1.1` and push the tag; the workflow does the rest.
+3. `node scripts/sync-version.mjs 1.2.1`, commit, open a PR to `main`, merge.
+4. Tag the merged commit `v1.2.1` and push the tag; the workflow does the rest.
 
 ---
 

@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-## [1.1.0] - 2026-09-22
+## [1.2.0] - 2026-09-23
 
 First public release of **k8dashboard**.
 
@@ -39,5 +39,5 @@ First public release of **k8dashboard**.
 - **Docker**: base image pinned by digest; `kubectl`, `kubelogin` and `trivy` installed from pinned
   releases with checksum verification; `HEALTHCHECK` on `/healthz`.
 
-[Unreleased]: https://github.com/jaychandra1/k8dashboard/compare/v1.1.0...HEAD
-[1.1.0]: https://github.com/jaychandra1/KubePilot/releases/tag/v1.1.0
+[Unreleased]: https://github.com/jaychandra1/k8dashboard/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/jaychandra1/KubePilot/releases/tag/v1.2.0

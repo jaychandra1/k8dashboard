@@ -359,7 +359,7 @@
       <pre><code>docker run --rm -p 127.0.0.1:8080:3001 \
   -v "$HOME/.kube:/home/node/.kube:ro" \
   ghcr.io/jaychandra1/k8dashboard:latest</code></pre>
-      <p>Every API request needs a <strong>bearer token</strong>. The container generates one at boot and prints the login URL — read it with <code>docker logs &lt;container&gt; | grep '#token='</code>, then open <code>http://localhost:8080/#token=&lt;token&gt;</code> (your published port, not 3001). Or pick the token yourself with <code>-e K8DASHBOARD_TOKEN=&lt;secret&gt;</code>. Images are published for <code>linux/amd64</code> and <code>linux/arm64</code> with tags <code>latest</code>, <code>1.1</code> and <code>v1.1.0</code>.</p>
+      <p>Every API request needs a <strong>bearer token</strong>. The container generates one at boot and prints the login URL — read it with <code>docker logs &lt;container&gt; | grep '#token='</code>, then open <code>http://localhost:8080/#token=&lt;token&gt;</code> (your published port, not 3001). Or pick the token yourself with <code>-e K8DASHBOARD_TOKEN=&lt;secret&gt;</code>. Images are published for <code>linux/amd64</code> and <code>linux/arm64</code> with tags <code>latest</code>, <code>1.2</code> and <code>v1.2.0</code>.</p>
       <h3>From source</h3>
       <pre><code>git clone https://github.com/jaychandra1/k8dashboard
 cd k8dashboard
@@ -820,7 +820,7 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
       <h2>Release notes</h2>
       <div class="tagline">What's new in each version. Installers for every release are on the <a href="https://github.com/jaychandra1/KubePilot/releases" target="_blank" rel="noopener">Releases</a> page.</div>
 
-      <h3>v1.1.0 <span class="rel-date">Sep 22, 2026</span> — First public release</h3>
+      <h3>v1.2.0 <span class="rel-date">Sep 23, 2026</span> — First public release</h3>
       <p>k8dashboard is a native desktop UI for Kubernetes — live dashboards, logs, an in-pod shell, topology, Helm, Argo CD, a Security Center and one-click cloud onboarding.</p>
       <ul>
         <li><strong>Desktop + Docker</strong> — macOS (Apple Silicon), Windows, Linux, and a multi-arch image.</li>
@@ -829,7 +829,7 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
         <li><strong>MCP server</strong> — connect Claude, Cursor and other agents to the cluster you're viewing.</li>
         <li><strong>Cloud onboarding</strong> — import EKS, AKS and GKE clusters without a CLI.</li>
       </ul>
-      <p><a href="https://github.com/jaychandra1/KubePilot/releases/tag/v1.1.0" target="_blank" rel="noopener">Release on GitHub ↗</a></p>
+      <p><a href="https://github.com/jaychandra1/KubePilot/releases/tag/v1.2.0" target="_blank" rel="noopener">Release on GitHub ↗</a></p>
     </article>
   </div>
 </div>

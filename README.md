@@ -120,7 +120,7 @@ docker logs <container> 2>&1 | grep '#token='
 # open http://127.0.0.1:3001/#token=…   ← use your published port instead, e.g. http://localhost:8080/#token=…
 ```
 
-Or choose the token yourself with `-e K8DASHBOARD_TOKEN=<your-secret>`. Tags: `latest`, `<major.minor>` (e.g. `1.1`) and `v<semver>` (e.g. `v1.1.0`).
+Or choose the token yourself with `-e K8DASHBOARD_TOKEN=<your-secret>`. Tags: `latest`, `<major.minor>` (e.g. `1.2`) and `v<semver>` (e.g. `v1.2.0`).
 
 > [!WARNING]
 > Publish to `127.0.0.1` unless you mean to expose it. If the container is reached through another hostname (a reverse proxy), allow it with `-e ALLOWED_HOSTS=k8dashboard.internal` — other `Host` headers are refused with HTTP 421. See [Security](#security).

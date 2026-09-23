@@ -10,7 +10,7 @@ name: Build & Release
 # RELEASE_TOKEN secret: a fine-grained PAT on jaychandra1/KubePilot with
 # Contents: write and Attestations: write (store it on the `release` environment).
 # Trigger it either way:
-#   * push a version tag that matches the VERSION file (`git push origin v1.1.0`), or
+#   * push a version tag that matches the VERSION file (`git push origin v1.2.0`), or
 #   * Actions -> Build & Release -> Run workflow, on `main` only; the tag is
 #     `v<VERSION>` and is created at the current main commit.
 # A tag that does not equal `v$(cat VERSION)` fails the run before anything is
