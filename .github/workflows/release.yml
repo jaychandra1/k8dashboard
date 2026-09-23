@@ -6,9 +6,11 @@ name: Build & Release
 # attestation) and push the Docker image to GHCR.
 #
 # GitHub artifact attestations cannot be stored on a user-owned *private* repo,
-# so provenance is written to KubePilot (public). The release job needs a
-# RELEASE_TOKEN secret: a fine-grained PAT on jaychandra1/KubePilot with
-# Contents: write and Attestations: write (store it on the `release` environment).
+# so provenance is written to KubePilot (public) when RELEASE_TOKEN is set
+# (fine-grained PAT on jaychandra1/KubePilot with Contents: write and
+# Attestations: write — store it as a repo or `release` environment secret).
+# Without that secret the installers are published on this repo and
+# attestations are skipped; the Docker image still goes to GHCR.
 # Trigger it either way:
 #   * push a version tag that matches the VERSION file (`git push origin v1.2.0`), or
 #   * Actions -> Build & Release -> Run workflow, on `main` only; the tag is
@@ -165,8 +167,9 @@ jobs:
     # (Configure reviewers in Settings → Environments → release.)
     environment: release
     permissions:
-      contents: read
+      contents: write
       id-token: write
+      attestations: write
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -190,13 +193,20 @@ jobs:
           npm ci --omit=dev --ignore-scripts
           npm ci --prefix client --omit=dev --ignore-scripts
 
-      - name: Require RELEASE_TOKEN
+      - name: Resolve publish target
+        id: dest
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
-          if [ -z "$RELEASE_TOKEN" ]; then
-            echo "::error::Add a RELEASE_TOKEN secret on the 'release' environment: a fine-grained PAT for jaychandra1/KubePilot with Contents: write and Attestations: write."
-            exit 1
+          set -euo pipefail
+          if [ -n "$RELEASE_TOKEN" ]; then
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+            echo "repo=${RELEASE_REPO}" >> "$GITHUB_OUTPUT"
+            echo "Publishing to ${RELEASE_REPO} with RELEASE_TOKEN"
+          else
+            echo "has_token=false" >> "$GITHUB_OUTPUT"
+            echo "repo=${GITHUB_REPOSITORY}" >> "$GITHUB_OUTPUT"
+            echo "::notice::RELEASE_TOKEN is not set — publishing the GitHub Release on ${GITHUB_REPOSITORY} and skipping attestations. Add a RELEASE_TOKEN secret (fine-grained PAT for ${RELEASE_REPO} with Contents: write and Attestations: write) to publish on KubePilot with provenance."
           fi
 
       - name: Download all build artifacts
@@ -226,11 +236,38 @@ jobs:
           upload-artifact: false
           upload-release-assets: false
 
+      - name: Release notes
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+          SHA: ${{ github.sha }}
+          HAS_TOKEN: ${{ steps.dest.outputs.has_token }}
+          SRC: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          {
+            echo "k8dashboard **${VERSION}**"
+            echo
+            echo "Desktop installers for macOS (Apple Silicon), Windows and Linux."
+            echo "Checksums are in \`SHA256SUMS.txt\`."
+            if [ "$HAS_TOKEN" = "true" ]; then
+              echo
+              echo "Verify an installer with:"
+              echo
+              echo '```'
+              echo "gh attestation verify k8dashboard-macos.dmg --repo ${RELEASE_REPO}"
+              echo '```'
+            fi
+            echo
+            echo "Built from [${SRC}](https://github.com/${SRC}) \`${SHA}\`."
+          } > release-body.md
+
       # Signed SLSA provenance, persisted on the public KubePilot repo
       # (`gh attestation verify <file> --repo jaychandra1/KubePilot`).
       # GITHUB_REPOSITORY is overridden so the persist API hits KubePilot;
-      # user-owned private repos cannot store attestations.
+      # user-owned private repos cannot store attestations. Skipped when
+      # RELEASE_TOKEN is missing.
       - name: Attest build provenance
+        if: steps.dest.outputs.has_token == 'true'
         uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
         env:
           GITHUB_REPOSITORY: ${{ env.RELEASE_REPO }}
@@ -246,25 +283,16 @@ jobs:
       - name: Publish release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
-          repository: ${{ env.RELEASE_REPO }}
-          token: ${{ secrets.RELEASE_TOKEN }}
+          repository: ${{ steps.dest.outputs.repo }}
+          token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
           tag_name: ${{ needs.verify.outputs.tag }}
-          # Tag KubePilot's default branch — this SHA lives in the private source repo.
-          target_commitish: main
+          # KubePilot has no source SHA; tag its default branch. Same-repo
+          # releases pin the commit that built the installers.
+          target_commitish: ${{ steps.dest.outputs.has_token == 'true' && 'main' || github.sha }}
           name: k8dashboard ${{ needs.verify.outputs.version }}
           draft: false
           generate_release_notes: false
-          body: |
-            k8dashboard **${{ needs.verify.outputs.version }}**
-
-            Desktop installers for macOS (Apple Silicon), Windows and Linux.
-            Checksums are in `SHA256SUMS.txt`. Verify an installer with:
-
-            ```
-            gh attestation verify k8dashboard-macos.dmg --repo jaychandra1/KubePilot
-            ```
-
-            Built from [jaychandra1/k8dashboard](https://github.com/jaychandra1/k8dashboard) `${{ github.sha }}`.
+          body_path: release-body.md
           fail_on_unmatched_files: true
           files: |
             dist/*.dmg
@@ -291,13 +319,16 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Require RELEASE_TOKEN
+      - name: Resolve attestation target
+        id: dest
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
-          if [ -z "$RELEASE_TOKEN" ]; then
-            echo "::error::Add a RELEASE_TOKEN secret on the 'release' environment: a fine-grained PAT for jaychandra1/KubePilot with Contents: write and Attestations: write."
-            exit 1
+          if [ -n "$RELEASE_TOKEN" ]; then
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_token=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::RELEASE_TOKEN is not set — skipping image attestations. The image is still pushed to GHCR."
           fi
 
       - name: Image name
@@ -352,6 +383,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Attest image provenance
+        if: steps.dest.outputs.has_token == 'true'
         uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
         env:
           GITHUB_REPOSITORY: ${{ env.RELEASE_REPO }}

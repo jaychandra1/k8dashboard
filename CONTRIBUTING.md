@@ -82,8 +82,9 @@ Trivy scan of the image (fails on CRITICAL).
    GitHub Release on [jaychandra1/KubePilot](https://github.com/jaychandra1/KubePilot)
    (installers, `SHA256SUMS.txt`, CycloneDX SBOM, provenance attestations) and pushes
    `ghcr.io/jaychandra1/k8dashboard:{v1.2.0,1.2,latest}` for amd64 + arm64.
-   The `release` environment must have a `RELEASE_TOKEN` secret (fine-grained PAT on
-   KubePilot with Contents: write and Attestations: write).
+   Optional: add a `RELEASE_TOKEN` secret (fine-grained PAT on KubePilot with
+   Contents: write and Attestations: write) to publish there with provenance.
+   Without it the GitHub Release is created on this repo and attestations are skipped.
 
 Manual runs (Actions → Build & Release → Run workflow) are only accepted from `main`.
 
