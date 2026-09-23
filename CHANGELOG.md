@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Imported EKS/AKS clusters could not connect from the packaged desktop app ("Unexpected end of JSON input"): the kubeconfig exec entry relied on `ELECTRON_RUN_AS_NODE`, which the app's fuses disable. Entries now run `KubePilot --token-helper eks|azure …` (or `node eks-token.js …` from source), stale entries are repaired automatically when the kubeconfig loads, and an expired AWS SSO session shows a "Sign in with AWS SSO" prompt instead of a raw error.
+
 ### Changed
 
 - Renamed to KubePilot; legacy `K8DASHBOARD_*`/`K8SIGHT_*` env vars, `~/.config/k8dashboard` and the old MCP source header remain accepted.

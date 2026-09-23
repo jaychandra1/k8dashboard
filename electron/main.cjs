@@ -15,8 +15,44 @@
 //   4. Tear the server down on quit (which triggers its port-forward cleanup).
 'use strict';
 
-const { app, BrowserWindow, shell, dialog, Menu, session, utilityProcess } = require('electron');
+const { app } = require('electron');
 const path = require('path');
+const { pathToFileURL } = require('url');
+
+// --- 0. CLI mode: `KubePilot --token-helper <eks|azure> …` -----------------
+// Kubeconfig users written by the cloud imports (lib/paths.mjs execEntry) exec
+// the packaged binary with this flag. The RunAsNode fuse is off, so
+// ELECTRON_RUN_AS_NODE can't turn the app into node; instead we run the ESM
+// helper ourselves, print exactly one ExecCredential JSON to stdout and exit —
+// before the single-instance lock, the menu, sessions or any window. Nothing
+// else may write to stdout on this path (stderr is fine).
+const TOKEN_HELPER_FILES = { eks: 'eks-token.js', azure: 'azure-token.js' };
+
+function runTokenHelper(argv) {
+  const [helper, ...args] = argv;
+  const fail = (message) => process.stderr.write(`kubepilot token-helper: ${message}\n`, () => app.exit(1));
+  const file = TOKEN_HELPER_FILES[helper];
+  if (!file) {
+    fail(`unknown helper "${helper ?? ''}" (expected eks or azure)`);
+    return;
+  }
+  // macOS: a sub-second CLI run should not bounce a Dock icon.
+  try { app.dock?.hide(); } catch { /* not macOS / not available */ }
+  import(pathToFileURL(path.join(__dirname, '..', file)).href)
+    .then((mod) => mod.run(args))
+    .then((json) => process.stdout.write(json, () => app.exit(0)))
+    .catch((err) => fail((err && err.message) || String(err)));
+}
+
+const tokenHelperAt = process.argv.indexOf('--token-helper');
+if (tokenHelperAt !== -1) {
+  runTokenHelper(process.argv.slice(tokenHelperAt + 1));
+  // CommonJS module scope: returning here means none of the GUI startup below
+  // (single-instance lock, backend fork, windows) ever runs in helper mode.
+  return;
+}
+
+const { BrowserWindow, shell, dialog, Menu, session, utilityProcess } = require('electron');
 const os = require('os');
 const net = require('net');
 const http = require('http');
@@ -141,6 +177,9 @@ function backendEnv({ fixedPath, port, token }) {
   env.HOST = '127.0.0.1';
   env.PORT = String(port);
   env.KUBEPILOT_TOKEN = token;
+  // The app binary the backend must write into kubeconfig exec entries
+  // (`<exe> --token-helper …`); the utility process's own execPath may differ.
+  env.KUBEPILOT_APP_EXEC = process.execPath;
   return env;
 }
 

@@ -1129,13 +1129,36 @@ const currentServerUrl = () => {
   try { return kubeConfig?.getCurrentCluster()?.server || null; } catch { return null; }
 };
 
-const classifyClusterError = (error) => {
+// Exec-plugin failures surface as `new Error(<stderr>)` (non-zero exit), the
+// spawn error (ENOENT) or a JSON SyntaxError when stdout was empty/garbage —
+// the latter says nothing about *which* plugin ran, so the current user's
+// exec entry is passed in as context.
+const SSO_EXPIRED_RE = /SSO session .*expired|aws sso login|Token has expired|ExpiredToken|The security token included in the request is invalid/i;
+const OUR_HELPER_RE = /token-helper|eks-token|azure-token/i;
+const HELPER_FAILED_RE = /Unexpected end of JSON input|Unexpected token|is not valid JSON|exit code|ENOENT/i;
+
+const classifyClusterError = (error, { exec, repaired = false } = {}) => {
   // client-node 2.0 throws ApiException with a numeric `.code` (HTTP status)
   // and a parsed `.body`; fetch network failures carry a string `.cause.code`.
   const num = (v) => (typeof v === 'number' ? v : undefined);
   const httpStatus = num(error?.code) ?? error?.statusCode ?? error?.response?.statusCode ?? num(error?.body?.code);
   const code = error?.cause?.code || (typeof error?.code === 'string' ? error.code : undefined);
   const msg = error?.body?.message || error?.body?.reason || error?.message || String(error);
+  const execDesc = exec ? [exec.command, ...(Array.isArray(exec.args) ? exec.args : [])].filter((s) => typeof s === 'string').join(' ') : '';
+  const ourHelper = OUR_HELPER_RE.test(execDesc) || OUR_HELPER_RE.test(msg);
+
+  if (httpStatus === undefined && SSO_EXPIRED_RE.test(msg)) {
+    return { ok: false, reason: 'sso-expired', message: 'Your AWS SSO session has expired. Sign in again to refresh it.', detail: msg };
+  }
+  if (httpStatus === undefined && ourHelper && (error instanceof SyntaxError || code === 'ENOENT' || HELPER_FAILED_RE.test(msg))) {
+    return {
+      ok: false, reason: 'exec-helper',
+      message: repaired
+        ? 'The kubeconfig auth helper for this cluster failed to run. Its kubeconfig entry was out of date and has been repaired — click Retry.'
+        : 'The kubeconfig auth helper for this cluster failed to run. Click Retry; if it keeps failing, re-import the cluster from Add cluster.',
+      detail: msg,
+    };
+  }
 
   if (httpStatus === 401) {
     return {
@@ -1175,7 +1198,19 @@ const checkClusterAuth = async () => {
     await core.listNamespace({ limit: 1 });
     return { ok: true, authenticated: true, reachable: true, currentContext, server };
   } catch (error) {
-    return { ...classifyClusterError(error), currentContext, server };
+    let exec = null;
+    try { exec = kubeConfig.getCurrentUser()?.exec || null; } catch { /* no user */ }
+    let classified = classifyClusterError(error, { exec });
+    if (classified.reason === 'exec-helper') {
+      // Our helper entry failed — repair the on-disk file (stale command,
+      // legacy ELECTRON_RUN_AS_NODE form) and reload so Retry picks it up.
+      const repaired = repairKubeconfigFiles(activeKubeconfigPath || (kubeconfigEnvPaths().length ? undefined : getKubeConfigPath()));
+      if (repaired > 0) {
+        reloadPreservingContext();
+        classified = classifyClusterError(error, { exec, repaired: true });
+      }
+    }
+    return { ...classified, currentContext, server };
   }
 };
 

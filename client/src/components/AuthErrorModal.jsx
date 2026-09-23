@@ -37,6 +37,23 @@ export function classify(auth) {
     : /eks\.amazonaws|\.eks\./.test(server) ? 'aws'
       : /gke|container\.googleapis/.test(server) ? 'gcp' : null;
 
+  // Server-side classifications of the bundled token helpers come first: the
+  // backend has already looked at the exec plugin's stderr / exit status.
+  if (reason === 'sso-expired') {
+    return {
+      title: 'AWS SSO session expired',
+      summary: 'Your AWS SSO session has expired, so the cluster token could not be refreshed. Sign in again to refresh it, then retry.',
+      fix: { kind: 'aws', label: 'Sign in with AWS SSO', command: extractAwsSso(auth?.detail || raw) || 'aws sso login' },
+    };
+  }
+  if (reason === 'exec-helper') {
+    return {
+      title: 'Cluster auth helper failed',
+      summary: raw || "KubePilot's kubeconfig auth helper for this cluster could not produce a token.",
+      fix: { kind: 'note', note: 'Stale helper entries are repaired automatically — click Retry. If it keeps failing, re-import the cluster from Add cluster.' },
+    };
+  }
+
   if (/aadsts|azureclicredential|az login\b/.test(s) || (provider === 'azure' && /token|expired|credential|refresh/.test(s))) {
     const cli = /azurecli|kubelogin/.test(s);
     return {
@@ -73,7 +90,9 @@ export function classify(auth) {
 }
 
 export default function AuthErrorModal({ open = true, auth, onRetry, onChangeConfig, retrying, contexts = [], contextsInfo, currentContext, onSwitchContext, onAddAzure, onAddAws, onDemo }) {
-  const raw = auth?.message || '';
+  // `detail` carries the exec plugin's raw stderr when the backend replaced the
+  // message with a friendlier one (sso-expired / exec-helper).
+  const raw = auth?.detail || auth?.message || '';
   const { title, summary, fix, unmatched } = classify(auth);
   const [copied, setCopied] = useState(null); // 'cmd' | 'raw'
   const [addMenu, setAddMenu] = useState(null); // { x, y }
@@ -138,7 +157,7 @@ export default function AuthErrorModal({ open = true, auth, onRetry, onChangeCon
               onClick={() => (fix.kind === 'azure' ? onAddAzure?.(fix.cli ? 'az' : undefined) : onAddAws?.())}
               disabled={retrying || (fix.kind === 'azure' ? !onAddAzure : !onAddAws)}
             >
-              Sign in to {fix.kind === 'azure' ? 'Azure' : 'AWS'}
+              {fix.label || `Sign in to ${fix.kind === 'azure' ? 'Azure' : 'AWS'}`}
             </Button>
           )}
           {fix.command && (
