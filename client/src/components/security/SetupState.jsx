@@ -12,7 +12,7 @@ export default function SetupState({ error, scanAvail, onScan, scanError, starti
         {canScan ? (
           <>
             <p>
-              Run a <strong>built-in image scan</strong> right now — k8dashboard scans every image your cluster is running with Trivy{scanAvail.version ? ` (${scanAvail.version})` : ''}. <strong>Nothing to install in your cluster.</strong>
+              Run a <strong>built-in image scan</strong> right now — KubePilot scans every image your cluster is running with Trivy{scanAvail.version ? ` (${scanAvail.version})` : ''}. <strong>Nothing to install in your cluster.</strong>
               {!scanAvail.available ? ' The first run downloads the Trivy binary (~60 MB) and its vulnerability database, so it may take a few minutes.' : ' The first scan downloads Trivy\'s vulnerability database and may take a few minutes.'}
             </p>
             <button type="button" className="sec-run-btn" onClick={onScan} disabled={starting} aria-busy={starting || undefined}>

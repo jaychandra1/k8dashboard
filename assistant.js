@@ -5,7 +5,7 @@
 // The user supplies a base URI, an API key, and a model name — in the chat
 // panel or via env (LLM_BASE_URL / LLM_API_KEY / LLM_MODEL, which take
 // precedence). Saved config is persisted locally to
-// ~/.config/k8dashboard/config.json (chmod 600).
+// ~/.config/kubepilot/config.json (chmod 600).
 //
 // The model investigates the cluster via the read-only tools below (function
 // calling) and its answer is streamed back to the browser over SSE. Nothing

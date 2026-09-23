@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Security vulnerability
-    url: https://github.com/jaychandra1/k8dashboard/security/advisories/new
+    url: https://github.com/jaychandra1/KubePilot/security/advisories/new
     about: Please report security issues privately — see SECURITY.md. Do not open a public issue.
   - name: Question / discussion
-    url: https://github.com/jaychandra1/k8dashboard/discussions
+    url: https://github.com/jaychandra1/KubePilot/discussions
     about: Ask usage questions or discuss ideas.

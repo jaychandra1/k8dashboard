@@ -1,5 +1,5 @@
 // End-to-end HTTP tests against a real `node server.js` child process
-// (K8DASHBOARD_TOKEN fixed, KUBECONFIG=/nonexistent, isolated HOME, free port).
+// (KUBEPILOT_TOKEN fixed, KUBECONFIG=/nonexistent, isolated HOME, free port).
 // Covers the auth gate, the Host allowlist, path-case handling, body-size and
 // parse errors, input validation on mutating routes, security headers and the
 // WebSocket upgrade.

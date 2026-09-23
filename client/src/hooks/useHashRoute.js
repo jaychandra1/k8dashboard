@@ -61,6 +61,8 @@ function currentHash() {
 
 function historyIdx(st) {
   if (!st) return undefined;
+  if (typeof st.kubepilotIdx === 'number') return st.kubepilotIdx;
+  // history.state written by earlier product names survives a reload of an open tab.
   if (typeof st.k8dashboardIdx === 'number') return st.k8dashboardIdx;
   if (typeof st.k8sightIdx === 'number') return st.k8sightIdx;
   return undefined;
@@ -78,7 +80,7 @@ function ensureIndexed() {
   if (idx >= 0 && stack[idx] === h) return;
   stack = stack.slice(0, idx + 1).concat(h);
   idx = stack.length - 1;
-  try { history.replaceState({ ...(history.state || {}), k8dashboardIdx: idx }, ''); } catch { /* ignore */ }
+  try { history.replaceState({ ...(history.state || {}), kubepilotIdx: idx }, ''); } catch { /* ignore */ }
 }
 
 function onHashChange() {
@@ -105,13 +107,13 @@ export function navigateTo(view, params, query, { replace = false } = {}) {
   if (next === cur) return;
   if (replace) {
     stack[idx] = next;
-    try { history.replaceState({ ...(history.state || {}), k8dashboardIdx: idx }, '', next); } catch { location.hash = next; }
+    try { history.replaceState({ ...(history.state || {}), kubepilotIdx: idx }, '', next); } catch { location.hash = next; }
     notify();
     return;
   }
   stack = stack.slice(0, idx + 1).concat(next);
   idx = stack.length - 1;
-  try { history.pushState({ k8dashboardIdx: idx }, '', next); } catch { location.hash = next; }
+  try { history.pushState({ kubepilotIdx: idx }, '', next); } catch { location.hash = next; }
   // pushState doesn't fire hashchange; notify manually.
   notify();
 }

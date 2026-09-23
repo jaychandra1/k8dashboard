@@ -321,7 +321,7 @@ function McpSection() {
     try {
       const res = await sseFetch(httpUrl, {
         jsonrpc: '2.0', id: 1, method: 'initialize',
-        params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'k8dashboard-prefs', version: '1.0' } },
+        params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'kubepilot-prefs', version: '1.0' } },
       }, { headers: { Accept: 'application/json, text/event-stream' } });
       const sid = res.headers.get('mcp-session-id');
       if (sid) {
@@ -346,23 +346,23 @@ function McpSection() {
     }
   };
 
-  const claudeCmd = (t) => `claude mcp add --transport http k8dashboard ${httpUrl} --header "Authorization: Bearer ${t}"`;
+  const claudeCmd = (t) => `claude mcp add --transport http kubepilot ${httpUrl} --header "Authorization: Bearer ${t}"`;
   const stdioJson = (t) => JSON.stringify({
     mcpServers: {
-      k8dashboard: {
+      kubepilot: {
         command: 'node',
-        args: ['/absolute/path/to/k8dashboard/mcp-stdio.js'],
+        args: ['/absolute/path/to/kubepilot/mcp-stdio.js'],
         env: { MCP_API_BASE: apiBase, MCP_API_TOKEN: t },
       },
     },
   }, null, 2);
-  const httpJson = (t) => JSON.stringify({ mcpServers: { k8dashboard: { url: httpUrl, headers: { Authorization: `Bearer ${t}` } } } }, null, 2);
+  const httpJson = (t) => JSON.stringify({ mcpServers: { kubepilot: { url: httpUrl, headers: { Authorization: `Bearer ${t}` } } } }, null, 2);
 
   return (
     <div className="prefs-section">
       <h1 className="prefs-h2">MCP Server</h1>
       <p className="prefs-lead">
-        k8dashboard is a <a className="prefs-link" href="https://modelcontextprotocol.io" target="_blank" rel="noopener noreferrer">Model Context Protocol</a> server,
+        KubePilot is a <a className="prefs-link" href="https://modelcontextprotocol.io" target="_blank" rel="noopener noreferrer">Model Context Protocol</a> server,
         so any MCP-compatible agent (Claude Code, Claude Desktop, Cursor…) can inspect and operate the
         <strong> currently selected cluster</strong>. The server runs while the app is open. Every request needs the session token below.
       </p>
@@ -429,7 +429,7 @@ function AboutSection() {
   return (
     <div className="prefs-section">
       <h1 className="prefs-h2">About</h1>
-      <Field label="k8dashboard">{version ? <span className="prefs-muted">Version {version}</span> : null}</Field>
+      <Field label="KubePilot">{version ? <span className="prefs-muted">Version {version}</span> : null}</Field>
       <p className="prefs-lead">A native Kubernetes management app — cluster overview, resources, topology, ArgoCD, one-click AKS/EKS, terminals and bring-your-own AI agents.</p>
     </div>
   );

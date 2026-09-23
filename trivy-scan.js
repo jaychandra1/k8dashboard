@@ -19,6 +19,7 @@ import { execFile } from 'child_process';
 import crypto from 'crypto';
 import fs from 'fs';
 import fsp from 'fs/promises';
+import zlib from 'zlib';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -27,7 +28,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Where we cache an auto-downloaded trivy so users need neither the operator
 // nor a manual install.
-const CACHE_DIR = path.join(os.homedir(), '.config', 'k8dashboard', 'bin');
+const CACHE_DIR = path.join(os.homedir(), '.config', 'kubepilot', 'bin');
 const CACHED_TRIVY = path.join(CACHE_DIR, process.platform === 'win32' ? 'trivy.exe' : 'trivy');
 // Pinned release for auto-download. TRIVY_VERSION=x.y.z pins another one;
 // TRIVY_VERSION=latest opts in to asking GitHub for the newest release.
@@ -49,7 +50,7 @@ function run(bin, args, opts = {}) {
 
 // Persist each cluster's last scan so results survive an app restart. One JSON
 // file per context under the app config dir (same place as other app state).
-const SCAN_DIR = path.join(os.homedir(), '.config', 'k8dashboard', 'security-scans');
+const SCAN_DIR = path.join(os.homedir(), '.config', 'kubepilot', 'security-scans');
 const scanFile = (context) => path.join(SCAN_DIR, `${String(context || 'default').replace(/[^a-zA-Z0-9_.@+-]/g, '_').slice(0, 200)}.json`);
 const scanCache = new Map(); // file → { mtimeMs, size, data } — parsed once per on-disk version
 
@@ -110,8 +111,38 @@ function assetName(version) {
   if (!o || !a) return null;
   return `trivy_${version}_${o}-${a}.${process.platform === 'win32' ? 'zip' : 'tar.gz'}`;
 }
-// Can we fetch trivy ourselves? (mac/linux; Windows install is manual for now.)
-export function trivyInstallable() { return process.platform !== 'win32' && !!assetName('x'); }
+// Can we fetch trivy ourselves? (macOS/Linux tarballs and the Windows zip.)
+export function trivyInstallable() { return !!assetName('x'); }
+
+// Minimal ZIP reader for one entry (the Windows trivy release is a .zip with a
+// handful of files). Supports stored (0) and deflate (8) entries; refuses zip64.
+// Kept dependency-free on purpose — this runs inside the packaged app.
+function extractZipEntry(buf, wantName) {
+  const eocd = buf.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+  if (eocd < 0) throw new Error('trivy archive is not a valid zip (no end-of-central-directory record)');
+  const entries = buf.readUInt16LE(eocd + 10);
+  let off = buf.readUInt32LE(eocd + 16);
+  if (entries === 0xffff || off === 0xffffffff) throw new Error('zip64 archives are not supported');
+  for (let i = 0; i < entries; i++) {
+    if (buf.readUInt32LE(off) !== 0x02014b50) throw new Error('trivy archive has a corrupt central directory');
+    const method = buf.readUInt16LE(off + 10);
+    const csize = buf.readUInt32LE(off + 20);
+    const usize = buf.readUInt32LE(off + 24);
+    const nlen = buf.readUInt16LE(off + 28), elen = buf.readUInt16LE(off + 30), clen = buf.readUInt16LE(off + 32);
+    const local = buf.readUInt32LE(off + 42);
+    const name = buf.toString('utf8', off + 46, off + 46 + nlen);
+    off += 46 + nlen + elen + clen;
+    if (name !== wantName) continue;
+    if (buf.readUInt32LE(local) !== 0x04034b50) throw new Error('trivy archive has a corrupt local header');
+    const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
+    const data = buf.subarray(start, start + csize);
+    const out = method === 0 ? Buffer.from(data) : method === 8 ? zlib.inflateRawSync(data) : null;
+    if (!out) throw new Error(`unsupported zip compression method ${method}`);
+    if (out.length !== usize) throw new Error('trivy archive entry size mismatch after extraction');
+    return out;
+  }
+  throw new Error(`${wantName} not found in the trivy archive`);
+}
 
 export async function trivyAvailable() {
   // present on PATH / bundled?
@@ -123,7 +154,7 @@ export async function trivyAvailable() {
 // Opt-in only (TRIVY_VERSION=latest): ask GitHub for the newest release.
 async function latestVersion() {
   try {
-    const r = await fetch('https://api.github.com/repos/aquasecurity/trivy/releases/latest', { headers: { 'user-agent': 'k8dashboard' }, signal: AbortSignal.timeout(8000) });
+    const r = await fetch('https://api.github.com/repos/aquasecurity/trivy/releases/latest', { headers: { 'user-agent': 'kubepilot' }, signal: AbortSignal.timeout(8000) });
     const j = await r.json();
     const v = String(j.tag_name || '').replace(/^v/, '');
     return /^\d+\.\d+\.\d+$/.test(v) ? v : TRIVY_VERSION;
@@ -168,13 +199,23 @@ export async function ensureTrivy(onPhase) {
   const actual = crypto.createHash('sha256').update(archive).digest('hex');
   if (actual !== expected) throw new Error(`trivy ${version} download failed its integrity check (sha256 ${actual} != ${expected}) — refusing to install.`);
   fs.mkdirSync(CACHE_DIR, { recursive: true });
-  const tgz = path.join(CACHE_DIR, asset);
-  fs.writeFileSync(tgz, archive);
-  try {
-    await run('tar', ['-xzf', tgz, '-C', CACHE_DIR, 'trivy'], { timeout: 60000 });
-    fs.chmodSync(CACHED_TRIVY, 0o755);
-  } finally {
-    try { fs.unlinkSync(tgz); } catch { /* ignore */ }
+  onPhase?.('extracting');
+  if (asset.endsWith('.zip')) {
+    // Windows: extract trivy.exe in-process (no tar/unzip dependency), write to a
+    // temp name and rename so a half-written binary is never picked up.
+    const exe = extractZipEntry(archive, 'trivy.exe');
+    const tmp = `${CACHED_TRIVY}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, exe);
+    fs.renameSync(tmp, CACHED_TRIVY);
+  } else {
+    const tgz = path.join(CACHE_DIR, asset);
+    fs.writeFileSync(tgz, archive);
+    try {
+      await run('tar', ['-xzf', tgz, '-C', CACHE_DIR, 'trivy'], { timeout: 60000 });
+      fs.chmodSync(CACHED_TRIVY, 0o755);
+    } finally {
+      try { fs.unlinkSync(tgz); } catch { /* ignore */ }
+    }
   }
   _bin = CACHED_TRIVY;
   return CACHED_TRIVY;

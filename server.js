@@ -32,7 +32,8 @@ import { createCache } from './lib/cache.mjs';
 import {
   getAuthToken, authMiddleware, verifyWsAuth, isAllowedHost, isAllowedOrigin, hostGuard, originGuard, pathCaseGuard,
 } from './lib/auth.mjs';
-import { CONFIG_DIR, configFile, findConfigFile, isMcpSource, nodeBin } from './lib/paths.mjs';
+import { CONFIG_DIR, configFile, findConfigFile, isMcpSource, execEntry } from './lib/paths.mjs';
+import { repairExecEntries } from './lib/kubeconfig-repair.mjs';
 import {
   createKubectl, positional, spawnBin, collectChild, commandExists, resolveBinSync, loginShellPath,
 } from './lib/kubectl.mjs';
@@ -57,9 +58,6 @@ const app = express();
 // `docker run -p <host>:3001`.
 const PORT = Number(process.env.PORT) || 3001;
 const CLIENT_DIST = path.join(__dirname, 'client', 'dist');
-// CLI-free AKS token helper — app-imported AAD clusters exec this instead of
-// kubelogin, so neither `az` nor `kubelogin` is needed at runtime.
-const AZURE_TOKEN_HELPER = path.join(__dirname, 'azure-token.js');
 
 let currentContext = null;
 let kubeConfig = null;
@@ -219,7 +217,7 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-// MCP write gate: mcp.js calls this REST API with `X-K8dashboard-Source: mcp`;
+// MCP write gate: mcp.js calls this REST API with `X-KubePilot-Source: mcp`;
 // when the UI toggle is off, every mutating route refuses those calls.
 const mcpWriteGate = (req, res, next) => {
   if (isMcpSource(req) && !mcpAllowWrite) {
@@ -245,7 +243,7 @@ app.use((req, res, next) => {
   if (p === '/api/config/auth') return res.json({ ok: true, currentContext: demo.DEMO_CONTEXT });
   // Assistant: report enabled + stream canned answers (no LLM required).
   if (p === '/api/assistant/status') {
-    return res.json({ enabled: true, source: 'demo', editable: false, baseUrl: '', model: 'k8dashboard-demo (canned)' });
+    return res.json({ enabled: true, source: 'demo', editable: false, baseUrl: '', model: 'kubepilot-demo (canned)' });
   }
   if (p === '/api/assistant/chat' && req.method === 'POST') return demoAssistantChat(req, res);
   // Cloud sign-in, agent detection, MCP, version and non-API paths are unchanged.
@@ -341,10 +339,23 @@ const warnDemoCollision = (kc) => {
   }
 };
 
+// Before a file is parsed, rewrite any of *our* stale exec entries in it
+// (e.g. the pre-fuse `ELECTRON_RUN_AS_NODE` form, or a moved/renamed app
+// binary) — see lib/kubeconfig-repair.mjs. Never throws.
+const repairKubeconfigFiles = (filePath) => {
+  const files = filePath ? [filePath] : kubeconfigEnvPaths();
+  let repaired = 0;
+  for (const p of files) {
+    if (fs.existsSync(p)) repaired += repairExecEntries(p).repaired.length;
+  }
+  return repaired;
+};
+
 // Load `filePath` (or the KUBECONFIG/default set when omitted) and swap it in
 // only on success. Returns true/false; never throws.
 const loadKubeConfig = (filePath) => {
   try {
+    repairKubeconfigFiles(filePath);
     const kc = parseKubeConfig({ filePath });
     kubeConfig = kc;
     currentContext = kc.getCurrentContext();
@@ -762,14 +773,14 @@ function nativizeAksExec(kcYaml) {
     const getArg = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
     const serverId = getArg('--server-id') || AKS_AAD_SERVER_ID;
     const tenant = getArg('--tenant-id') || getArg('--tenant') || azure.getTenant() || 'organizations';
+    // Packaged app: `KubePilot --token-helper azure …`; source/Docker:
+    // `node azure-token.js …` (lib/paths.mjs execEntry decides).
+    const helper = execEntry('azure', ['--server-id', serverId, '--tenant', tenant]);
     u.user.exec = {
       apiVersion: 'client.authentication.k8s.io/v1beta1',
-      // Node binary for the helper. Under Electron, process.execPath is the app
-      // itself; ELECTRON_RUN_AS_NODE makes it behave as plain node. A packaged
-      // build may point K8DASHBOARD_NODE_BIN at a dedicated binary instead.
-      command: nodeBin(),
-      args: [AZURE_TOKEN_HELPER, '--server-id', serverId, '--tenant', tenant],
-      env: [{ name: 'ELECTRON_RUN_AS_NODE', value: '1' }],
+      command: helper.command,
+      args: helper.args,
+      ...(helper.env ? { env: helper.env } : {}),
       interactiveMode: 'Never',
       provideClusterInfo: false,
     };
@@ -779,7 +790,7 @@ function nativizeAksExec(kcYaml) {
 
 // Safe kubeconfig merge + write:
 //   • an existing file that does not parse → 409 (never overwrite it),
-//   • first write of the session → copy to <file>.k8dashboard-backup-<timestamp>,
+//   • first write of the session → copy to <file>.kubepilot-backup-<timestamp>,
 //   • write via a temp file + rename, mode 0600.
 const backedUpKubeconfigs = new Set();
 function mergeKubeconfigYaml(existingPath, incomingYaml) {
@@ -811,7 +822,7 @@ function writeKubeconfigAtomically(p, config) {
   fs.mkdirSync(path.dirname(p), { recursive: true, mode: 0o700 });
   if (fs.existsSync(p) && !backedUpKubeconfigs.has(p)) {
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    fs.copyFileSync(p, `${p}.k8dashboard-backup-${stamp}`);
+    fs.copyFileSync(p, `${p}.kubepilot-backup-${stamp}`);
     backedUpKubeconfigs.add(p);
   }
   const tmp = `${p}.${process.pid}.${Date.now()}.tmp`;
@@ -2751,7 +2762,7 @@ app.post('/api/argocd/application/:namespace/:name/sync', mcpWriteGate, async (r
     if (o.replace) syncOptions.push('Replace=true');
     if (o.force) syncOptions.push('Force=true');
     if (syncOptions.length) sync.syncOptions = syncOptions;
-    const patch = JSON.stringify({ operation: { initiatedBy: { username: 'k8dashboard' }, sync } });
+    const patch = JSON.stringify({ operation: { initiatedBy: { username: 'kubepilot' }, sync } });
     const out = await runKubectl(['patch', `--namespace=${namespace}`, '--type=merge', `--patch=${patch}`, ...positional('applications.argoproj.io', name)]);
     cache.clear();
     res.json({ success: true, message: out || 'Sync triggered' });
@@ -3899,6 +3910,6 @@ server.listen(PORT, HOST, () => {
   const shown = HOST === '0.0.0.0' ? '127.0.0.1' : HOST;
   const base = `http://${shown}:${PORT}`;
   // The login URL (token in the fragment): the client stores it from the hash.
-  log.raw(`k8dashboard listening on ${base}  —  open ${base}/#token=${getAuthToken()}`);
+  log.raw(`KubePilot listening on ${base}  —  open ${base}/#token=${getAuthToken()}`);
   log.info('listening', { host: HOST, port: PORT, bound: HOST === '0.0.0.0' ? '0.0.0.0' : HOST });
 });

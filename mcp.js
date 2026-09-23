@@ -8,7 +8,7 @@
 // caching. Read tools are always available; write/destructive tools are gated
 // behind MCP_ALLOW_WRITE=1 (off by default) so an agent can't mutate a cluster
 // unless the operator opts in. Every self-HTTP call carries the app's bearer
-// token plus `X-K8dashboard-Source: mcp`, so the server enforces the write gate on
+// token plus `X-KubePilot-Source: mcp`, so the server enforces the write gate on
 // mutation routes itself — the tool registration here is a convenience, the
 // server is the authority.
 //
@@ -29,7 +29,7 @@ function packageVersion() {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')).version; } catch { return undefined; }
 }
 
-// The API bearer token: K8DASHBOARD_TOKEN / K8DASHBOARD_TOKEN, else the token file
+// The API bearer token: KUBEPILOT_TOKEN (lib/paths.mjs also honours the legacy names), else the token file
 // (the same places server.js reads it from). Returns '' when neither exists.
 export const TOKEN_FILE = findConfigFile('token');
 export function readApiToken() {
@@ -70,7 +70,7 @@ export function createMcpServer({ version, allowWrite, apiBase, token, baseURL }
         .join('&');
       if (qs) url += (url.includes('?') ? '&' : '?') + qs;
     }
-    const headers = { 'X-K8dashboard-Source': 'mcp' };
+    const headers = { 'X-KubePilot-Source': 'mcp' };
     if (bearer) headers.Authorization = `Bearer ${bearer}`;
     if (body) headers['Content-Type'] = 'application/json';
     const r = await fetch(url, {
@@ -91,7 +91,7 @@ export function createMcpServer({ version, allowWrite, apiBase, token, baseURL }
   };
 
   const server = new McpServer({
-    name: 'k8dashboard',
+    name: 'kubepilot',
     version: version || process.env.APP_VERSION || packageVersion() || '0.0.0',
   });
 

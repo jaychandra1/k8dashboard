@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Renamed to KubePilot; legacy `K8DASHBOARD_*`/`K8SIGHT_*` env vars, `~/.config/k8dashboard` and the old MCP source header remain accepted.
+  Installers are now `KubePilot-macos.dmg`, `KubePilot-windows.exe`, `KubePilot-linux.AppImage` / `.deb`, published on
+  [jaychandra1/KubePilot](https://github.com/jaychandra1/KubePilot/releases); the container image is `ghcr.io/jaychandra1/kubepilot`.
+
 ## [1.2.0] - 2026-09-23
 
 First public release of **k8dashboard**.

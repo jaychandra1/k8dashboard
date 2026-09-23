@@ -1,4 +1,4 @@
-# k8dashboard — User & Release Guide
+# KubePilot — User & Release Guide
 
 This guide covers three things: **running and using the application**, **developing it locally**, and **producing a new release version** (desktop installers and the Docker image).
 
@@ -22,7 +22,7 @@ Current version: `1.2.0` (see the `VERSION` file). Node.js **22 or newer** is re
 
 **A. Desktop app (recommended for laptops)**
 
-Download the installer for your OS from the [KubePilot Releases](https://github.com/jaychandra1/KubePilot/releases) page (`k8dashboard-macos.dmg` for Apple Silicon, `k8dashboard-windows.exe`, `k8dashboard-linux.AppImage` or `.deb`) and open it.
+Download the installer for your OS from the [KubePilot Releases](https://github.com/jaychandra1/KubePilot/releases) page (`KubePilot-macos.dmg` for Apple Silicon, `KubePilot-windows.exe`, `KubePilot-linux.AppImage` or `.deb`) and open it.
 
 The desktop app generates a fresh random access token every launch, starts its backend on a free local port, and opens the UI already logged in. There is nothing to configure.
 
@@ -41,19 +41,19 @@ npm start
 The server prints a **login URL** at boot:
 
 ```
-k8dashboard listening on http://127.0.0.1:3001  —  open http://127.0.0.1:3001/#token=<token>
+KubePilot listening on http://127.0.0.1:3001  —  open http://127.0.0.1:3001/#token=<token>
 ```
 
 Open that exact URL. The UI moves the token from the URL into session storage and removes it from the address bar. If you open `http://127.0.0.1:3001` without the token, the UI shows a **Connect** dialog where you can paste it.
 
-The token is generated once and saved to `~/.config/k8dashboard/token` (mode `0600`), so it stays the same across restarts unless you set `K8DASHBOARD_TOKEN` yourself.
+The token is generated once and saved to `~/.config/kubepilot/token` (mode `0600`), so it stays the same across restarts unless you set `KUBEPILOT_TOKEN` yourself.
 
 **C. Docker**
 
 ```bash
 docker run --rm -p 127.0.0.1:8080:3001 \
   -v "$HOME/.kube:/home/node/.kube:ro" \
-  ghcr.io/jaychandra1/k8dashboard:latest
+  ghcr.io/jaychandra1/kubepilot:latest
 ```
 
 Get the token from the container log:
@@ -62,7 +62,7 @@ Get the token from the container log:
 docker logs <container> 2>&1 | grep token=
 ```
 
-Then open `http://localhost:8080/#token=<token>`. To use a fixed token instead, pass `-e K8DASHBOARD_TOKEN=<at least 16 characters>`.
+Then open `http://localhost:8080/#token=<token>`. To use a fixed token instead, pass `-e KUBEPILOT_TOKEN=<at least 16 characters>`.
 
 Keep the port published on `127.0.0.1`. If you must expose it on a network, put an authenticating reverse proxy in front and add the proxy's hostname to `ALLOWED_HOSTS` and its origin to `ALLOWED_ORIGINS` (see §1.9), otherwise requests through another hostname are refused with HTTP 421.
 
@@ -160,7 +160,7 @@ Open Preferences from the sidebar gear or the palette. Sections: **General** (th
 HTTP transport (recommended while the app runs):
 
 ```bash
-claude mcp add --transport http k8dashboard http://127.0.0.1:3001/mcp \
+claude mcp add --transport http kubepilot http://127.0.0.1:3001/mcp \
   --header "Authorization: Bearer <token>"
 ```
 
@@ -169,9 +169,9 @@ Stdio bridge (for agents that launch a command):
 ```json
 {
   "mcpServers": {
-    "k8dashboard": {
+    "kubepilot": {
       "command": "node",
-      "args": ["/absolute/path/to/k8dashboard/mcp-stdio.js"],
+      "args": ["/absolute/path/to/kubepilot/mcp-stdio.js"],
       "env": { "MCP_API_BASE": "http://127.0.0.1:3001", "MCP_API_TOKEN": "<token>" }
     }
   }
@@ -183,18 +183,18 @@ Stdio bridge (for agents that launch a command):
 - **AWS EKS** — sign in with IAM Identity Center (SSO), access keys or an assumed role; discover clusters across accounts and regions; import them. An SSO profile is written to `~/.aws/config` so credentials refresh automatically.
 - **Azure AKS** — sign in through your system browser (works with Conditional Access) or the `az` CLI; discover across subscriptions; import.
 
-Imported contexts are merged into your kubeconfig. The existing file is **backed up** (`config.k8dashboard-backup-<timestamp>`) before the first write of a session, written atomically with mode `0600`, and never overwritten if it cannot be parsed. Imported clusters authenticate at runtime through bundled token helpers, so `aws`, `az` and `kubelogin` are not needed afterwards.
+Imported contexts are merged into your kubeconfig. The existing file is **backed up** (`config.kubepilot-backup-<timestamp>`) before the first write of a session, written atomically with mode `0600`, and never overwritten if it cannot be parsed. Imported clusters authenticate at runtime through bundled token helpers, so `aws`, `az` and `kubelogin` are not needed afterwards.
 
 ### 1.9 Configuration reference
 
 | Variable | Purpose | Default |
 |---|---|---|
-| `K8DASHBOARD_TOKEN` | Bearer token for `/api/*`, `/mcp` and `/ws/exec` | generated → `~/.config/k8dashboard/token` |
+| `KUBEPILOT_TOKEN` | Bearer token for `/api/*`, `/mcp` and `/ws/exec` | generated → `~/.config/kubepilot/token` |
 | `KUBECONFIG` | Kubeconfig path(s) | `~/.kube/config` |
 | `KUBECONFIG_DIRS` | Extra directories from which "Load kubeconfig" may read | — |
 | `PORT` | Backend port | `3001` |
 | `HOST` | Bind interface | `127.0.0.1` (Docker: `0.0.0.0`) |
-| `ALLOWED_HOSTS` | Extra `Host` values accepted (e.g. `k8dashboard.internal:8080`) | — |
+| `ALLOWED_HOSTS` | Extra `Host` values accepted (e.g. `kubepilot.internal:8080`) | — |
 | `ALLOWED_ORIGINS` | Extra browser origins allowed to call the API | — |
 | `TRUST_PROXY` | Set `1` behind a reverse proxy so rate limiting sees client IPs | — |
 | `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` | Assistant endpoint | — |
@@ -203,7 +203,7 @@ Imported contexts are merged into your kubeconfig. The existing file is **backed
 | `LOG_LEVEL` | `debug` `info` `warn` `error` | `info` |
 | `TRIVY_VERSION` | Pin or `latest` for on-demand Trivy download | `0.74.0` |
 
-App data lives in `~/.config/k8dashboard` (token, assistant config, scan cache). Logs are JSON lines on stdout; the request log never contains query strings, headers or tokens.
+App data lives in `~/.config/kubepilot` (token, assistant config, scan cache). Logs are JSON lines on stdout; the request log never contains query strings, headers or tokens.
 
 ### 1.10 Troubleshooting
 
@@ -225,7 +225,7 @@ App data lives in `~/.config/k8dashboard` (token, assistant config, scan cache).
 ### 2.1 Setup
 
 ```bash
-git clone <repo> && cd k8dashboard
+git clone <repo> kubepilot && cd kubepilot
 npm ci --ignore-scripts        # never runs third-party lifecycle scripts
 npm rebuild node-pty           # the one native addon (Linux has no prebuild)
 npm ci --prefix client
@@ -299,8 +299,8 @@ Versions follow **Semantic Versioning**: patch for fixes (`1.2.0 → 1.2.1`), mi
    |---|---|
    | **Verify tag == VERSION** | Fails immediately if the tag and `VERSION` disagree, or if a manual run was started from a branch other than `main`. |
    | **Build** (macOS arm64, Windows x64, Linux x64) | `npm ci`, tests, `npm run dist` → installers uploaded as artifacts. |
-   | **Publish GitHub Release** | Waits for approval on the `release` environment, then generates `SHA256SUMS.txt` and a CycloneDX SBOM. With `RELEASE_TOKEN` it publishes on [jaychandra1/KubePilot](https://github.com/jaychandra1/KubePilot); without that secret it publishes on this repo. |
-   | **Publish Docker image (GHCR)** | Also gated by the `release` environment. Builds amd64 + arm64 and pushes `ghcr.io/jaychandra1/k8dashboard:v1.2.0`, `:1.2` and `:latest`. |
+   | **Publish GitHub Release** | Waits for approval on the `release` environment, then generates `SHA256SUMS.txt` and a CycloneDX SBOM. Publishes on the public [jaychandra1/KubePilot](https://github.com/jaychandra1/KubePilot) repo using the `KUBEPILOT_RELEASE_TOKEN` secret (a fine-grained PAT with Contents: read & write on that repo); the job fails with a clear error if the secret is missing. |
+   | **Publish Docker image (GHCR)** | Also gated by the `release` environment. Builds amd64 + arm64 and pushes `ghcr.io/jaychandra1/kubepilot:v1.2.0`, `:1.2` and `:latest`. |
 
    When the workflow pauses, a reviewer on the `release` environment approves it in the Actions UI. Nothing is published before that approval, and a release in progress is never cancelled by a newer run.
 
@@ -308,7 +308,7 @@ Versions follow **Semantic Versioning**: patch for fixes (`1.2.0 → 1.2.1`), mi
 
    ```bash
    sha256sum -c SHA256SUMS.txt --ignore-missing
-   docker run --rm -p 127.0.0.1:8080:3001 ghcr.io/jaychandra1/k8dashboard:v1.2.0
+   docker run --rm -p 127.0.0.1:8080:3001 ghcr.io/jaychandra1/kubepilot:v1.2.0
    curl http://127.0.0.1:8080/healthz
    ```
 
@@ -322,14 +322,14 @@ npm run app:pack      # macOS only: unpacked .app in release/ for quick testing
 npm run app           # run the Electron shell against the current source
 ```
 
-Outputs in `release/`: `k8dashboard-macos.dmg` (Apple Silicon), `k8dashboard-windows.exe` (NSIS), `k8dashboard-linux.AppImage` and `k8dashboard-linux.deb`. Packaging for macOS requires a Mac; Windows requires Windows (or Wine), Linux requires Linux. Builds are ad-hoc signed; to notarize, obtain a Developer ID, set `hardenedRuntime: true` in `package.json` (the entitlements file is already in `build/`) and provide signing credentials.
+Outputs in `release/`: `KubePilot-macos.dmg` (Apple Silicon), `KubePilot-windows.exe` (NSIS), `KubePilot-linux.AppImage` and `KubePilot-linux.deb`. Packaging for macOS requires a Mac; Windows requires Windows (or Wine), Linux requires Linux. Builds are ad-hoc signed; to notarize, obtain a Developer ID, set `hardenedRuntime: true` in `package.json` (the entitlements file is already in `build/`) and provide signing credentials.
 
 ### 3.3 Building the Docker image locally
 
 ```bash
-docker build -t k8dashboard:dev .
-docker run --rm -p 127.0.0.1:8080:3001 -e K8DASHBOARD_TOKEN=local-dev-token-1234 \
-  -v "$HOME/.kube:/home/node/.kube:ro" k8dashboard:dev
+docker build -t kubepilot:dev .
+docker run --rm -p 127.0.0.1:8080:3001 -e KUBEPILOT_TOKEN=local-dev-token-1234 \
+  -v "$HOME/.kube:/home/node/.kube:ro" kubepilot:dev
 ```
 
 The image is multi-stage: the client is built, production dependencies are installed with `--ignore-scripts`, and `kubectl`, `kubelogin` and `trivy` are downloaded at pinned versions and verified against their published SHA256 checksums. The container runs as the unprivileged `node` user and exposes a `HEALTHCHECK` on `/healthz`.

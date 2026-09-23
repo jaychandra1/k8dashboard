@@ -28,7 +28,7 @@ python3 -m http.server 4321 -d website
 - **Download section**:
   - macOS → **GitHub releases**
     (`https://github.com/jaychandra1/KubePilot/releases/latest`).
-  - Docker commands using the image **`ghcr.io/jaychandra1/k8dashboard`**
+  - Docker commands using the image **`ghcr.io/jaychandra1/kubepilot`**
     (copy-to-clipboard buttons).
 
 ## Updating
@@ -37,7 +37,7 @@ python3 -m http.server 4321 -d website
   `/releases/latest`. Publish the `.dmg` as a GitHub Release asset; no site
   change is needed. Update the version badge in `index.html` if you want it shown.
 - **Docker image** — the pull/run commands reference
-  `ghcr.io/jaychandra1/k8dashboard:latest`. Change the tag in `index.html` if needed.
+  `ghcr.io/jaychandra1/kubepilot:latest`. Change the tag in `index.html` if needed.
 
 ## Hosting
 

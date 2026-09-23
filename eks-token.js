@@ -7,20 +7,26 @@
 // aws binary or a local credential chain beyond what the SDK reads itself.
 //
 // Usage: node eks-token.js --cluster <name> --region <region> [--profile <p>]
+//   (packaged desktop app: `KubePilot --token-helper eks --cluster …`, which
+//   electron/main.cjs routes to run() below)
 // Credentials come from --profile (SDK fromNodeProviderChain honours ~/.aws and
 // assume-role) or, if no profile, the ambient AWS_* environment variables.
+import { pathToFileURL } from 'url';
 import { SignatureV4 } from '@smithy/signature-v4';
 import { Sha256 } from '@aws-crypto/sha256-js';
 import { HttpRequest } from '@smithy/protocol-http';
 import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
 
-const argv = process.argv.slice(2);
-const arg = (name) => { const i = argv.indexOf(`--${name}`); return i >= 0 ? argv[i + 1] : undefined; };
+const argOf = (argv, name) => { const i = argv.indexOf(`--${name}`); return i >= 0 ? argv[i + 1] : undefined; };
 
-async function main() {
-  const clusterName = arg('cluster');
-  const region = arg('region') || process.env.AWS_REGION || 'us-east-1';
-  const profile = arg('profile');
+/**
+ * Produce the ExecCredential JSON for `argv` (the flags after the script name).
+ * Pure: never touches stdout/stderr and never exits; throws on failure.
+ */
+export async function run(argv = []) {
+  const clusterName = argOf(argv, 'cluster');
+  const region = argOf(argv, 'region') || process.env.AWS_REGION || 'us-east-1';
+  const profile = argOf(argv, 'profile');
   if (!clusterName) throw new Error('--cluster is required');
 
   const credentials = await fromNodeProviderChain(profile ? { profile } : {})();
@@ -38,12 +44,21 @@ async function main() {
 
   // Report the token's own lifetime as the expiry so clients refresh in time.
   const expirationTimestamp = new Date(Date.now() + 55 * 1000).toISOString();
-  process.stdout.write(JSON.stringify({
+  return JSON.stringify({
     kind: 'ExecCredential',
     apiVersion: 'client.authentication.k8s.io/v1beta1',
     spec: {},
     status: { expirationTimestamp, token },
-  }));
+  });
 }
 
-main().catch((e) => { process.stderr.write(`eks-token: ${e.message}\n`); process.exit(1); });
+async function main() {
+  process.stdout.write(await run(process.argv.slice(2)));
+}
+
+// CLI entry only when executed directly (`node eks-token.js …`), not when
+// imported by electron/main.cjs or a test.
+const sameFile = (a, b) => (process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b);
+if (process.argv[1] && sameFile(import.meta.url, pathToFileURL(process.argv[1]).href)) {
+  main().catch((e) => { process.stderr.write(`eks-token: ${e.message}\n`); process.exit(1); });
+}

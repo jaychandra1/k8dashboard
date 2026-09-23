@@ -6,8 +6,8 @@
 //
 // The app (npm start) must be running so this bridge has an API to call. Point
 // it at a non-default address with MCP_API_BASE. Every API call is sent with
-// `Authorization: Bearer <token>` (MCP_API_TOKEN, else K8DASHBOARD_TOKEN, else
-// ~/.config/k8dashboard/token) and `X-K8dashboard-Source: mcp`.
+// `Authorization: Bearer <token>` (MCP_API_TOKEN, else KUBEPILOT_TOKEN, else
+// ~/.config/kubepilot/token) and `X-KubePilot-Source: mcp`.
 //
 // MCP_ALLOW_WRITE=1 only decides which tools this bridge *offers* by default —
 // the app's server is the authority and refuses MCP-sourced mutations unless
@@ -16,9 +16,9 @@
 //   Example Claude Desktop config:
 //   {
 //     "mcpServers": {
-//       "k8dashboard": {
+//       "kubepilot": {
 //         "command": "node",
-//         "args": ["/absolute/path/to/k8dashboard/mcp-stdio.js"],
+//         "args": ["/absolute/path/to/kubepilot/mcp-stdio.js"],
 //         "env": { "MCP_API_BASE": "http://127.0.0.1:3001", "MCP_ALLOW_WRITE": "0" }
 //       }
 //     }
@@ -28,7 +28,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { createMcpServer, readApiToken } from './mcp.js';
 
 const token = String(process.env.MCP_API_TOKEN || '').trim() || readApiToken();
-if (!token) console.error('[k8dashboard MCP] no API token found (set MCP_API_TOKEN / K8DASHBOARD_TOKEN or start the app once to create ~/.config/k8dashboard/token)');
+if (!token) console.error('[KubePilot MCP] no API token found (set MCP_API_TOKEN / KUBEPILOT_TOKEN or start the app once to create ~/.config/kubepilot/token)');
 
 const server = createMcpServer({
   apiBase: process.env.MCP_API_BASE || undefined,
@@ -38,4 +38,4 @@ const server = createMcpServer({
 const transport = new StdioServerTransport();
 await server.connect(transport);
 // stderr is safe for logs (stdout is the JSON-RPC channel).
-console.error('[k8dashboard MCP] stdio server ready');
+console.error('[KubePilot MCP] stdio server ready');

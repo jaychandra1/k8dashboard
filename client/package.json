@@ -1,5 +1,5 @@
 {
-  "name": "k8dashboard-ui",
+  "name": "kubepilot-ui",
   "version": "1.0.0",
   "type": "module",
   "scripts": {

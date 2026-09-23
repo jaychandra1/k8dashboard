@@ -98,8 +98,8 @@ test('ensurePtyHelperExecutable makes the spawn-helper executable', { skip: !isD
 test('node-pty can actually spawn a process (no posix_spawnp failure)', { skip: isWindows }, async () => {
   ensurePtyHelperExecutable({ currentOnly: true, fromUrl: import.meta.url });
   const pty = (await import('node-pty')).default;
-  const out = await ptyRun(pty, '/bin/echo', ['k8dashboard-pty-ok']);
-  assert.match(out, /k8dashboard-pty-ok/);
+  const out = await ptyRun(pty, '/bin/echo', ['kubepilot-pty-ok']);
+  assert.match(out, /kubepilot-pty-ok/);
 });
 
 test('a stripped execute bit is self-healed and the PTY works again', { skip: !isDarwin }, async () => {

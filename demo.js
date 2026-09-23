@@ -3,7 +3,7 @@
 //
 // When the active context is DEMO_CONTEXT, server.js routes every /api/* data
 // and mutation request through handle() below instead of talking to a real
-// cluster. The whole point is that k8dashboard is fully explorable with no
+// cluster. The whole point is that KubePilot is fully explorable with no
 // kubeconfig, no cluster, and no kubectl.
 //
 // The JSON returned here is shaped to EXACTLY match what the corresponding real
@@ -1595,7 +1595,7 @@ export function shellSession(ws, meta = {}) {
 
   const banner = [
     '\r\n\x1b[1;36m╭──────────────────────────────────────────────╮\x1b[0m',
-    '\r\n\x1b[1;36m│\x1b[0m  k8dashboard demo shell (synthetic pod)           \x1b[1;36m│\x1b[0m',
+    '\r\n\x1b[1;36m│\x1b[0m  KubePilot demo shell (synthetic pod)           \x1b[1;36m│\x1b[0m',
     '\r\n\x1b[1;36m╰──────────────────────────────────────────────╯\x1b[0m',
     `\r\n\x1b[90mConnected to ${meta.namespace || 'shop'}/${meta.pod || 'pod'}${meta.container ? ' [' + meta.container + ']' : ''}. This is a demo — no real cluster.\x1b[0m`,
     "\r\n\x1b[90mTry: ls, pwd, whoami, cat <file>, env, help, clear, exit\x1b[0m\r\n\r\n",

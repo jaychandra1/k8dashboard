@@ -17,7 +17,7 @@ import { api, getJson, postJson, putJson, patchJson, del, p, withQuery, wsUrl, s
 
 | export | signature | notes |
 | --- | --- | --- |
-| `api` | axios instance (`baseURL: ''`) | adds `Authorization: Bearer <token>` + `X-Requested-With: k8dashboard`; rejects with `ApiError` |
+| `api` | axios instance (`baseURL: ''`) | adds `Authorization: Bearer <token>` + `X-Requested-With: kubepilot`; rejects with `ApiError` |
 | `getJson(url, {signal, params, headers})` | → `Promise<data>` | use inside `useRequest` and pass the `signal` |
 | `postJson(url, body, opts)` / `putJson` / `patchJson` | → `Promise<data>` | |
 | `del(url, {signal, params, body})` | → `Promise<data>` | |
@@ -28,7 +28,7 @@ import { api, getJson, postJson, putJson, patchJson, del, p, withQuery, wsUrl, s
 | `ApiError` | `{ status, code, message, body, url, isUnauthorized, isAborted, isNetwork }` | |
 | `errorMessage(err, fallback)` | → string | works for ApiError, axios errors, plain errors |
 | `onUnauthorized(cb)` | → unsubscribe | fired **once** per session on a 401 (TokenPrompt uses it) |
-| `bootstrapTokenFromHash()` | → bool | called in `main.jsx`; reads `#token=` / `#/view?token=` into `sessionStorage['k8dashboard.token']` and scrubs the hash |
+| `bootstrapTokenFromHash()` | → bool | called in `main.jsx`; reads `#token=` / `#/view?token=` into `sessionStorage['kubepilot.token']` and scrubs the hash |
 
 ### Migrate `axios.get` + `useEffect` → `useRequest`
 
@@ -103,7 +103,7 @@ Delete `import hljs from 'highlight.js'` and `import 'highlight.js/styles/atom-o
 
 - `useHashRoute()` → `{ route: { view, params[], query{} }, hash, navigate(view, params?, query?, { replace }), back, forward, canBack, canForward, setQuery(patch), isSame(route) }`. Pure helpers `parseHash(hash)`, `buildHash(view, params, query)`; `navigateTo()` for non-React code.
   **App.jsx adoption (App owner):** replace `resourceType` state + the `history` stack with `const { route, navigate, back, forward, canBack, canForward } = useHashRoute()`; `resourceType = route.view`; `setResourceType(k)` → `navigate(k)`; TopBar `onBack={back} canBack={canBack}`; drawer selection → `navigate(route.view, [ns, name])`; namespace filter → `setQuery({ ns })`; Preferences → `navigate('preferences', [section])` (it's `hidden` in the registry so it stays out of nav). Views that own sub-views (argocd/security) use `route.params[0]`.
-- `useDocumentTitle('Pods')` → `Pods · k8dashboard`, restored on unmount.
+- `useDocumentTitle('Pods')` → `Pods · KubePilot`, restored on unmount.
 - `useFocusTrap(ref, active, { initialFocusRef?, getInitialFocus?(root), restoreFocus=true })`.
 - `useVisibility()` → bool.
 - `useRequest`, `useRequestRef` — above.

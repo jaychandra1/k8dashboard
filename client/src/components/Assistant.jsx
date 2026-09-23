@@ -231,7 +231,7 @@ export default function Assistant({ context }) {
               </Button>
             </form>
             {keyError && <div className="assistant-error" role="alert"><Icon name="warning" size={13} /> {keyError}</div>}
-            <p className="assistant-hint" id={`${id}-hint`}>The base URL is everything before <code>/chat/completions</code>. Stored in <code>~/.config/k8dashboard/config.json</code>.</p>
+            <p className="assistant-hint" id={`${id}-hint`}>The base URL is everything before <code>/chat/completions</code>. Stored in <code>~/.config/kubepilot/config.json</code>.</p>
           </div>
         )}
 

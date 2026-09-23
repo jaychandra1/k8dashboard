@@ -82,7 +82,7 @@ const successPage = (ok, msg) => `<!doctype html><meta charset="utf-8"><meta nam
 <div style="font-size:34px;margin-bottom:8px">${ok ? '&#10003;' : '&#9888;'}</div>
 <h2 style="margin:0 0 8px">${ok ? 'Signed in to Azure' : 'Sign-in failed'}</h2>
 <p style="color:#9aa1ad;margin:0 0 6px">${escapeHtml(msg)}</p>
-<p style="color:#6b7280;font-size:13px">You can close this tab and return to k8dashboard.</p>
+<p style="color:#6b7280;font-size:13px">You can close this tab and return to KubePilot.</p>
 </div></body>`;
 
 // Begin the browser auth-code flow. Returns { authUrl } for the client to open

@@ -1,4 +1,4 @@
-# Contributing to k8dashboard
+# Contributing to KubePilot
 
 Thanks for helping. This page covers the local setup, the checks CI runs, and how releases work.
 
@@ -19,7 +19,7 @@ npm run dev                      # UI on :3000, API on :3001
 ```
 
 The backend prints `open http://127.0.0.1:3001/#token=…`. Use that `#token=` fragment on the
-Vite URL too, or set `K8DASHBOARD_TOKEN=dev-token-…` in your shell so it is stable across restarts.
+Vite URL too, or set `KUBEPILOT_TOKEN=dev-token-…` in your shell so it is stable across restarts.
 
 `./run.sh dev` does the same from one command (never with `sudo` and never via `curl | sh`).
 
@@ -81,9 +81,11 @@ Trivy scan of the image (fails on CRITICAL).
    builds all installers, pauses for approval on the `release` environment, then publishes the
    GitHub Release on [jaychandra1/KubePilot](https://github.com/jaychandra1/KubePilot)
    (installers, `SHA256SUMS.txt`, CycloneDX SBOM) and pushes
-   `ghcr.io/jaychandra1/k8dashboard:{v1.2.0,1.2,latest}` for amd64 + arm64.
-   Optional: add a `RELEASE_TOKEN` secret (fine-grained PAT on KubePilot with
-   Contents: write) to publish there. Without it the GitHub Release is created on this repo.
+   `ghcr.io/jaychandra1/kubepilot:{v1.2.0,1.2,latest}` for amd64 + arm64.
+   The `release` job needs a `KUBEPILOT_RELEASE_TOKEN` secret (fine-grained PAT on
+   jaychandra1/KubePilot with Contents: read & write) and fails early with a clear error if it is
+   missing. The container image is pushed with this repo's `GITHUB_TOKEN`; after the first push,
+   make the `kubepilot` package public and link it to KubePilot in its Package settings.
 
 Manual runs (Actions → Build & Release → Run workflow) are only accepted from `main`.
 

@@ -57,10 +57,10 @@ async function pollHealthz(port, timeoutMs, child) {
 
 export async function startServer({ env = {}, timeoutMs = 20000 } = {}) {
   const port = await freePort();
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'k8dashboard-test-home-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'kubepilot-test-home-'));
   const childEnv = {
     ...process.env,
-    K8DASHBOARD_TOKEN: TOKEN,
+    KUBEPILOT_TOKEN: TOKEN,
     PORT: String(port),
     HOST: '127.0.0.1',
     KUBECONFIG: '/nonexistent',

@@ -1,14 +1,17 @@
 name: Build & Release
 
-# Build the k8dashboard desktop app for macOS, Windows and Linux in parallel, then
-# publish a GitHub Release on the public repo jaychandra1/KubePilot (installers +
-# SHA256SUMS.txt + CycloneDX SBOM) and push the Docker image to GHCR.
+# Build the KubePilot desktop app for macOS, Windows and Linux in parallel, then
+# publish a GitHub Release on the PUBLIC repo jaychandra1/KubePilot (installers +
+# SHA256SUMS.txt + CycloneDX SBOM) and push the Docker image to
+# ghcr.io/jaychandra1/kubepilot. The source stays in this private repo.
 #
-# GitHub artifact attestations cannot be stored from a user-owned private repo
-# (the persist API always targets the workflow's own repo and returns 404).
-# RELEASE_TOKEN is a fine-grained PAT on jaychandra1/KubePilot with
-# Contents: write — store it as a repo or `release` environment secret.
-# Without it the installers are published on this repo; the image still goes to GHCR.
+# KUBEPILOT_RELEASE_TOKEN is a fine-grained PAT scoped to jaychandra1/KubePilot
+# with "Contents: Read and write" — store it as a secret on the `release`
+# environment (or the repo). The release job fails early without it.
+#
+# GitHub artifact attestations are not available on private repos without
+# GitHub Enterprise, so the attestation step is continue-on-error.
+#
 # Trigger it either way:
 #   * push a version tag that matches the VERSION file (`git push origin v1.2.0`), or
 #   * Actions -> Build & Release -> Run workflow, on `main` only; the tag is
@@ -143,7 +146,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
-          name: k8dashboard-${{ matrix.artifact }}
+          name: kubepilot-${{ matrix.artifact }}
           if-no-files-found: error
           retention-days: 7
           path: |
@@ -166,6 +169,9 @@ jobs:
     environment: release
     permissions:
       contents: write
+      # For actions/attest-build-provenance (best effort, see below).
+      id-token: write
+      attestations: write
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -189,21 +195,19 @@ jobs:
           npm ci --omit=dev --ignore-scripts
           npm ci --prefix client --omit=dev --ignore-scripts
 
-      - name: Resolve publish target
-        id: dest
+      # Publishing happens on the PUBLIC repo, which needs a PAT — GITHUB_TOKEN
+      # is scoped to this (source) repo only. Fail fast with instructions
+      # instead of creating a release in the wrong place.
+      - name: Require KUBEPILOT_RELEASE_TOKEN
         env:
-          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          KUBEPILOT_RELEASE_TOKEN: ${{ secrets.KUBEPILOT_RELEASE_TOKEN }}
         run: |
           set -euo pipefail
-          if [ -n "$RELEASE_TOKEN" ]; then
-            echo "has_token=true" >> "$GITHUB_OUTPUT"
-            echo "repo=${RELEASE_REPO}" >> "$GITHUB_OUTPUT"
-            echo "Publishing to ${RELEASE_REPO} with RELEASE_TOKEN"
-          else
-            echo "has_token=false" >> "$GITHUB_OUTPUT"
-            echo "repo=${GITHUB_REPOSITORY}" >> "$GITHUB_OUTPUT"
-            echo "::notice::RELEASE_TOKEN is not set — publishing the GitHub Release on ${GITHUB_REPOSITORY}. Add a RELEASE_TOKEN secret (fine-grained PAT for ${RELEASE_REPO} with Contents: write) to publish on KubePilot."
+          if [ -z "${KUBEPILOT_RELEASE_TOKEN:-}" ]; then
+            echo "::error::secrets.KUBEPILOT_RELEASE_TOKEN is empty. Create a fine-grained personal access token (GitHub → Settings → Developer settings → Fine-grained tokens) with Repository access limited to ${RELEASE_REPO} and the permission 'Contents: Read and write', then add it as KUBEPILOT_RELEASE_TOKEN under Settings → Environments → release (or Settings → Secrets and variables → Actions) on ${GITHUB_REPOSITORY}."
+            exit 1
           fi
+          echo "KUBEPILOT_RELEASE_TOKEN is set; publishing to ${RELEASE_REPO}"
 
       - name: Download all build artifacts
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
@@ -227,38 +231,71 @@ jobs:
         with:
           path: .
           format: cyclonedx-json
-          output-file: dist/k8dashboard-${{ needs.verify.outputs.tag }}.cdx.json
-          artifact-name: k8dashboard-${{ needs.verify.outputs.tag }}.cdx.json
+          output-file: dist/kubepilot-${{ needs.verify.outputs.tag }}.cdx.json
+          artifact-name: kubepilot-${{ needs.verify.outputs.tag }}.cdx.json
           upload-artifact: false
           upload-release-assets: false
 
-      - name: Release notes
+      # Artifact attestations are not available on private repositories without
+      # GitHub Enterprise (the persist API returns 404), so this is best effort:
+      # it works automatically if the plan ever allows it and never blocks the release.
+      - name: Attest build provenance (best effort)
+        continue-on-error: true
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/*.dmg
+            dist/*.exe
+            dist/*.AppImage
+            dist/*.deb
+            dist/SHA256SUMS.txt
+
+      # Release body = the "## [<version>]" section of CHANGELOG.md, with a
+      # one-line fallback when that section is missing.
+      - name: Release notes from CHANGELOG.md
+        shell: bash
         env:
           VERSION: ${{ needs.verify.outputs.version }}
+          TAG: ${{ needs.verify.outputs.tag }}
           SHA: ${{ github.sha }}
           SRC: ${{ github.repository }}
         run: |
           set -euo pipefail
+          awk -v ver="$VERSION" '
+            index($0, "## [" ver "]") == 1 { on = 1; next }
+            on && (/^## \[/ || /^\[[^]]+\]: /) { exit }
+            on { print }
+          ' CHANGELOG.md | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' > notes.md
+          if [ -s notes.md ]; then
+            echo "Using the CHANGELOG.md section for ${VERSION}"
+          else
+            echo "::warning::CHANGELOG.md has no '## [${VERSION}]' section — using a one-line release body"
+            echo "KubePilot ${VERSION} — desktop installers for macOS (Apple Silicon), Windows and Linux." > notes.md
+          fi
           {
-            echo "k8dashboard **${VERSION}**"
+            echo "# KubePilot ${VERSION}"
             echo
-            echo "Desktop installers for macOS (Apple Silicon), Windows and Linux."
-            echo "Checksums are in \`SHA256SUMS.txt\`."
+            cat notes.md
             echo
-            echo "Built from [${SRC}](https://github.com/${SRC}) \`${SHA}\`."
+            echo "---"
+            echo
+            echo "Checksums are in \`SHA256SUMS.txt\`; the CycloneDX SBOM is \`kubepilot-${TAG}.cdx.json\`."
+            echo "Container image: \`ghcr.io/jaychandra1/kubepilot:${TAG}\`."
+            echo "Built from \`${SRC}@${SHA:0:12}\`."
           } > release-body.md
+          cat release-body.md
 
-      - name: Publish release
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
-          repository: ${{ steps.dest.outputs.repo }}
-          token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          repository: jaychandra1/KubePilot
+          token: ${{ secrets.KUBEPILOT_RELEASE_TOKEN }}
           tag_name: ${{ needs.verify.outputs.tag }}
-          # KubePilot has no source SHA; tag its default branch. Same-repo
-          # releases pin the commit that built the installers.
-          target_commitish: ${{ steps.dest.outputs.has_token == 'true' && 'main' || github.sha }}
-          name: k8dashboard ${{ needs.verify.outputs.version }}
+          # No target_commitish: KubePilot holds no source, so the tag is created
+          # on its default branch (the repo must have at least one commit).
+          name: KubePilot ${{ needs.verify.outputs.version }}
           draft: false
+          make_latest: true
           generate_release_notes: false
           body_path: release-body.md
           fail_on_unmatched_files: true
@@ -286,12 +323,17 @@ jobs:
         with:
           persist-credentials: false
 
+      # The image is pushed with GITHUB_TOKEN, so the GHCR package is created
+      # under this (source) repo's owner. After the FIRST push: open the
+      # `kubepilot` package on GHCR → Package settings → set visibility to
+      # Public, and under "Manage Actions access / Connect repository" link it
+      # to jaychandra1/KubePilot so the public repo shows the image.
       - name: Image name
         id: img
         shell: bash
         env:
           OWNER: ${{ github.repository_owner }}
-        run: echo "name=ghcr.io/${OWNER,,}/k8dashboard" >> "$GITHUB_OUTPUT"
+        run: echo "name=ghcr.io/${OWNER,,}/kubepilot" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU (arm64 emulation)
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
@@ -315,8 +357,14 @@ jobs:
             type=semver,pattern=v{{version}},value=${{ needs.verify.outputs.tag }}
             type=semver,pattern={{major}}.{{minor}},value=${{ needs.verify.outputs.tag }}
             type=raw,value=latest
+          # metadata-action defaults source/url/documentation to the workflow's
+          # own (private) repo; point them at the public KubePilot repo instead.
           labels: |
-            org.opencontainers.image.title=k8dashboard
+            org.opencontainers.image.title=KubePilot
+            org.opencontainers.image.description=Browse and operate Kubernetes clusters from your kubeconfig — dashboards, logs, shell, topology, Helm, Argo CD, Security Center.
+            org.opencontainers.image.source=https://github.com/jaychandra1/KubePilot
+            org.opencontainers.image.url=https://github.com/jaychandra1/KubePilot
+            org.opencontainers.image.documentation=https://github.com/jaychandra1/KubePilot#readme
             org.opencontainers.image.version=${{ needs.verify.outputs.version }}
             org.opencontainers.image.licenses=MIT
 

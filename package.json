@@ -1,5 +1,5 @@
 {
-  "name": "k8dashboard",
+  "name": "kubepilot",
   "version": "1.0.0",
   "description": "A native desktop UI for browsing and operating Kubernetes clusters",
   "author": {
@@ -7,7 +7,7 @@
     "email": "praveensinghraghav96@gmail.com"
   },
   "license": "MIT",
-  "desktopName": "k8dashboard",
+  "desktopName": "kubepilot",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -25,10 +25,11 @@
     "build": "npm run version:sync && cd client && npm run build",
     "start": "node server.js",
     "app": "electron .",
-    "app:pack": "npm run fetch:trivy && npm run build && electron-builder --dir --mac",
-    "app:dist": "npm run fetch:trivy && npm run build && electron-builder --mac",
-    "dist": "npm run fetch:trivy && npm run build && electron-builder --publish never",
-    "mcp": "node mcp-stdio.js"
+    "app:pack": "npm run build && electron-builder --dir --mac",
+    "app:dist": "npm run build && electron-builder --mac",
+    "dist": "npm run build && electron-builder --publish never",
+    "mcp": "node mcp-stdio.js",
+    "dist:bundled-trivy": "npm run fetch:trivy && npm run build && electron-builder --publish never -c.extraResources.from=bin -c.extraResources.to=bin -c.extraResources.filter=trivy*"
   },
   "overrides": {
     "qs": "^6.16.0"
@@ -68,9 +69,10 @@
     "prettier": "^3.9.8"
   },
   "build": {
-    "appId": "com.k8dashboard.desktop",
-    "productName": "k8dashboard",
+    "appId": "com.kubepilot.desktop",
+    "productName": "KubePilot",
     "asar": false,
+    "npmRebuild": false,
     "afterPack": "electron/after-pack.cjs",
     "directories": {
       "output": "release",
@@ -87,16 +89,11 @@
       "!**/*.map",
       "!**/*.md",
       "!**/*.markdown",
-      "!**/{test,tests,__tests__,__mocks__,example,examples,docs,doc,.github,.vscode,.idea}/**"
-    ],
-    "extraResources": [
-      {
-        "from": "bin",
-        "to": "bin",
-        "filter": [
-          "trivy*"
-        ]
-      }
+      "!**/{test,tests,__tests__,__mocks__,example,examples,docs,doc,.github,.vscode,.idea}/**",
+      "!eslint.config.js",
+      "!**/node_modules/@types/**",
+      "!**/node_modules/**/*.ts",
+      "!**/node_modules/**/{CHANGELOG*,changelog*,HISTORY*,*.tsbuildinfo,tsconfig*.json,.eslintrc*,.prettierrc*,.travis.yml,.npmignore,.editorconfig}"
     ],
     "mac": {
       "category": "public.app-category.developer-tools",
@@ -122,7 +119,7 @@
       "category": "Development",
       "icon": "build/icon.png",
       "synopsis": "A desktop UI for browsing and operating Kubernetes clusters",
-      "description": "k8dashboard is a native desktop app for browsing and operating any Kubernetes cluster from your local kubeconfig — live dashboards, logs, an in-pod shell, topology, Helm, Argo CD, a Security Center and one-click EKS/AKS onboarding.",
+      "description": "KubePilot is a native desktop app for browsing and operating any Kubernetes cluster from your local kubeconfig — live dashboards, logs, an in-pod shell, topology, Helm, Argo CD, a Security Center and one-click EKS/AKS onboarding.",
       "maintainer": "Praveen Kumar <praveensinghraghav96@gmail.com>",
       "vendor": "Praveen Kumar",
       "syncDesktopName": true,
@@ -140,21 +137,28 @@
       ]
     },
     "nsis": {
-      "shortcutName": "k8dashboard",
-      "uninstallDisplayName": "k8dashboard"
+      "shortcutName": "KubePilot",
+      "uninstallDisplayName": "KubePilot"
     },
     "deb": {
       "fpm": [
+        "--replaces",
+        "k8dashboard",
         "--replaces",
         "k8s-manager-ui",
         "--replaces",
         "k8sight",
         "--conflicts",
+        "k8dashboard",
+        "--conflicts",
         "k8s-manager-ui",
         "--conflicts",
         "k8sight"
       ]
-    }
+    },
+    "electronLanguages": [
+      "en-US"
+    ]
   },
   "engines": {
     "node": ">=22"

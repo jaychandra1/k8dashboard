@@ -1,15 +1,15 @@
 <div align="center">
 
-<img src="build/icon.png" alt="k8dashboard" width="104" />
+<img src="build/icon.png" alt="KubePilot" width="104" />
 
-# k8dashboard
+# KubePilot
 
 **See your whole cluster in one beautiful window.**
 
 A native desktop app (macOS · Windows · Linux) — and a Docker image — for browsing and operating any Kubernetes cluster from your local `kubeconfig`.
 
-[![CI](https://github.com/jaychandra1/k8dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/jaychandra1/k8dashboard/actions/workflows/ci.yml)
-[![Build & Release](https://github.com/jaychandra1/k8dashboard/actions/workflows/release.yml/badge.svg)](https://github.com/jaychandra1/k8dashboard/actions/workflows/release.yml)
+[![CI](https://github.com/jaychandra1/KubePilot/actions/workflows/ci.yml/badge.svg)](https://github.com/jaychandra1/KubePilot/actions/workflows/ci.yml)
+[![Build & Release](https://github.com/jaychandra1/KubePilot/actions/workflows/release.yml/badge.svg)](https://github.com/jaychandra1/KubePilot/actions/workflows/release.yml)
 [![Latest release](https://img.shields.io/github/v/release/jaychandra1/KubePilot?sort=semver)](https://github.com/jaychandra1/KubePilot/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/jaychandra1/KubePilot/total)](https://github.com/jaychandra1/KubePilot/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -17,7 +17,7 @@ A native desktop app (macOS · Windows · Linux) — and a Docker image — for 
 
 </div>
 
-![k8dashboard cluster dashboard](docs/screenshot-dashboard.png)
+![KubePilot cluster dashboard](docs/screenshot-dashboard.png)
 
 > [!TIP]
 > Grab the latest macOS `.dmg`, Windows `.exe`, or Linux `.AppImage`/`.deb` from the [**Releases**](https://github.com/jaychandra1/KubePilot/releases/latest) page — no build required.
@@ -54,11 +54,11 @@ A native desktop app (macOS · Windows · Linux) — and a Docker image — for 
 - Docked coding agents — detects Claude Code, GitHub Copilot CLI, Gemini CLI, Codex and opencode on your `PATH`.
 - Doubles as an [MCP](https://modelcontextprotocol.io) server so external agents can inspect the cluster ([details](#connect-ai-agents-mcp)).
 
-## How k8dashboard compares
+## How KubePilot compares
 
-k8dashboard is a **desktop UI for clusters you already have** — closest in spirit to **Lens** and **k9s**, not to a management *platform* like **Rancher**. Rancher runs *inside* your clusters to provision and govern a whole fleet for a team; k8dashboard runs on your laptop, reads your kubeconfig, and needs nothing installed in-cluster.
+KubePilot is a **desktop UI for clusters you already have** — closest in spirit to **Lens** and **k9s**, not to a management *platform* like **Rancher**. Rancher runs *inside* your clusters to provision and govern a whole fleet for a team; KubePilot runs on your laptop, reads your kubeconfig, and needs nothing installed in-cluster.
 
-| | **k8dashboard** | **Rancher** | **Lens / k9s** |
+| | **KubePilot** | **Rancher** | **Lens / k9s** |
 |---|:---:|:---:|:---:|
 | Category | Native desktop UI | Multi-cluster platform (server) | Desktop UI / terminal UI |
 | Setup | Download & run | Deploy & operate in-cluster | Download & run |
@@ -72,7 +72,7 @@ k8dashboard is a **desktop UI for clusters you already have** — closest in spi
 | Free & open-source | ✅ | ✅ | k9s ✅ · Lens: sign-in required |
 
 > [!NOTE]
-> Reach for **Rancher** to provision and govern a fleet of clusters for a team. Reach for **k8dashboard** as a fast local cockpit for clusters you already have — dashboards, logs, shell, topology, security scans and an AI assistant, with nothing to deploy. They coexist happily.
+> Reach for **Rancher** to provision and govern a fleet of clusters for a team. Reach for **KubePilot** as a fast local cockpit for clusters you already have — dashboards, logs, shell, topology, security scans and an AI assistant, with nothing to deploy. They coexist happily.
 
 ## Quick start
 
@@ -80,7 +80,7 @@ k8dashboard is a **desktop UI for clusters you already have** — closest in spi
 > No cluster handy? Launch the app and click **Explore the demo** (or pick the **demo** context) to browse and operate a synthetic cluster — every feature works, no setup needed.
 
 > [!NOTE]
-> To use a real cluster, k8dashboard needs `kubectl` on your `PATH` and a working `kubeconfig` (`~/.kube/config`, or set `KUBECONFIG`). The `helm` CLI is **not** required — Helm releases are read straight from the Kubernetes API. The packaged desktop app bundles its own Node runtime; building from source needs **Node.js 22+** (see `.nvmrc`).
+> To use a real cluster, KubePilot needs `kubectl` on your `PATH` and a working `kubeconfig` (`~/.kube/config`, or set `KUBECONFIG`). The `helm` CLI is **not** required — Helm releases are read straight from the Kubernetes API. The packaged desktop app bundles its own Node runtime; building from source needs **Node.js 22+** (see `.nvmrc`).
 
 ### Desktop app
 
@@ -96,12 +96,12 @@ npm run dist        # fetches trivy (pinned, checksum-verified), builds the UI, 
 
 | OS | Artifact |
 |----|----------|
-| macOS | `k8dashboard-macos.dmg` (**Apple Silicon only** — Intel Macs are not supported) |
-| Windows | `k8dashboard-windows.exe` (NSIS) |
-| Linux | `k8dashboard-linux.AppImage` and `k8dashboard-linux.deb` |
+| macOS | `KubePilot-macos.dmg` (**Apple Silicon only** — Intel Macs are not supported) |
+| Windows | `KubePilot-windows.exe` (NSIS) |
+| Linux | `KubePilot-linux.AppImage` and `KubePilot-linux.deb` |
 
 > [!IMPORTANT]
-> Builds are ad-hoc signed (no paid certificate), so the OS will warn on first launch. On macOS, right-click the app → **Open**. Alternatively `xattr -dr com.apple.quarantine "/Applications/k8dashboard.app"` removes the quarantine flag — understand that this tells Gatekeeper to skip its checks for that bundle, so only do it for a download whose `SHA256SUMS.txt` you have verified. On Windows, SmartScreen → **More info → Run anyway**.
+> Builds are ad-hoc signed (no paid certificate), so the OS will warn on first launch. On macOS, right-click the app → **Open**. Alternatively `xattr -dr com.apple.quarantine "/Applications/KubePilot.app"` removes the quarantine flag — understand that this tells Gatekeeper to skip its checks for that bundle, so only do it for a download whose `SHA256SUMS.txt` you have verified. On Windows, SmartScreen → **More info → Run anyway**.
 
 ### Docker
 
@@ -110,7 +110,7 @@ The image (`linux/amd64` + `linux/arm64`) bundles Node, `kubectl`, `kubelogin` a
 ```bash
 docker run --rm -p 127.0.0.1:8080:3001 \
   -v "$HOME/.kube:/home/node/.kube:ro" \
-  ghcr.io/jaychandra1/k8dashboard:latest
+  ghcr.io/jaychandra1/kubepilot:latest
 ```
 
 Every API call needs a **bearer token**. The container generates one at boot and prints the login URL — read it with `docker logs`:
@@ -120,10 +120,10 @@ docker logs <container> 2>&1 | grep '#token='
 # open http://127.0.0.1:3001/#token=…   ← use your published port instead, e.g. http://localhost:8080/#token=…
 ```
 
-Or choose the token yourself with `-e K8DASHBOARD_TOKEN=<your-secret>`. Tags: `latest`, `<major.minor>` (e.g. `1.2`) and `v<semver>` (e.g. `v1.2.0`).
+Or choose the token yourself with `-e KUBEPILOT_TOKEN=<your-secret>`. Tags: `latest`, `<major.minor>` (e.g. `1.2`) and `v<semver>` (e.g. `v1.2.0`).
 
 > [!WARNING]
-> Publish to `127.0.0.1` unless you mean to expose it. If the container is reached through another hostname (a reverse proxy), allow it with `-e ALLOWED_HOSTS=k8dashboard.internal` — other `Host` headers are refused with HTTP 421. See [Security](#security).
+> Publish to `127.0.0.1` unless you mean to expose it. If the container is reached through another hostname (a reverse proxy), allow it with `-e ALLOWED_HOSTS=kubepilot.internal` — other `Host` headers are refused with HTTP 421. See [Security](#security).
 
 <details>
 <summary>Docker notes (local clusters, OIDC)</summary>
@@ -158,23 +158,23 @@ The app is also an [MCP](https://modelcontextprotocol.io) server exposing the sa
 > [!NOTE]
 > Write tools are **off by default**. Enable them in **Preferences → MCP Server → Write access**, or start with `MCP_ALLOW_WRITE=1`. Reconnect the agent to pick up the new tool set.
 
-`/mcp` requires the same bearer token as the API. The desktop app generates a fresh token per launch and prints it in its log; a `node server.js` / Docker run prints it at boot; the token file lives at `~/.config/k8dashboard/token`.
+`/mcp` requires the same bearer token as the API. The desktop app generates a fresh token per launch and prints it in its log; a `node server.js` / Docker run prints it at boot; the token file lives at `~/.config/kubepilot/token`.
 
 **HTTP** (recommended) — while the app runs, agents connect to `http://localhost:3001/mcp`:
 
 ```bash
-claude mcp add --transport http k8dashboard http://localhost:3001/mcp \
-  --header "Authorization: Bearer $(cat ~/.config/k8dashboard/token)"
+claude mcp add --transport http kubepilot http://localhost:3001/mcp \
+  --header "Authorization: Bearer $(cat ~/.config/kubepilot/token)"
 ```
 
-**Stdio** — for agents launched by command; the app must be running. The bridge reads `MCP_API_TOKEN` (falling back to `K8DASHBOARD_TOKEN`, then `~/.config/k8dashboard/token`):
+**Stdio** — for agents launched by command; the app must be running. The bridge reads `MCP_API_TOKEN` (falling back to `KUBEPILOT_TOKEN`, then `~/.config/kubepilot/token`):
 
 ```jsonc
 {
   "mcpServers": {
-    "k8dashboard": {
+    "kubepilot": {
       "command": "node",
-      "args": ["/absolute/path/to/k8dashboard/mcp-stdio.js"],
+      "args": ["/absolute/path/to/kubepilot/mcp-stdio.js"],
       "env": { "MCP_API_BASE": "http://127.0.0.1:3001", "MCP_API_TOKEN": "<token>", "MCP_ALLOW_WRITE": "0" }
     }
   }
@@ -187,26 +187,26 @@ All tools act on the **currently selected context**. Run the bridge standalone w
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `K8DASHBOARD_TOKEN` | Bearer token required on `/api/*`, `/mcp` and `/ws/exec` | generated → `~/.config/k8dashboard/token` |
+| `KUBEPILOT_TOKEN` | Bearer token required on `/api/*`, `/mcp` and `/ws/exec` | generated → `~/.config/kubepilot/token` |
 | `KUBECONFIG` | Path to kubeconfig | `~/.kube/config` |
 | `PORT` | Port the backend listens on | `3001` |
 | `HOST` | Interface the backend binds | `127.0.0.1` (Docker sets `0.0.0.0`) |
-| `ALLOWED_HOSTS` | Extra `Host` header values accepted besides loopback (comma-separated, e.g. `k8dashboard.internal:8080`) | — |
+| `ALLOWED_HOSTS` | Extra `Host` header values accepted besides loopback (comma-separated, e.g. `kubepilot.internal:8080`) | — |
 | `ALLOWED_ORIGINS` | Extra browser origins allowed to call `/api` and `/mcp` (comma-separated) | — |
 | `LLM_BASE_URL` | OpenAI-compatible endpoint for the AI assistant | — |
 | `LLM_API_KEY` | API key for the assistant (also settable in Preferences → AI) | — |
 | `LLM_MODEL` | Model the assistant requests | — |
 | `MCP_ALLOW_WRITE` | Enable MCP write/destructive tools | `0` (read-only) |
 | `MCP_API_BASE` | API base URL the stdio MCP bridge targets | `http://127.0.0.1:3001` |
-| `MCP_API_TOKEN` | Token the stdio MCP bridge sends | `K8DASHBOARD_TOKEN` / token file |
+| `MCP_API_TOKEN` | Token the stdio MCP bridge sends | `KUBEPILOT_TOKEN` / token file |
 
-App data (token, assistant config, scan cache) lives in `~/.config/k8dashboard`.
+App data (token, assistant config, scan cache) lives in `~/.config/kubepilot`.
 
 ## Security
 
 The API, `/mcp` and the `/ws/exec` shell carry your kubeconfig's full read/write access, so the backend is protected by a **bearer token** and locked to the local machine by default. Report vulnerabilities as described in [SECURITY.md](SECURITY.md).
 
-- **Token auth on every request** — `Authorization: Bearer <token>` on `/api/*` and `/mcp`, `?token=` on the `/ws/exec` upgrade. Only `GET /healthz` and `GET /api/version` are public. The token comes from `K8DASHBOARD_TOKEN`, else `~/.config/k8dashboard/token` (auto-generated, mode `0600`). The server prints the login URL `http://127.0.0.1:3001/#token=<token>` at boot; the UI moves the token from the URL fragment into `sessionStorage`.
+- **Token auth on every request** — `Authorization: Bearer <token>` on `/api/*` and `/mcp`, `?token=` on the `/ws/exec` upgrade. Only `GET /healthz` and `GET /api/version` are public. The token comes from `KUBEPILOT_TOKEN`, else `~/.config/kubepilot/token` (auto-generated, mode `0600`). The server prints the login URL `http://127.0.0.1:3001/#token=<token>` at boot; the UI moves the token from the URL fragment into `sessionStorage`.
 - **Desktop app** — generates a fresh random token per launch, starts the backend on a port it verified is free (never attaching to a process that already listens there), passes only an allow-listed environment to it, keeps the renderer sandboxed with navigation pinned to the backend origin, and ships with Electron fuses that disable `ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS` and `--inspect`.
 - **Loopback by default** — binds `127.0.0.1`; set `HOST=0.0.0.0` only to expose it deliberately (the Docker image does this so its published port works).
 - **Host allowlist** — only `localhost`, `127.0.0.1`, `[::1]` (plus `ALLOWED_HOSTS`) are accepted as `Host`; anything else gets HTTP 421, which defeats DNS rebinding.

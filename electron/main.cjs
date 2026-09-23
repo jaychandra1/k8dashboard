@@ -1,4 +1,4 @@
-// Electron main process for k8dashboard.
+// Electron main process for KubePilot.
 //
 // Responsibilities:
 //   1. Repair PATH — a Finder-launched .app inherits only a minimal PATH, so
@@ -111,7 +111,19 @@ const ENV_EXACT = new Set([
   'ALLOWED_ORIGINS',
   'RATE_LIMIT_MAX',
 ]);
-const ENV_PREFIXES = ['LLM_', 'MCP_', 'AWS_', 'AZURE_', 'GOOGLE_', 'KUBE', 'K8DASHBOARD_', 'K8SIGHT_'];
+// K8DASHBOARD_ / K8SIGHT_ are the previous product names; lib/paths.mjs still
+// reads them as fallbacks, so they are forwarded too.
+const ENV_PREFIXES = [
+  'LLM_',
+  'MCP_',
+  'AWS_',
+  'AZURE_',
+  'GOOGLE_',
+  'KUBE',
+  'KUBEPILOT_',
+  'K8DASHBOARD_',
+  'K8SIGHT_',
+];
 
 function backendEnv({ fixedPath, port, token }) {
   const env = {};
@@ -128,7 +140,7 @@ function backendEnv({ fixedPath, port, token }) {
   env.NODE_ENV = 'production';
   env.HOST = '127.0.0.1';
   env.PORT = String(port);
-  env.K8DASHBOARD_TOKEN = token;
+  env.KUBEPILOT_TOKEN = token;
   return env;
 }
 
@@ -175,7 +187,7 @@ function startServer({ fixedPath, port, token }) {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
   } catch (err) {
-    dialog.showErrorBox('k8dashboard', `Failed to start the backend:\n${err.message}`);
+    dialog.showErrorBox('KubePilot', `Failed to start the backend:\n${err.message}`);
     app.quit();
     return;
   }
@@ -193,10 +205,10 @@ function startServer({ fixedPath, port, token }) {
     if (!app.isQuitting && code !== 0 && code !== null) {
       const portTaken = /EADDRINUSE|already in use/i.test(stderrTail);
       const detail = portTaken
-        ? `Port ${port} was taken by another process while k8dashboard was starting. Relaunch the app.`
+        ? `Port ${port} was taken by another process while KubePilot was starting. Relaunch the app.`
         : `The backend exited unexpectedly (code ${code}).` +
           (stderrTail.trim() ? `\n\n${stderrTail.trim().split('\n').slice(-4).join('\n')}` : '');
-      dialog.showErrorBox('k8dashboard', detail);
+      dialog.showErrorBox('KubePilot', detail);
       app.quit();
     }
   });
@@ -267,7 +279,7 @@ function createWindow() {
     height: 900,
     minWidth: 960,
     minHeight: 600,
-    title: 'k8dashboard',
+    title: 'KubePilot',
     // Match the app's dark surface — no separate gray macOS title bar. On
     // macOS `hiddenInset` floats the traffic lights over the (black) content;
     // the frontend adds a draggable top strip via the `is-electron` class.
@@ -330,7 +342,7 @@ async function boot() {
   backendPort = await findFreePort(PREFERRED_PORT);
   backendOrigin = `http://127.0.0.1:${backendPort}`;
   if (backendPort !== PREFERRED_PORT) {
-    console.warn(`[k8dashboard] port ${PREFERRED_PORT} is busy; backend will use ${backendPort}`);
+    console.warn(`[KubePilot] port ${PREFERRED_PORT} is busy; backend will use ${backendPort}`);
   }
 
   startServer({ fixedPath: resolveUserPath(), port: backendPort, token: authToken });
@@ -345,7 +357,7 @@ async function boot() {
     mainWindow.loadURL(`${backendOrigin}/#token=${authToken}`);
   } else if (serverProcess) {
     dialog.showErrorBox(
-      'k8dashboard',
+      'KubePilot',
       `The backend did not become ready on port ${backendPort} within ${READY_TIMEOUT_MS / 1000}s.\n` +
         'Check the log output and relaunch the app.'
     );

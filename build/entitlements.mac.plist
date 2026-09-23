@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  Entitlements for a Developer-ID-signed, hardened-runtime build of k8dashboard.
+  Entitlements for a Developer-ID-signed, hardened-runtime build of KubePilot.
   Referenced by package.json (build.mac.entitlements / entitlementsInherit) so
   enabling notarization is a config flip: set mac.identity + hardenedRuntime.
   Today the app is ad-hoc signed without the hardened runtime, so this file is
