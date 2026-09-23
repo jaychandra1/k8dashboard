@@ -116,7 +116,10 @@ const SSO_PROBE_REGIONS = ['us-east-1', 'eu-west-1', 'us-west-2', 'eu-central-1'
 
 export async function ssoStartDeviceFlow({ startUrl, ssoRegion }) {
   if (!startUrl) throw new Error('An SSO start URL is required');
-  const regions = ssoRegion ? [ssoRegion] : SSO_PROBE_REGIONS;
+  // Try the user's region first (if given), then auto-detect: Identity Center
+  // is regional and StartDeviceAuthorization returns InvalidRequestException
+  // when the start URL belongs to an instance in a different region.
+  const regions = ssoRegion ? [ssoRegion, ...SSO_PROBE_REGIONS.filter((r) => r !== ssoRegion)] : SSO_PROBE_REGIONS;
   let lastErr;
   for (const region of regions) {
     try {
@@ -132,7 +135,10 @@ export async function ssoStartDeviceFlow({ startUrl, ssoRegion }) {
       };
     } catch (e) { lastErr = e; /* wrong region → try the next */ }
   }
-  throw new Error(`Could not start AWS SSO sign-in for ${startUrl} — check the start URL. (${lastErr?.name || lastErr?.message || 'no region matched'})`);
+  const hint = lastErr?.name === 'InvalidRequestException'
+    ? 'AWS did not recognise this start URL in any region it was tried in — check the URL (it should look like https://<id>.awsapps.com/start) and, if you typed a region, that it matches your IAM Identity Center region.'
+    : 'check the start URL and your network connection.';
+  throw new Error(`Could not start AWS SSO sign-in for ${startUrl} — ${hint} (${lastErr?.name || lastErr?.message || 'no region matched'})`);
 }
 
 // The SDK's `fromSSO` (used by fromNodeProviderChain for an SSO profile) reads
