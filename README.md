@@ -84,7 +84,7 @@ k8dashboard is a **desktop UI for clusters you already have** — closest in spi
 
 ### Desktop app
 
-Most people just [download a build](https://github.com/jaychandra1/KubePilot/releases/latest). Every release ships a `SHA256SUMS.txt`, a CycloneDX SBOM and a signed [build-provenance attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations) per installer (`gh attestation verify k8dashboard-macos.dmg --repo jaychandra1/KubePilot`).
+Most people just [download a build](https://github.com/jaychandra1/KubePilot/releases/latest). Every release ships a `SHA256SUMS.txt` and a CycloneDX SBOM.
 
 To build it yourself:
 
@@ -101,7 +101,7 @@ npm run dist        # fetches trivy (pinned, checksum-verified), builds the UI, 
 | Linux | `k8dashboard-linux.AppImage` and `k8dashboard-linux.deb` |
 
 > [!IMPORTANT]
-> Builds are ad-hoc signed (no paid certificate), so the OS will warn on first launch. On macOS, right-click the app → **Open**. Alternatively `xattr -dr com.apple.quarantine "/Applications/k8dashboard.app"` removes the quarantine flag — understand that this tells Gatekeeper to skip its checks for that bundle, so only do it for a download whose `SHA256SUMS.txt` / attestation you have verified. On Windows, SmartScreen → **More info → Run anyway**.
+> Builds are ad-hoc signed (no paid certificate), so the OS will warn on first launch. On macOS, right-click the app → **Open**. Alternatively `xattr -dr com.apple.quarantine "/Applications/k8dashboard.app"` removes the quarantine flag — understand that this tells Gatekeeper to skip its checks for that bundle, so only do it for a download whose `SHA256SUMS.txt` you have verified. On Windows, SmartScreen → **More info → Run anyway**.
 
 ### Docker
 

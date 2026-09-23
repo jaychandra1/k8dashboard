@@ -56,4 +56,4 @@ Out of scope:
   `--inspect`, allow-listed environment for the backend process, fresh token per launch.
 - Docker: pinned base-image digest, checksum-verified `kubectl` / `kubelogin` / `trivy`, non-root user,
   `npm ci --ignore-scripts`, image scanned with Trivy in CI.
-- Releases: SHA256SUMS, CycloneDX SBOM and SLSA build-provenance attestations for every artifact.
+- Releases: SHA256SUMS and a CycloneDX SBOM for every artifact.
