@@ -1,9 +1,15 @@
 name: Build & Release
 
 # Build the k8dashboard desktop app for macOS, Windows and Linux in parallel, then
-# publish a GitHub Release (installers + SHA256SUMS.txt + CycloneDX SBOM, each
-# installer with a signed build-provenance attestation) and push the Docker
-# image to GHCR. Trigger it either way:
+# publish a GitHub Release on the public repo jaychandra1/KubePilot (installers +
+# SHA256SUMS.txt + CycloneDX SBOM, each installer with a signed build-provenance
+# attestation) and push the Docker image to GHCR.
+#
+# GitHub artifact attestations cannot be stored on a user-owned *private* repo,
+# so provenance is written to KubePilot (public). The release job needs a
+# RELEASE_TOKEN secret: a fine-grained PAT on jaychandra1/KubePilot with
+# Contents: write and Attestations: write (store it on the `release` environment).
+# Trigger it either way:
 #   * push a version tag that matches the VERSION file (`git push origin v1.1.0`), or
 #   * Actions -> Build & Release -> Run workflow, on `main` only; the tag is
 #     `v<VERSION>` and is created at the current main commit.
@@ -24,6 +30,7 @@ concurrency:
 
 env:
   FORCE_COLOR: 1
+  RELEASE_REPO: jaychandra1/KubePilot
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -158,9 +165,8 @@ jobs:
     # (Configure reviewers in Settings → Environments → release.)
     environment: release
     permissions:
-      contents: write
+      contents: read
       id-token: write
-      attestations: write
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -183,6 +189,15 @@ jobs:
         run: |
           npm ci --omit=dev --ignore-scripts
           npm ci --prefix client --omit=dev --ignore-scripts
+
+      - name: Require RELEASE_TOKEN
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          if [ -z "$RELEASE_TOKEN" ]; then
+            echo "::error::Add a RELEASE_TOKEN secret on the 'release' environment: a fine-grained PAT for jaychandra1/KubePilot with Contents: write and Attestations: write."
+            exit 1
+          fi
 
       - name: Download all build artifacts
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
@@ -211,11 +226,16 @@ jobs:
           upload-artifact: false
           upload-release-assets: false
 
-      # Signed SLSA provenance for every installer (verifiable with
-      # `gh attestation verify <file> --repo <owner>/k8dashboard`).
+      # Signed SLSA provenance, persisted on the public KubePilot repo
+      # (`gh attestation verify <file> --repo jaychandra1/KubePilot`).
+      # GITHUB_REPOSITORY is overridden so the persist API hits KubePilot;
+      # user-owned private repos cannot store attestations.
       - name: Attest build provenance
         uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        env:
+          GITHUB_REPOSITORY: ${{ env.RELEASE_REPO }}
         with:
+          github-token: ${{ secrets.RELEASE_TOKEN }}
           subject-path: |
             dist/*.dmg
             dist/*.exe
@@ -226,11 +246,25 @@ jobs:
       - name: Publish release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
-          # Reuse a pushed tag; otherwise create this tag + release at this commit.
+          repository: ${{ env.RELEASE_REPO }}
+          token: ${{ secrets.RELEASE_TOKEN }}
           tag_name: ${{ needs.verify.outputs.tag }}
-          target_commitish: ${{ github.sha }}
+          # Tag KubePilot's default branch — this SHA lives in the private source repo.
+          target_commitish: main
+          name: k8dashboard ${{ needs.verify.outputs.version }}
           draft: false
-          generate_release_notes: true
+          generate_release_notes: false
+          body: |
+            k8dashboard **${{ needs.verify.outputs.version }}**
+
+            Desktop installers for macOS (Apple Silicon), Windows and Linux.
+            Checksums are in `SHA256SUMS.txt`. Verify an installer with:
+
+            ```
+            gh attestation verify k8dashboard-macos.dmg --repo jaychandra1/KubePilot
+            ```
+
+            Built from [jaychandra1/k8dashboard](https://github.com/jaychandra1/k8dashboard) `${{ github.sha }}`.
           fail_on_unmatched_files: true
           files: |
             dist/*.dmg
@@ -251,12 +285,20 @@ jobs:
       contents: read
       packages: write
       id-token: write
-      attestations: write
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
+
+      - name: Require RELEASE_TOKEN
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          if [ -z "$RELEASE_TOKEN" ]; then
+            echo "::error::Add a RELEASE_TOKEN secret on the 'release' environment: a fine-grained PAT for jaychandra1/KubePilot with Contents: write and Attestations: write."
+            exit 1
+          fi
 
       - name: Image name
         id: img
@@ -311,7 +353,10 @@ jobs:
 
       - name: Attest image provenance
         uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        env:
+          GITHUB_REPOSITORY: ${{ env.RELEASE_REPO }}
         with:
+          github-token: ${{ secrets.RELEASE_TOKEN }}
           subject-name: ${{ steps.img.outputs.name }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true

@@ -10,8 +10,8 @@ A native desktop app (macOS · Windows · Linux) — and a Docker image — for 
 
 [![CI](https://github.com/jaychandra1/k8dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/jaychandra1/k8dashboard/actions/workflows/ci.yml)
 [![Build & Release](https://github.com/jaychandra1/k8dashboard/actions/workflows/release.yml/badge.svg)](https://github.com/jaychandra1/k8dashboard/actions/workflows/release.yml)
-[![Latest release](https://img.shields.io/github/v/release/jaychandra1/k8dashboard?sort=semver)](https://github.com/jaychandra1/k8dashboard/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/jaychandra1/k8dashboard/total)](https://github.com/jaychandra1/k8dashboard/releases)
+[![Latest release](https://img.shields.io/github/v/release/jaychandra1/KubePilot?sort=semver)](https://github.com/jaychandra1/KubePilot/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/jaychandra1/KubePilot/total)](https://github.com/jaychandra1/KubePilot/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-informational)
 
@@ -20,7 +20,7 @@ A native desktop app (macOS · Windows · Linux) — and a Docker image — for 
 ![k8dashboard cluster dashboard](docs/screenshot-dashboard.png)
 
 > [!TIP]
-> Grab the latest macOS `.dmg`, Windows `.exe`, or Linux `.AppImage`/`.deb` from the [**Releases**](https://github.com/jaychandra1/k8dashboard/releases/latest) page — no build required.
+> Grab the latest macOS `.dmg`, Windows `.exe`, or Linux `.AppImage`/`.deb` from the [**Releases**](https://github.com/jaychandra1/KubePilot/releases/latest) page — no build required.
 
 ## Features
 
@@ -84,7 +84,7 @@ k8dashboard is a **desktop UI for clusters you already have** — closest in spi
 
 ### Desktop app
 
-Most people just [download a build](https://github.com/jaychandra1/k8dashboard/releases/latest). Every release ships a `SHA256SUMS.txt`, a CycloneDX SBOM and a signed [build-provenance attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations) per installer (`gh attestation verify k8dashboard-macos.dmg --repo jaychandra1/k8dashboard`).
+Most people just [download a build](https://github.com/jaychandra1/KubePilot/releases/latest). Every release ships a `SHA256SUMS.txt`, a CycloneDX SBOM and a signed [build-provenance attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations) per installer (`gh attestation verify k8dashboard-macos.dmg --repo jaychandra1/KubePilot`).
 
 To build it yourself:
 

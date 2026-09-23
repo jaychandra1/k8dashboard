@@ -40,4 +40,4 @@ First public release of **k8dashboard**.
   releases with checksum verification; `HEALTHCHECK` on `/healthz`.
 
 [Unreleased]: https://github.com/jaychandra1/k8dashboard/compare/v1.1.0...HEAD
-[1.1.0]: https://github.com/jaychandra1/k8dashboard/releases/tag/v1.1.0
+[1.1.0]: https://github.com/jaychandra1/KubePilot/releases/tag/v1.1.0

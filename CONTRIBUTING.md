@@ -79,8 +79,11 @@ Trivy scan of the image (fails on CRITICAL).
 2. Commit, then `git tag v1.2.0 && git push origin main v1.2.0`.
 3. The **Build & Release** workflow verifies the tag equals `v$(cat VERSION)` (it fails otherwise),
    builds all installers, pauses for approval on the `release` environment, then publishes the
-   GitHub Release (installers, `SHA256SUMS.txt`, CycloneDX SBOM, provenance attestations) and pushes
+   GitHub Release on [jaychandra1/KubePilot](https://github.com/jaychandra1/KubePilot)
+   (installers, `SHA256SUMS.txt`, CycloneDX SBOM, provenance attestations) and pushes
    `ghcr.io/jaychandra1/k8dashboard:{v1.2.0,1.2,latest}` for amd64 + arm64.
+   The `release` environment must have a `RELEASE_TOKEN` secret (fine-grained PAT on
+   KubePilot with Contents: write and Attestations: write).
 
 Manual runs (Actions → Build & Release → Run workflow) are only accepted from `main`.
 

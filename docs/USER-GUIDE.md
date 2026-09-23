@@ -22,7 +22,7 @@ Current version: `1.1.0` (see the `VERSION` file). Node.js **22 or newer** is re
 
 **A. Desktop app (recommended for laptops)**
 
-Download the installer for your OS from the GitHub Releases page (`k8dashboard-macos.dmg` for Apple Silicon, `k8dashboard-windows.exe`, `k8dashboard-linux.AppImage` or `.deb`) and open it.
+Download the installer for your OS from the [KubePilot Releases](https://github.com/jaychandra1/KubePilot/releases) page (`k8dashboard-macos.dmg` for Apple Silicon, `k8dashboard-windows.exe`, `k8dashboard-linux.AppImage` or `.deb`) and open it.
 
 The desktop app generates a fresh random access token every launch, starts its backend on a free local port, and opens the UI already logged in. There is nothing to configure.
 
@@ -299,7 +299,7 @@ Versions follow **Semantic Versioning**: patch for fixes (`1.1.0 → 1.1.1`), mi
    |---|---|
    | **Verify tag == VERSION** | Fails immediately if the tag and `VERSION` disagree, or if a manual run was started from a branch other than `main`. |
    | **Build** (macOS arm64, Windows x64, Linux x64) | `npm ci`, tests, `npm run dist` → installers uploaded as artifacts. |
-   | **Publish GitHub Release** | Waits for approval on the `release` environment, then generates `SHA256SUMS.txt`, a CycloneDX SBOM, build-provenance attestations, and publishes the Release with all installers. |
+   | **Publish GitHub Release** | Waits for approval on the `release` environment, then generates `SHA256SUMS.txt`, a CycloneDX SBOM and attestations, and publishes the Release on [jaychandra1/KubePilot](https://github.com/jaychandra1/KubePilot) (needs `RELEASE_TOKEN`). |
    | **Publish Docker image (GHCR)** | Also gated by the `release` environment. Builds amd64 + arm64 and pushes `ghcr.io/jaychandra1/k8dashboard:v1.2.0`, `:1.2` and `:latest`. |
 
    When the workflow pauses, a reviewer on the `release` environment approves it in the Actions UI. Nothing is published before that approval, and a release in progress is never cancelled by a newer run.
@@ -352,4 +352,4 @@ The image is multi-stage: the client is built, production dependencies are insta
 
 ## Appendix — Security model in one paragraph
 
-Every API call, the MCP endpoint and the shell WebSocket require a bearer token; only `/healthz` and `/api/version` are public. The server accepts only `localhost`, `127.0.0.1`, `[::1]` (plus `ALLOWED_HOSTS`) as the `Host` header, so a malicious website cannot reach it through DNS rebinding, and cross-origin requests are refused. Every namespace, kind, name, container and port is validated before it reaches `kubectl`, and user values are always placed after a `--` separator. Credentials and kubeconfigs are written atomically with owner-only permissions after a backup. The desktop app sandboxes its renderer, pins navigation to its own backend, passes an allow-listed environment to the backend and ships with Electron fuses. Releases are built from a tag that must match `VERSION`, gated by an approval environment, and published with checksums, an SBOM and provenance attestations. Report vulnerabilities as described in `SECURITY.md`.
+Every API call, the MCP endpoint and the shell WebSocket require a bearer token; only `/healthz` and `/api/version` are public. The server accepts only `localhost`, `127.0.0.1`, `[::1]` (plus `ALLOWED_HOSTS`) as the `Host` header, so a malicious website cannot reach it through DNS rebinding, and cross-origin requests are refused. Every namespace, kind, name, container and port is validated before it reaches `kubectl`, and user values are always placed after a `--` separator. Credentials and kubeconfigs are written atomically with owner-only permissions after a backup. The desktop app sandboxes its renderer, pins navigation to its own backend, passes an allow-listed environment to the backend and ships with Electron fuses. Releases are built from a tag that must match `VERSION`, gated by an approval environment, and published to [jaychandra1/KubePilot](https://github.com/jaychandra1/KubePilot) with checksums, an SBOM and provenance attestations. Report vulnerabilities as described in `SECURITY.md`.

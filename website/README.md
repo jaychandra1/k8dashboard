@@ -27,7 +27,7 @@ python3 -m http.server 4321 -d website
 - **AI assistant** band (read-only Claude assistant).
 - **Download section**:
   - macOS → **GitHub releases**
-    (`https://github.com/jaychandra1/k8dashboard/releases/latest`).
+    (`https://github.com/jaychandra1/KubePilot/releases/latest`).
   - Docker commands using the image **`ghcr.io/jaychandra1/k8dashboard`**
     (copy-to-clipboard buttons).
 
