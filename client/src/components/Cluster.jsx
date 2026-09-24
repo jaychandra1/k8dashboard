@@ -178,26 +178,6 @@ export default function Cluster({ refreshSignal = 0, context, onSummaryLoaded })
               <div className="info-item"><label>Kubelet</label><span className="context-value">{(data.versions || []).join(', ') || '—'}</span></div>
               <div className="info-item"><label>OS Image</label><span className="context-value">{(data.osImages || []).join(', ') || '—'}</span></div>
             </section>
-
-            <section className="cluster-info-card" aria-label="Contexts">
-              <h3><Icon name="apps" size={15} /> Contexts ({(data.contexts || []).length})</h3>
-              <div className="contexts-list">
-                {(data.contexts || []).map((ctx) => (
-                  <div key={ctx} className="context-item">
-                    <span className={ctx === data.currentContext ? 'active' : ''} aria-current={ctx === data.currentContext ? 'true' : undefined}>{ctx}</span>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <section className="cluster-info-card" aria-label="Clusters">
-              <h3><Icon name="cluster" size={15} /> Clusters ({(data.clusters || []).length})</h3>
-              <div className="clusters-list">
-                {(data.clusters || []).map((cluster) => (
-                  <div key={cluster} className="cluster-item"><span>{cluster}</span></div>
-                ))}
-              </div>
-            </section>
           </div>
         </div>
       )}

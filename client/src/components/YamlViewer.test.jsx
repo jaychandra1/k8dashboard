@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import YamlViewer from './YamlViewer';
 import { ToastProvider } from './Toast';
@@ -23,6 +23,22 @@ function renderYaml(props = {}) {
 
 describe('YamlViewer', () => {
   beforeEach(() => { vi.clearAllMocks(); getJson.mockResolvedValue({ yaml: YAML }); putJson.mockResolvedValue({ message: 'pod/web-1 configured' }); });
+
+  it('keeps the highlight layer and the textarea in one scroll container (no drifting caret)', async () => {
+    renderYaml({ onClose: () => {} });
+    const ta = await screen.findByRole('textbox', { name: /YAML for pod web-1/ });
+    const stack = ta.parentElement;
+    expect(stack).toHaveClass('yaml-edit-stack');
+    expect(stack.parentElement).toHaveClass('yaml-edit-scroll');
+    const pre = stack.querySelector('pre.yaml-code');
+    expect(pre).toHaveAttribute('aria-hidden', 'true');
+    expect(pre.nextElementSibling?.tagName === 'LABEL' || pre.nextElementSibling === ta).toBe(true);
+    // If the browser scrolls the textarea itself, it snaps back to 0,0.
+    ta.scrollTop = 40; ta.scrollLeft = 12;
+    fireEvent.scroll(ta);
+    expect(ta.scrollTop).toBe(0);
+    expect(ta.scrollLeft).toBe(0);
+  });
 
   it('loads YAML into a labelled textarea and applies only after confirmation', async () => {
     const user = userEvent.setup();

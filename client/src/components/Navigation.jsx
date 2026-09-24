@@ -142,12 +142,11 @@ const Navigation = forwardRef(function Navigation({
           </div>
           <div className="nav-brand-text">
             <span className="nav-brand-title">KubePilot</span>
-            <span className="nav-brand-sub">
-              Kubernetes
-              {typeof __APP_VERSION__ !== 'undefined' && (
+            {typeof __APP_VERSION__ !== 'undefined' && (
+              <span className="nav-brand-sub">
                 <span className="nav-brand-version">v{__APP_VERSION__}</span>
-              )}
-            </span>
+              </span>
+            )}
           </div>
           <button
             type="button"

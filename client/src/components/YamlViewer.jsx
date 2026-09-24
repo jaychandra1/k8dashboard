@@ -27,6 +27,13 @@ const applyErrorText = (err) => {
  * changes back to the cluster (after confirmation). A transparent textarea
  * sits over a syntax-highlighted <pre> so editing keeps the colours.
  *
+ * Both layers live in ONE scroll container: the <pre> is in flow and sizes the
+ * stack, the textarea is stretched over it and never scrolls itself. Two
+ * separately scrolled layers drifted apart (the textarea's own scrollbars
+ * shorten its scroll range), and the caret ended up a line or a few
+ * characters away from the glyphs. The typography of both layers is pinned in
+ * App.css (.yaml-code / .yaml-code code / .yaml-textarea).
+ *
  * <YamlViewer namespace kind="deployment" name onClose onApplied />
  */
 export default function YamlViewer({ namespace, kind, name, onClose, onApplied, resource, resourceType }) {
@@ -41,7 +48,6 @@ export default function YamlViewer({ namespace, kind, name, onClose, onApplied, 
   const [applyError, setApplyError] = useState(null);
   const [confirm, setConfirm] = useState(null); // 'apply' | 'discard'
   const taRef = useRef(null);
-  const preRef = useRef(null);
 
   const { error: loadError, loading, refetch } = useRequest(
     ({ signal }) => getJson(p('api', 'yaml', ns || '-', k, n), { signal }),
@@ -53,12 +59,12 @@ export default function YamlViewer({ namespace, kind, name, onClose, onApplied, 
     },
   );
 
-  // keep the highlight layer scrolled with the textarea
-  const syncScroll = () => {
-    if (preRef.current && taRef.current) {
-      preRef.current.scrollTop = taRef.current.scrollTop;
-      preRef.current.scrollLeft = taRef.current.scrollLeft;
-    }
+  // The textarea is exactly as large as the highlighted text, so it never
+  // needs to scroll; if the browser scrolls it anyway (e.g. mid-paste, before
+  // the <pre> re-renders larger) snap it back so the layers stay aligned.
+  const pinTextarea = (e) => {
+    const t = e.currentTarget;
+    if (t.scrollTop || t.scrollLeft) { t.scrollTop = 0; t.scrollLeft = 0; }
   };
 
   const dirty = yaml !== original;
@@ -142,24 +148,26 @@ export default function YamlViewer({ namespace, kind, name, onClose, onApplied, 
         ) : loadError ? (
           <ErrorState error={loadError} title="Couldn't load YAML" onRetry={refetch} />
         ) : (
-          <div className="yaml-edit-wrap">
-            <HighlightedCode code={yaml} lang="yaml" className="yaml-code hljs" trailingNewline preProps={{ ref: preRef, 'aria-hidden': true }} />
-            <label htmlFor={taId} className="sr-only">YAML for {k} {n}. {shortcut} applies.</label>
-            <textarea
-              id={taId}
-              ref={taRef}
-              className="yaml-textarea"
-              value={yaml}
-              spellCheck={false}
-              autoComplete="off"
-              autoCapitalize="off"
-              wrap="off"
-              onChange={(e) => setYaml(e.target.value)}
-              onScroll={syncScroll}
-              onKeyDown={onKeyDown}
-              aria-describedby={applyError ? `${hintId} ${errId}` : hintId}
-              aria-invalid={applyError ? 'true' : undefined}
-            />
+          <div className="yaml-edit-scroll">
+            <div className="yaml-edit-stack">
+              <HighlightedCode code={yaml} lang="yaml" className="yaml-code hljs" trailingNewline preProps={{ 'aria-hidden': true }} />
+              <label htmlFor={taId} className="sr-only">YAML for {k} {n}. {shortcut} applies.</label>
+              <textarea
+                id={taId}
+                ref={taRef}
+                className="yaml-textarea"
+                value={yaml}
+                spellCheck={false}
+                autoComplete="off"
+                autoCapitalize="off"
+                wrap="off"
+                onChange={(e) => setYaml(e.target.value)}
+                onScroll={pinTextarea}
+                onKeyDown={onKeyDown}
+                aria-describedby={applyError ? `${hintId} ${errId}` : hintId}
+                aria-invalid={applyError ? 'true' : undefined}
+              />
+            </div>
           </div>
         )}
       </div>
