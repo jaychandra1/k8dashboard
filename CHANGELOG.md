@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Logs button beside every name in the Pods and Deployments tables (its own column, right after Name); it opens the logs panel without opening the details drawer. Deployment logs find the pods through the Deployment's selector (new `GET /api/deployments/:namespace/:name/pods`, like `kubectl logs deploy/<name>`) and offer **All pods** — up to 10 replicas merged chronologically, each line prefixed with its pod — or a single replica; a replica that can't be read is flagged instead of failing the whole view. Deployments also get **Logs** in the row menu and the details drawer.
+
 ### Changed
+- The Cluster page shows the branded loading screen ("Getting the data from <cluster>…") until its summary arrives, instead of grey placeholder cards. The loading screen now uses the detailed KubePilot artwork (`client/public/logo-detailed.png`, shown at 120 px).
 - Sidebar is narrower (232 px). The cluster switcher now sits at the left end of the top bar, filling the column above the sidebar, with the Back/Forward arrows right beside it where the content column starts. The top bar no longer reserves the 82 px macOS traffic-light gap on Windows and Linux.
 - App icon now uses the official transparent KubePilot artwork (`build/source/icon-detailed.webp` for large sizes, `build/source/icon-simple.webp` for 64 px and below) with no tile behind it, so it sits cleanly on dark and light themes. Windows ships a multi-size `build/icon.ico` (16–256 px); favicon, sidebar, loading screen, splash, website and OG image are regenerated from the same masters, downscaled only.

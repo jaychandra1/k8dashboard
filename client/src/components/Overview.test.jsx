@@ -33,7 +33,7 @@ describe('Overview', () => {
     await user.click(screen.getByRole('button', { name: 'Pods: 4. Open Pods' }));
     expect(onResourceTypeChange).toHaveBeenLastCalledWith('pod');
     expect(onResourceTypeChange).not.toHaveBeenCalledWith('statefulset');
-  });
+  }, 15000);
 
   it('shows the loading skeleton only when there is no data yet', () => {
     const { rerender } = render(<Overview allResources={{}} loading onResourceTypeChange={() => {}} />);

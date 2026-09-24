@@ -123,6 +123,7 @@ Each row also has an always-visible **Actions** button (`⋯`). Actions availabl
 
 - **Details** — drawer with status, labels, annotations, containers, owner and cross-links (namespace → node → pod → owner are all links). Pods show live CPU/memory charts. ConfigMap data is shown; **Secret values are masked until you click Reveal** on a specific key, and can be copied.
 - **Logs** — per-container or merged streams, timestamps, regex/case-sensitive search with match navigation, tail size (200 / 1,000 / 5,000 / 20,000 lines), follow mode, download.
+  Open them from the **logs icon** next to a pod's or deployment's name (or the row menu / details drawer). For a deployment, the **Pod** picker shows **All pods** — up to 10 replicas merged by time, each line prefixed with its pod — or one replica.
 - **Terminal** — a real TTY into the container (`kubectl exec -it`). The container needs a shell (distroless images will not work).
 - **Edit YAML** — edit and apply. `⌘S` / `Ctrl+S` applies; you are asked to confirm because this writes to the cluster, and closing with unsaved changes asks first.
 - **Scale** — integer 0–10,000.
