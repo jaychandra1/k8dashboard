@@ -11,7 +11,8 @@ All notable changes to this project are documented here. The format follows
 - The built-in demo cluster is no longer shown; the synthetic fixture remains available to tests via `KUBEPILOT_DEMO=1`. The connect screen now offers exactly two paths: load a kubeconfig, or **Add cluster** (AWS EKS / Azure AKS).
 
 ### Fixed
-
+- Mouse-wheel scrolling in list views: tables had a nested scroll container with `overscroll-behavior: contain` that swallowed wheel events; every list now has a single bounded scroller and wheel/trackpad scrolling works everywhere.
+- Switching views quickly no longer shows "Request aborted": shared in-flight requests are reference-counted so one view cancelling does not abort the request for others, and cancellations are never surfaced as errors.
 - Imported EKS/AKS clusters could not connect from the packaged desktop app ("Unexpected end of JSON input"): the kubeconfig exec entry relied on `ELECTRON_RUN_AS_NODE`, which the app's fuses disable. Entries now run `KubePilot --token-helper eks|azure …` (or `node eks-token.js …` from source), stale entries are repaired automatically when the kubeconfig loads, and an expired AWS SSO session shows a "Sign in with AWS SSO" prompt instead of a raw error.
 
 ### Changed
