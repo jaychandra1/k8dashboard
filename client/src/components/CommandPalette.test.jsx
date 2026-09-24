@@ -7,7 +7,7 @@ const tick = () => act(async () => { await new Promise((r) => setTimeout(r, 20))
 
 describe('CommandPalette', () => {
   it('exposes combobox/listbox roles inside a modal dialog', async () => {
-    render(<CommandPalette open onClose={() => {}} onNavigate={() => {}} contexts={['demo-cluster']} currentContext="demo-cluster" onSwitchContext={() => {}} />);
+    render(<CommandPalette open onClose={() => {}} onNavigate={() => {}} contexts={['test-cluster']} currentContext="test-cluster" onSwitchContext={() => {}} />);
     await tick();
     const dlg = screen.getByRole('dialog', { name: 'Command palette' });
     expect(dlg).toHaveAttribute('aria-modal', 'true');

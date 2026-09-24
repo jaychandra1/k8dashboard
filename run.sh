@@ -216,7 +216,7 @@ check_prereqs() {
       if offer_kubectl && command -v kubectl >/dev/null 2>&1; then
         ok "kubectl available ($(command -v kubectl))"
       else
-        err "kubectl is required. Install it and re-run (or use demo mode in the app without a cluster)."
+        err "kubectl is required. Install it and re-run."
         missing=1
       fi
     fi
@@ -243,7 +243,7 @@ check_prereqs() {
   if [ -f "${kcfg%%:*}" ]; then
     ok "kubeconfig found (${kcfg%%:*})"
   else
-    warn "No kubeconfig at ${kcfg%%:*}. You can enter a path in the app when it loads, or use demo mode."
+    warn "No kubeconfig at ${kcfg%%:*}. You can enter a path in the app when it loads, or import an EKS/AKS cluster with Add cluster."
   fi
 
   if [ "$missing" -ne 0 ]; then

@@ -32,7 +32,7 @@ import { createCache } from './lib/cache.mjs';
 import {
   getAuthToken, authMiddleware, verifyWsAuth, isAllowedHost, isAllowedOrigin, hostGuard, originGuard, pathCaseGuard,
 } from './lib/auth.mjs';
-import { CONFIG_DIR, configFile, findConfigFile, isMcpSource, execEntry } from './lib/paths.mjs';
+import { CONFIG_DIR, DEMO_ENABLED, configFile, findConfigFile, isMcpSource, execEntry } from './lib/paths.mjs';
 import { repairExecEntries } from './lib/kubeconfig-repair.mjs';
 import {
   createKubectl, positional, spawnBin, collectChild, commandExists, resolveBinSync, loginShellPath,
@@ -227,14 +227,17 @@ const mcpWriteGate = (req, res, next) => {
 };
 
 // ------------------------------------------------------------------
-// Demo mode — when the active context is the synthetic 'demo-cluster',
-// serve an in-memory cluster (demo.js) so every feature is explorable with
-// no real cluster. This single interception covers all data + mutation
+// Demo mode (test/dev fixture, KUBEPILOT_DEMO=1 only) — when the flag is set
+// and the active context is the synthetic 'demo-cluster', serve an in-memory
+// cluster (demo.js). This single interception covers all data + mutation
 // endpoints; config/cloud/MCP/static fall through, and the assistant is
-// handled explicitly (canned, no LLM needed).
+// handled explicitly (canned, no LLM needed). With the flag unset every demo
+// touchpoint below is a no-op and 'demo-cluster' is just an ordinary (and
+// most likely unknown) context name.
 // ------------------------------------------------------------------
+const demoActive = () => DEMO_ENABLED && demo.isDemo(currentContext);
 app.use((req, res, next) => {
-  if (!demo.isDemo(currentContext)) return next();
+  if (!demoActive()) return next();
   const p = req.path;
   // Real config handlers stay in charge (they are demo-aware).
   if (p === '/api/config/status' || p === '/api/config/context' ||
@@ -334,7 +337,7 @@ const parseKubeConfig = ({ filePath } = {}) => {
 };
 
 const warnDemoCollision = (kc) => {
-  if (kc.contexts.some((c) => c.name === demo.DEMO_CONTEXT)) {
+  if (DEMO_ENABLED && kc.contexts.some((c) => c.name === demo.DEMO_CONTEXT)) {
     log.warn('a real kubeconfig context is named like the built-in demo cluster; demo mode is disabled while it exists', { context: demo.DEMO_CONTEXT });
   }
 };
@@ -480,8 +483,6 @@ app.post('/api/mcp/config', (req, res) => {
 });
 
 app.get('/api/config/status', (req, res) => {
-  const demoInfo = demo.demoContextInfo(); // { name, cluster, provider: 'demo' }
-
   // Tag each context with its cloud provider (derived from the cluster's server
   // URL) so the UI can group and icon them.
   const providerOf = (server = '') => {
@@ -504,16 +505,21 @@ app.get('/api/config/status', (req, res) => {
     clusters = kubeConfig.clusters.map((c) => c.name);
   }
 
-  // The synthetic demo cluster is always offered, listed first.
-  contexts = [demoInfo.name, ...contexts];
-  contextsInfo = [demoInfo, ...contextsInfo];
-  clusters = [demoInfo.cluster, ...clusters];
+  // The synthetic demo cluster is offered (listed first) only when the
+  // KUBEPILOT_DEMO test/dev flag is set; the product never shows it otherwise.
+  if (DEMO_ENABLED) {
+    const demoInfo = demo.demoContextInfo(); // { name, cluster, provider: 'demo' }
+    contexts = [demoInfo.name, ...contexts];
+    contextsInfo = [demoInfo, ...contextsInfo];
+    clusters = [demoInfo.cluster, ...clusters];
+  }
 
-  const inDemo = demo.isDemo(currentContext);
+  const inDemo = demoActive();
   if (!kubeConfig && !inDemo) {
     const attemptedPath = getKubeConfigPath();
     return res.json({
       loaded: false,
+      demoAvailable: DEMO_ENABLED,
       contexts,
       contextsInfo,
       defaultPath: attemptedPath,
@@ -523,7 +529,8 @@ app.get('/api/config/status', (req, res) => {
 
   res.json({
     loaded: true,
-    currentContext: inDemo ? demoInfo.name : currentContext,
+    demoAvailable: DEMO_ENABLED,
+    currentContext: inDemo ? demo.DEMO_CONTEXT : currentContext,
     path: inDemo ? 'demo (synthetic cluster)' : getKubeConfigPath(),
     contexts,
     contextsInfo,
@@ -570,10 +577,11 @@ app.post('/api/config/load', (req, res) => {
 // Current context (read). MCP's switch_context is write-gated on its side; the
 // UI polls this to notice an external switch instead of being changed silently.
 app.get('/api/config/context', (req, res) => {
-  const inDemo = demo.isDemo(currentContext);
+  const inDemo = demoActive();
+  const real = kubeConfig?.contexts.map((c) => c.name) || [];
   res.json({
     currentContext: inDemo ? demo.DEMO_CONTEXT : currentContext,
-    contexts: [demo.DEMO_CONTEXT, ...(kubeConfig?.contexts.map((c) => c.name) || [])],
+    contexts: DEMO_ENABLED ? [demo.DEMO_CONTEXT, ...real] : real,
   });
 });
 
@@ -581,10 +589,12 @@ app.post('/api/config/context', (req, res) => {
   const { contextName } = req.body || {};
   if (!isContextName(contextName)) return bad(res, 'contextName');
 
-  // Enter the synthetic demo cluster (works with no kubeconfig at all) — unless
-  // a real context shares its name, in which case the real one must win and
-  // demo mode is refused rather than silently aliasing two clusters.
-  if (demo.isDemo(contextName)) {
+  // KUBEPILOT_DEMO=1 only: enter the synthetic demo cluster (works with no
+  // kubeconfig at all) — unless a real context shares its name, in which case
+  // the real one must win and demo mode is refused rather than silently
+  // aliasing two clusters. With the flag unset, 'demo-cluster' falls through
+  // to the ordinary lookup below and is rejected like any unknown context.
+  if (DEMO_ENABLED && demo.isDemo(contextName)) {
     if (kubeConfig?.contexts.some((c) => c.name === contextName)) {
       log.warn('refusing demo mode: a real context has the demo name', { context: contextName });
       return res.status(409).json({ error: `A real kubeconfig context is named "${contextName}"; the built-in demo cluster is unavailable while it exists.`, code: 'demo_name_collision' });
@@ -595,12 +605,12 @@ app.post('/api/config/context', (req, res) => {
   }
 
   if (!kubeConfig) {
-    return res.status(400).json({ error: 'No kubeconfig loaded' });
+    return bad(res, 'contextName', 'Context not found: no kubeconfig loaded');
   }
 
   const context = kubeConfig.contexts.find(c => c.name === contextName);
   if (!context) {
-    return res.status(400).json({ error: 'Context not found' });
+    return bad(res, 'contextName', 'Context not found');
   }
 
   try {
@@ -3770,8 +3780,8 @@ wss.on('connection', async (browserWs, req) => {
   browserWs.on('pong', () => { browserWs.isAlive = true; });
   const url = new URL(req.url, 'http://localhost');
 
-  // Demo mode: a scripted pseudo-terminal instead of a real pod exec.
-  if (demo.isDemo(currentContext)) {
+  // Demo mode (KUBEPILOT_DEMO=1 only): a scripted pseudo-terminal instead of a real pod exec.
+  if (demoActive()) {
     demo.shellSession(browserWs, {
       agent: url.searchParams.get('agent'),
       namespace: url.searchParams.get('namespace'),

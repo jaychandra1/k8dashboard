@@ -5,7 +5,7 @@ Thanks for helping. This page covers the local setup, the checks CI runs, and ho
 ## Prerequisites
 
 - **Node.js 22+** (`.nvmrc` pins 22; `.npmrc` sets `engine-strict`).
-- `kubectl` on your `PATH` for real clusters (demo mode needs nothing).
+- `kubectl` on your `PATH` for real clusters. The tests need no cluster: the HTTP suites run the synthetic fixture in `demo.js` with `KUBEPILOT_DEMO=1` (that flag is test/dev-only and is never set — or forwarded by the desktop app — for users).
 - macOS/Linux/Windows all work for development. The packaged macOS build targets Apple Silicon only.
 
 ## Setup

@@ -12,10 +12,10 @@ Current version: `1.2.0` (see the `VERSION` file). Node.js **22 or newer** is re
 
 | To do this | You need |
 |---|---|
-| Try it with no cluster | Nothing. Use the built-in **demo cluster**. |
 | Browse a real cluster | A working kubeconfig (`~/.kube/config` or `KUBECONFIG`) and `kubectl` on your `PATH` (used for exec, port-forward and a few reads). |
+| Import an EKS or AKS cluster | An AWS or Azure account with access to the cluster — **Add cluster** signs you in and writes the kubeconfig; no `aws`/`az` CLI needed. |
 | Pod shell / port-forward | `kubectl` on `PATH`. |
-| Security Center image scans | Nothing extra: the desktop build bundles Trivy; the Docker image includes it; from source it is downloaded on first use (checksum-verified). |
+| Security Center image scans | Nothing extra: the Docker image includes Trivy; the desktop app and source builds download it on first use (pinned version, checksum-verified) into `~/.config/kubepilot/bin`. |
 | AI assistant | Any OpenAI-compatible endpoint (OpenAI, Azure OpenAI, Ollama, LM Studio, vLLM, LiteLLM…). |
 
 ### 1.2 Three ways to run it
@@ -70,7 +70,8 @@ Keep the port published on `127.0.0.1`. If you must expose it on a network, put 
 
 When the app starts it shows one of:
 
-- **Could not connect to the cluster** — no kubeconfig found or the credentials failed. Use **Demo** to explore the synthetic cluster, **Add cluster** to onboard an AWS EKS or Azure AKS cluster with no CLI, or fix the kubeconfig and press **Retry**. Authentication failures are classified for you (expired token, unreachable API server, TLS error, missing auth plugin) with a one-click or copyable fix.
+- **Connect a cluster** — no kubeconfig was found. Either enter the path to a kubeconfig file, or use **Add cluster** to import an **AWS EKS** or **Azure AKS** cluster straight from your cloud account (KubePilot signs you in and writes the kubeconfig; no CLI needed).
+- **Could not connect to the cluster** — a kubeconfig was loaded but its credentials failed. Use **Add cluster** to onboard an EKS or AKS cluster, switch to another context, or fix the kubeconfig and press **Retry**. Authentication failures are classified for you (expired token, unreachable API server, TLS error, missing auth plugin) with a one-click or copyable fix.
 - The dashboard — the current kubeconfig context loaded.
 
 Switch clusters any time from the **Context** selector in the sidebar (searchable) or with `⌘K` / `Ctrl+K` → type the context name. Pin favourites to the left rail with the **+** button.
@@ -131,7 +132,7 @@ Select several rows with the checkboxes to run **bulk Restart / Delete** from th
 - **Access Control** — roles, bindings and service accounts.
 - **Custom Resources** — a lazy-loaded tree of CRDs → instances (arrow keys expand/collapse), with YAML detail.
 - **Argo CD** (auto-detected) — dashboard, applications with sync/health filters, resource tree, history, projects, application sets, repositories, clusters. Sync, Refresh and Delete ask for confirmation; cascade delete requires typing the app name.
-- **Security Center** — image CVEs, configuration and RBAC checks, exposed secrets. Reads Trivy Operator reports if present, otherwise runs the bundled/downloaded Trivy. Start a scan from the Scan panel; progress is announced and polled while the view is visible.
+- **Security Center** — image CVEs, configuration and RBAC checks, exposed secrets. Reads Trivy Operator reports if present, otherwise runs Trivy (downloaded on first use, see §1.1). Start a scan from the Scan panel; progress is announced and polled while the view is visible.
 - **Events** — cluster or namespace events with links to the involved objects.
 
 ### 1.7 Keyboard shortcuts
@@ -255,7 +256,8 @@ CI runs lint, both test suites, the build, `npm audit`, CodeQL, a Docker build w
 | `lib/` | `auth.mjs` (token, host allowlist, origin guard), `validate.mjs`, `kubectl.mjs` (safe argv wrapper), `cache.mjs`, `logger.mjs`, `http-errors.mjs` |
 | `assistant.js`, `mcp.js`, `mcp-stdio.js` | AI assistant, MCP tools, stdio bridge |
 | `aws-eks.js`, `azure-aks.js`, `eks-token.js`, `azure-token.js` | Cloud onboarding and runtime token helpers |
-| `trivy-scan.js`, `demo.js` | Security scanning, synthetic demo cluster |
+| `trivy-scan.js` | Security scanning (Trivy Operator reports or an on-demand Trivy download) |
+| `demo.js` | Synthetic in-memory cluster used as a test fixture (only with `KUBEPILOT_DEMO=1`; never shown in the app) |
 | `client/src/` | React app: `App.jsx`, `components/shell/` (routing, auth gate, fan-out), `components/ui/` (Modal, DataTable, Menu, …), `lib/` (api, format, status, kinds), `hooks/` |
 | `electron/` | Desktop shell (`main.cjs`), fuses and signing (`after-pack.cjs`) |
 | `test/`, `client/src/**/*.test.*` | Test suites |

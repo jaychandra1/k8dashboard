@@ -41,4 +41,12 @@ describe('AuthErrorModal rendering', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Retry$/ }));
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
+
+  it('offers only real-cluster paths: Add cluster and Retry, never a Demo button', () => {
+    render(<AuthErrorModal auth={{ reason: 'error', message: 'connection refused' }} onRetry={() => {}} onAddAws={() => {}} onAddAzure={() => {}} onChangeConfig={() => {}} />);
+    expect(screen.getByRole('button', { name: /Add cluster/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Retry$/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /demo/i })).toBeNull();
+    expect(screen.queryByText(/demo/i)).toBeNull();
+  });
 });

@@ -68,6 +68,9 @@ export async function startServer({ env = {}, timeoutMs = 20000 } = {}) {
     USERPROFILE: home,
     NODE_ENV: 'test',
     LOG_LEVEL: 'warn',
+    // The synthetic demo cluster (demo.js) is a test-only fixture, gated by
+    // this flag; suites that need the product default pass KUBEPILOT_DEMO: ''.
+    KUBEPILOT_DEMO: '1',
     ...env,
   };
   delete childEnv.MCP_ALLOW_WRITE;

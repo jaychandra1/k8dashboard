@@ -5,7 +5,7 @@ import Navigation from './Navigation';
 
 vi.mock('./CustomResourceTree', () => ({ default: () => <div data-testid="cr-tree" /> }));
 
-const configStatus = { contexts: ['demo-cluster', 'prod'], contextsInfo: [{ name: 'demo-cluster', provider: 'demo' }], currentContext: 'demo-cluster' };
+const configStatus = { contexts: ['dev', 'prod'], contextsInfo: [{ name: 'dev', provider: 'local' }], currentContext: 'dev' };
 
 describe('Navigation', () => {
   it('renders every item as a link and marks the active one with aria-current', () => {

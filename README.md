@@ -24,9 +24,6 @@ A native desktop app (macOS · Windows · Linux) — and a Docker image — for 
 
 ## Features
 
-**Demo mode — try it with no cluster**
-- Pick the built-in **demo cluster** (or click **Explore the demo** on the connect screen) to try every feature against a realistic synthetic cluster — sample workloads (including a Pending and a CrashLoopBackOff pod), live metrics, logs, topology, Helm, Argo CD, a Security Center scan, a pod shell and the AI assistant — with **no kubeconfig required**.
-
 **Explore**
 - Live cluster dashboard — node/pod health, workload charts, capacity.
 - Every workload type (Pods, Deployments, StatefulSets, DaemonSets, Services, …) with live CPU/memory, per-container status, and cross-links (namespace → node → pod → owner).
@@ -44,7 +41,7 @@ A native desktop app (macOS · Windows · Linux) — and a Docker image — for 
 - GKE, on-prem, kind/minikube and any other context work straight from your existing kubeconfig.
 
 **Security Center**
-- Scan running images for CVEs, audit configuration and RBAC risk, and find exposed secrets — reading **Trivy Operator** reports or a **bundled Trivy** binary, so you can scan with nothing installed in-cluster.
+- Scan running images for CVEs, audit configuration and RBAC risk, and find exposed secrets — reading **Trivy Operator** reports or running **Trivy** itself (downloaded on first use — pinned version, checksum-verified — into `~/.config/kubepilot/bin`), so you can scan with nothing installed in-cluster.
 
 **Argo CD** (auto-detected)
 - GitOps dashboard, resource-tree View, Applications/AppSets/Projects, and Sync/Refresh/Rollback actions.
@@ -65,9 +62,8 @@ KubePilot is a **desktop UI for clusters you already have** — closest in spiri
 | Runs where | Your laptop | In a cluster | Your laptop / terminal |
 | Cluster lifecycle (provision, upgrade) | — | ✅ | — |
 | Centralized team RBAC & multi-tenancy | — | ✅ | — |
-| Built-in security scan (image CVEs, config, RBAC) | ✅ *bundled Trivy* | via add-ons | — |
+| Built-in security scan (image CVEs, config, RBAC) | ✅ *Trivy, downloaded on first use* | via add-ons | — |
 | AI assistant + MCP server | ✅ | — | — |
-| Try with no cluster (demo mode) | ✅ | — | — |
 | One-click EKS/AKS onboarding (no CLI) | ✅ | ✅ | — |
 | Free & open-source | ✅ | ✅ | k9s ✅ · Lens: sign-in required |
 
@@ -77,10 +73,10 @@ KubePilot is a **desktop UI for clusters you already have** — closest in spiri
 ## Quick start
 
 > [!TIP]
-> No cluster handy? Launch the app and click **Explore the demo** (or pick the **demo** context) to browse and operate a synthetic cluster — every feature works, no setup needed.
+> No kubeconfig yet? Launch the app and use **Add cluster** to import an **AWS EKS** or **Azure AKS** cluster straight from your cloud account — KubePilot signs you in and writes the kubeconfig for you, no CLI required.
 
 > [!NOTE]
-> To use a real cluster, KubePilot needs `kubectl` on your `PATH` and a working `kubeconfig` (`~/.kube/config`, or set `KUBECONFIG`). The `helm` CLI is **not** required — Helm releases are read straight from the Kubernetes API. The packaged desktop app bundles its own Node runtime; building from source needs **Node.js 22+** (see `.nvmrc`).
+> KubePilot needs `kubectl` on your `PATH` and a working `kubeconfig` (`~/.kube/config`, or set `KUBECONFIG`). The `helm` CLI is **not** required — Helm releases are read straight from the Kubernetes API. The packaged desktop app bundles its own Node runtime; building from source needs **Node.js 22+** (see `.nvmrc`).
 
 ### Desktop app
 
@@ -219,7 +215,7 @@ The API, `/mcp` and the `/ws/exec` shell carry your kubeconfig's full read/write
 - **Backend** (`server.js` + `lib/`) — Express + `@kubernetes/client-node`; REST API, a `/ws/exec` WebSocket for shells, short-TTL caches, and `kubectl` for the few things the API can't do (exec, port-forward). Helm releases are decoded from their release Secrets. In production it also serves the built UI.
 - **Frontend** (`client/`) — React + Vite; same-origin `/api` + `/ws/exec`, xterm.js terminal, ⌘K palette, token-driven theming.
 - **Cloud** (`aws-eks.js`, `azure-aks.js`, `eks-token.js`, `azure-token.js`) — CLI-free EKS/AKS discovery, kubeconfig merge, and native runtime auth via bundled token helpers. The kubeconfig `exec` entry is `KubePilot --token-helper eks|azure …` in the packaged app (handled at the top of `electron/main.cjs`, before any GUI code) or `node eks-token.js …` from source/Docker; `lib/paths.mjs` `execEntry()` is the single place that decides, and `lib/kubeconfig-repair.mjs` rewrites stale entries (missing binary, legacy `ELECTRON_RUN_AS_NODE` form) on load. An expired AWS SSO session is reported as such with a "Sign in again" prompt.
-- **Security** (`trivy-scan.js`) — reads Trivy Operator reports or runs a bundled Trivy binary.
+- **Security** (`trivy-scan.js`) — reads Trivy Operator reports or runs Trivy, downloaded on first use (pinned version, checksum-verified) into `~/.config/kubepilot/bin`; `npm run dist:bundled-trivy` builds an installer that ships it instead.
 - **Desktop** (`electron/`) — Electron shell that runs the backend as a utility process; `after-pack.cjs` applies Electron fuses and ad-hoc signs the macOS build. Released for all three OSes plus the GHCR image by the [`Build & Release`](.github/workflows/release.yml) workflow on a `v*.*.*` tag that matches `VERSION`.
 
 ## Troubleshooting

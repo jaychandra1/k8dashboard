@@ -1,7 +1,8 @@
 // The MCP write gate: mcp.js calls the REST API with `X-KubePilot-Source: mcp`.
 // While MCP write access is disabled (the default), every mutating route must
-// refuse those calls with 403 — both against a real context and in demo mode,
-// where the demo interceptor answers mutations itself.
+// refuse those calls with 403 — both against a real context and in demo mode
+// (the KUBEPILOT_DEMO=1 test fixture, where the demo interceptor answers
+// mutations itself).
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startServer } from './helpers/server.mjs';

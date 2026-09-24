@@ -91,7 +91,7 @@ function App() {
   const contextKey = configStatus.currentContext || '';
 
   const onBeforeSwitch = useCallback(() => { navigate('overview', [], {}); }, [navigate]);
-  const { switchContext, startDemo } = useContexts({ gate, toast, onBeforeSwitch });
+  const { switchContext } = useContexts({ gate, toast, onBeforeSwitch });
 
   const ns = useNamespaces({ enabled: tokenOk && authOk, contextKey, toast });
   const namespaces = ns.namespaces;
@@ -291,7 +291,8 @@ function App() {
           defaultPath={configStatus.defaultPath}
           exists={configStatus.exists}
           onSubmit={gate.loadConfigFromPath}
-          onDemo={startDemo}
+          onAddAws={openAws}
+          onAddAzure={openAzure}
           onClose={configStatus.loaded ? () => gate.setForceConfigModal(false) : undefined}
         />
       )}
@@ -308,7 +309,6 @@ function App() {
           onSwitchContext={switchContext}
           onAddAzure={openAzure}
           onAddAws={openAws}
-          onDemo={startDemo}
         />
       )}
 

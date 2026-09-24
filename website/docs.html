@@ -366,7 +366,7 @@ cd KubePilot
 npm install &amp;&amp; (cd client &amp;&amp; npm install)
 npm run build
 npm start          # http://localhost:3001</code></pre>
-      <p>Prerequisites: <strong>Node 22+</strong> and <code>kubectl</code> on your <code>PATH</code> (for the in-pod shell and port-forwarding; demo mode needs neither). <code>helm</code> is <strong>not</strong> required — Helm releases are read from the Kubernetes API. The server prints a login URL with your access token at start; open that URL.</p>
+      <p>Prerequisites: <strong>Node 22+</strong> and <code>kubectl</code> on your <code>PATH</code> (for the in-pod shell and port-forwarding). <code>helm</code> is <strong>not</strong> required — Helm releases are read from the Kubernetes API. The server prints a login URL with your access token at start; open that URL.</p>
     </article>
 
     <!-- ============ Running ============ -->
@@ -750,9 +750,8 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
             <tr><th scope="row">Runs where</th><td class="pickcol">Your laptop</td><td>In a cluster</td><td>Laptop / terminal</td></tr>
             <tr><th scope="row">Cluster lifecycle (provision, upgrade)</th><td class="pickcol no">—</td><td class="yes">✓</td><td class="no">—</td></tr>
             <tr><th scope="row">Centralized team RBAC &amp; multi-tenancy</th><td class="pickcol no">—</td><td class="yes">✓</td><td class="no">—</td></tr>
-            <tr><th scope="row">Built-in security scan (CVEs, config, RBAC)</th><td class="pickcol yes">✓<small>bundled Trivy</small></td><td>via add-ons</td><td class="no">—</td></tr>
+            <tr><th scope="row">Built-in security scan (CVEs, config, RBAC)</th><td class="pickcol yes">✓<small>Trivy, downloaded on first use</small></td><td>via add-ons</td><td class="no">—</td></tr>
             <tr><th scope="row">AI assistant + MCP server</th><td class="pickcol yes">✓</td><td class="no">—</td><td class="no">—</td></tr>
-            <tr><th scope="row">Try with no cluster (demo mode)</th><td class="pickcol yes">✓</td><td class="no">—</td><td class="no">—</td></tr>
             <tr><th scope="row">One-click EKS/AKS onboarding (no CLI)</th><td class="pickcol yes">✓</td><td class="yes">✓</td><td class="no">—</td></tr>
             <tr><th scope="row">Free &amp; open-source</th><td class="pickcol yes">✓</td><td class="yes">✓</td><td>k9s ✓ · Lens: sign-in</td></tr>
           </tbody>
@@ -824,7 +823,6 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
       <p>KubePilot is a native desktop UI for Kubernetes — live dashboards, logs, an in-pod shell, topology, Helm, Argo CD, a Security Center and one-click cloud onboarding.</p>
       <ul>
         <li><strong>Desktop + Docker</strong> — macOS (Apple Silicon), Windows, Linux, and a multi-arch image.</li>
-        <li><strong>Demo mode</strong> — explore every feature against a synthetic cluster with no kubeconfig.</li>
         <li><strong>Security Center</strong> — image CVEs, configuration audit, RBAC risk and exposed secrets.</li>
         <li><strong>MCP server</strong> — connect Claude, Cursor and other agents to the cluster you're viewing.</li>
         <li><strong>Cloud onboarding</strong> — import EKS, AKS and GKE clusters without a CLI.</li>

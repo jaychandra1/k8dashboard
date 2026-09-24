@@ -96,6 +96,7 @@ COPY --from=tools /tools/kubectl /tools/kubectl-oidc_login /tools/trivy /usr/loc
 # imports must be here (see the import list at the top of server.js).
 COPY --from=server-deps /app/node_modules ./node_modules
 COPY package.json package-lock.json VERSION ./
+# demo.js is imported by server.js but inert unless KUBEPILOT_DEMO=1 (test fixture).
 COPY server.js assistant.js mcp.js mcp-stdio.js aws-eks.js eks-token.js azure-aks.js azure-token.js trivy-scan.js demo.js ./
 COPY lib/ ./lib/
 COPY scripts/ ./scripts/

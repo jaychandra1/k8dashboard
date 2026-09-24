@@ -6,12 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Removed
+
+- The built-in demo cluster is no longer shown; the synthetic fixture remains available to tests via `KUBEPILOT_DEMO=1`. The connect screen now offers exactly two paths: load a kubeconfig, or **Add cluster** (AWS EKS / Azure AKS).
+
 ### Fixed
 
 - Imported EKS/AKS clusters could not connect from the packaged desktop app ("Unexpected end of JSON input"): the kubeconfig exec entry relied on `ELECTRON_RUN_AS_NODE`, which the app's fuses disable. Entries now run `KubePilot --token-helper eks|azure …` (or `node eks-token.js …` from source), stale entries are repaired automatically when the kubeconfig loads, and an expired AWS SSO session shows a "Sign in with AWS SSO" prompt instead of a raw error.
 
 ### Changed
 
+- Trivy is downloaded on first use instead of being bundled, shrinking the installer by ~50 MB; `npm run dist:bundled-trivy` restores bundling.
 - Renamed to KubePilot; legacy `K8DASHBOARD_*`/`K8SIGHT_*` env vars, `~/.config/k8dashboard` and the old MCP source header remain accepted.
   Installers are now `KubePilot-macos.dmg`, `KubePilot-windows.exe`, `KubePilot-linux.AppImage` / `.deb`, published on
   [jaychandra1/KubePilot](https://github.com/jaychandra1/KubePilot/releases); the container image is `ghcr.io/jaychandra1/kubepilot`.

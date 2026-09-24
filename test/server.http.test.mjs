@@ -1,5 +1,6 @@
 // End-to-end HTTP tests against a real `node server.js` child process
-// (KUBEPILOT_TOKEN fixed, KUBECONFIG=/nonexistent, isolated HOME, free port).
+// (KUBEPILOT_TOKEN fixed, KUBECONFIG=/nonexistent, isolated HOME, free port,
+// KUBEPILOT_DEMO=1 so the synthetic demo cluster is available as a fixture).
 // Covers the auth gate, the Host allowlist, path-case handling, body-size and
 // parse errors, input validation on mutating routes, security headers and the
 // WebSocket upgrade.
@@ -129,7 +130,15 @@ describe('request bodies', () => {
   });
 });
 
-describe('demo mode & input validation', () => {
+describe('demo mode (KUBEPILOT_DEMO=1) & input validation', () => {
+  test('the status endpoint advertises the fixture when the flag is set', async () => {
+    const res = await srv.authed('/api/config/status');
+    assert.equal(res.status, 200);
+    const body = await json(res);
+    assert.equal(body.demoAvailable, true);
+    assert.ok(body.contexts.includes('demo-cluster'));
+  });
+
   test('entering the demo context works without a kubeconfig', async () => {
     const res = await srv.authed('/api/config/context', {
       method: 'POST',

@@ -168,8 +168,9 @@ function backendEnv({ fixedPath, port, token }) {
     if (ENV_EXACT.has(k) || ENV_PREFIXES.some((p) => k.startsWith(p))) env[k] = v;
   }
   // Never forward anything that could turn the utility process into an
-  // arbitrary-code loader or change what server.js binds.
-  for (const k of ['NODE_OPTIONS', 'NODE_EXTRA_CA_CERTS', 'ELECTRON_RUN_AS_NODE', 'HOST', 'PORT'])
+  // arbitrary-code loader or change what server.js binds. KUBEPILOT_DEMO is
+  // the test-only synthetic-cluster fixture; the desktop app never offers it.
+  for (const k of ['NODE_OPTIONS', 'NODE_EXTRA_CA_CERTS', 'ELECTRON_RUN_AS_NODE', 'HOST', 'PORT', 'KUBEPILOT_DEMO'])
     delete env[k];
   env.PATH = fixedPath;
   if (process.platform === 'win32') env.Path = fixedPath;

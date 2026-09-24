@@ -4,14 +4,13 @@ import Icon from './Icons';
 import useClickOutside from '../hooks/useClickOutside';
 
 const PROVIDERS = {
-  demo: { label: 'Demo', icon: 'sparkles' },
   aws: { label: 'AWS EKS', icon: 'aws' },
   azure: { label: 'Azure AKS', icon: 'azure' },
   gcp: { label: 'Google GKE', icon: 'cluster' },
   local: { label: 'Local', icon: 'box' },
   other: { label: 'Other clusters', icon: 'cluster' },
 };
-const ORDER = ['demo', 'aws', 'azure', 'gcp', 'local', 'other'];
+const ORDER = ['aws', 'azure', 'gcp', 'local', 'other'];
 
 /**
  * Searchable context dropdown: trigger `aria-haspopup="listbox"`, labelled
@@ -44,7 +43,8 @@ export default function ContextSelector({ contexts = [], contextsInfo, currentCo
     (contextsInfo || []).forEach((c) => m.set(c.name, c.provider));
     return m;
   }, [contextsInfo]);
-  const providerOf = useCallback((name) => providerByName.get(name) || 'other', [providerByName]);
+  // Unknown provider tags (e.g. from an older or test-only server) fall into "Other clusters".
+  const providerOf = useCallback((name) => { const p = providerByName.get(name); return PROVIDERS[p] ? p : 'other'; }, [providerByName]);
   const currentKey = providerOf(currentContext);
   const currentP = PROVIDERS[currentKey] || PROVIDERS.other;
 

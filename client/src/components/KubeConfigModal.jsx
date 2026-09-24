@@ -15,10 +15,12 @@ function describeError(err) {
 }
 
 /**
- * Load a kubeconfig from a path. `onSubmit(path)` resolves to `null` on success
- * or an error (ApiError with `code` / `field`, or a string) shown inline.
+ * Connect screen: load a kubeconfig from a path, or import an EKS / AKS
+ * cluster straight from the cloud account (`onAddAws` / `onAddAzure`).
+ * `onSubmit(path)` resolves to `null` on success or an error (ApiError with
+ * `code` / `field`, or a string) shown inline.
  */
-export default function KubeConfigModal({ open = true, defaultPath, exists, onSubmit, onDemo, onClose }) {
+export default function KubeConfigModal({ open = true, defaultPath, exists, onSubmit, onAddAws, onAddAzure, onClose }) {
   const id = useId();
   const [path, setPath] = useState(defaultPath || '');
   const [busy, setBusy] = useState(false);
@@ -43,6 +45,12 @@ export default function KubeConfigModal({ open = true, defaultPath, exists, onSu
   const inputId = `${id}-path`;
   const errId = `${id}-err`;
   const hintId = `${id}-hint`;
+  const canAdd = !!(onAddAws || onAddAzure);
+
+  const where = defaultPath ? ` at ${defaultPath}` : '';
+  const description = exists
+    ? `A kubeconfig was found${where} but couldn't be loaded. Point KubePilot at a valid kubeconfig file${canAdd ? ', or import an EKS/AKS cluster' : ''}.`
+    : `No kubeconfig was found${where}. Point KubePilot at a kubeconfig file${canAdd ? ', or import an EKS/AKS cluster from your cloud account' : ''}.`;
 
   return (
     <Modal
@@ -51,14 +59,12 @@ export default function KubeConfigModal({ open = true, defaultPath, exists, onSu
       showClose={!!onClose}
       closeOnBackdrop={!!onClose && !busy}
       closeOnEscape={!!onClose && !busy}
-      title="Load kubeconfig"
+      title="Connect a cluster"
       icon="cluster"
       size="md"
       className="kubeconfig-modal"
       initialFocusRef={inputRef}
-      description={exists
-        ? `A kubeconfig was found at ${defaultPath} but couldn't be loaded. Enter a valid kubeconfig file path.`
-        : `No kubeconfig was found${defaultPath ? ` at ${defaultPath}` : ''}. Enter the full path to your kubeconfig file.`}
+      description={description}
     >
       <form onSubmit={submit} noValidate>
         <label htmlFor={inputId} className="ui-modal-label">Kubeconfig file path</label>
@@ -90,14 +96,23 @@ export default function KubeConfigModal({ open = true, defaultPath, exists, onSu
         </div>
       </form>
 
-      {onDemo && (
-        <div className="modal-demo">
-          <div className="modal-or" aria-hidden="true"><span>or</span></div>
-          <Button variant="secondary" icon="sparkles" onClick={() => onDemo()} disabled={busy} className="modal-demo-btn">
-            Explore the demo — no cluster needed
-          </Button>
+      {canAdd && (
+        <div className="modal-add-cluster">
+          <div className="modal-or" aria-hidden="true"><span>or add a cluster</span></div>
+          <div className="modal-add-cluster-btns" role="group" aria-label="Add cluster">
+            {onAddAws && (
+              <Button variant="secondary" icon="aws" onClick={() => onAddAws()} disabled={busy} className="btn-add">
+                AWS EKS
+              </Button>
+            )}
+            {onAddAzure && (
+              <Button variant="secondary" icon="azure" onClick={() => onAddAzure()} disabled={busy} className="btn-add">
+                Azure AKS
+              </Button>
+            )}
+          </div>
           <p className="modal-hint modal-hint-tight">
-            A synthetic cluster with sample workloads, metrics, logs, Argo CD and security scans, so you can try every feature.
+            Import a cluster straight from your cloud account — no CLI required. KubePilot signs you in and writes the kubeconfig for you.
           </p>
         </div>
       )}

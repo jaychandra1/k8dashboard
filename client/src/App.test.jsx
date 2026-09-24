@@ -5,8 +5,8 @@ import { _resetHistoryIndex } from './hooks/useHashRoute';
 
 // ---- mocks ---------------------------------------------------------------
 const responses = {
-  '/api/config/status': { loaded: true, contexts: ['demo-cluster'], contextsInfo: [{ name: 'demo-cluster', provider: 'demo' }], currentContext: 'demo-cluster' },
-  '/api/config/auth': { ok: true, currentContext: 'demo-cluster' },
+  '/api/config/status': { loaded: true, contexts: ['test-cluster'], contextsInfo: [{ name: 'test-cluster', provider: 'local' }], currentContext: 'test-cluster' },
+  '/api/config/auth': { ok: true, currentContext: 'test-cluster' },
   '/api/namespaces': { namespaces: ['default', 'kube-system'] },
   '/api/argocd/status': { installed: false },
   '/api/resources/default': { pods: [{ name: 'web-1', namespace: 'default', status: 'Running' }], deployments: [] },
@@ -60,14 +60,14 @@ describe('App routing', () => {
     expect(screen.getByRole('main')).toHaveAttribute('id', 'main');
     expect(screen.getByRole('banner')).toBeInTheDocument();
     await waitFor(() => expect(screen.getByTestId('overview')).toHaveAttribute('data-pods', '2'));
-    expect(document.title).toMatch(/^Overview · all namespaces · demo-cluster — KubePilot$/);
+    expect(document.title).toMatch(/^Overview · all namespaces · test-cluster — KubePilot$/);
 
     const user = userEvent.setup();
     await user.click(screen.getByRole('link', { name: 'Pods' }));
     expect(window.location.hash).toBe('#/pod');
     await waitFor(() => expect(screen.getByTestId('rv')).toHaveAttribute('data-type', 'pod'));
     expect(screen.getByRole('link', { name: 'Pods' })).toHaveAttribute('aria-current', 'page');
-    expect(document.title).toMatch(/^Pods · all namespaces · demo-cluster — KubePilot$/);
+    expect(document.title).toMatch(/^Pods · all namespaces · test-cluster — KubePilot$/);
 
     // Back button in the top bar → previous view.
     await user.click(screen.getByRole('button', { name: 'Back' }));
@@ -82,7 +82,7 @@ describe('App routing', () => {
     renderApp();
     await waitFor(() => expect(screen.getByTestId('rv')).toHaveAttribute('data-selected', 'web-1'));
     expect(screen.getByTestId('rv')).toHaveAttribute('data-count', '1');
-    expect(document.title).toMatch(/^Pods · default · demo-cluster — KubePilot$/);
+    expect(document.title).toMatch(/^Pods · default · test-cluster — KubePilot$/);
     // Partial results from the backend surface as a non-blocking toast.
     window.location.hash = '#/pod';
     await settle();

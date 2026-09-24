@@ -89,7 +89,7 @@ export function classify(auth) {
   return { title: TITLES[reason] || TITLES.error, summary: raw || 'The cluster could not be reached with the current kubeconfig.', fix: null, unmatched: true };
 }
 
-export default function AuthErrorModal({ open = true, auth, onRetry, onChangeConfig, retrying, contexts = [], contextsInfo, currentContext, onSwitchContext, onAddAzure, onAddAws, onDemo }) {
+export default function AuthErrorModal({ open = true, auth, onRetry, onChangeConfig, retrying, contexts = [], contextsInfo, currentContext, onSwitchContext, onAddAzure, onAddAws }) {
   // `detail` carries the exec plugin's raw stderr when the backend replaced the
   // message with a friendlier one (sso-expired / exec-helper).
   const raw = auth?.detail || auth?.message || '';
@@ -130,9 +130,6 @@ export default function AuthErrorModal({ open = true, auth, onRetry, onChangeCon
       description={summary}
       footer={(
         <div className="auth-actions">
-          {onDemo && (
-            <Button variant="secondary" icon="sparkles" onClick={onDemo} disabled={retrying} className="btn-demo" title="Explore a synthetic cluster — no real cluster needed">Demo</Button>
-          )}
           {canAdd && (
             <>
               <Button ref={addRef} variant="secondary" icon="plus" onClick={openAdd} disabled={retrying} aria-haspopup="menu" aria-expanded={!!addMenu} className="btn-add">

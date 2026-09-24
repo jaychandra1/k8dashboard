@@ -310,11 +310,12 @@ body {
 .modal-btn.primary:hover:not(:disabled) { filter: brightness(1.12); }
 .modal-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 .modal-hint { margin-top: 16px; font-size: 0.75rem; color: var(--text-muted); line-height: 1.5; }
-/* Demo entry point on the "load kubeconfig" screen */
-.modal-demo { margin-top: 18px; }
+/* "Add cluster" (EKS / AKS import) section on the connect screen */
+.modal-add-cluster { margin-top: 18px; }
 .modal-or { display: flex; align-items: center; gap: 12px; margin: 2px 0 12px; color: var(--text-muted); font-size: 0.6875rem; text-transform: uppercase; letter-spacing: .06em; }
 .modal-or::before, .modal-or::after { content: ''; flex: 1; height: 1px; background: var(--border); }
-.modal-demo .modal-btn { width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.modal-add-cluster-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.modal-add-cluster-btns .ui-btn { width: 100%; }
 
 /* Danger variant of the modal icon (auth / connectivity failures) */
 .modal-icon.danger { background: var(--red-tint); color: var(--red); }
@@ -505,14 +506,12 @@ body {
 .auth-add-item:hover { background: var(--border-subtle); }
 
 /* Coloured connect-screen buttons (tints work on light + dark) */
-.modal-btn.btn-demo { --c: #a855f7; }
 .modal-btn.btn-add { --c: #3b9dff; }
-.modal-btn.btn-demo, .modal-btn.btn-add {
+.modal-btn.btn-add {
   background: color-mix(in srgb, var(--c) 15%, transparent);
   border-color: color-mix(in srgb, var(--c) 45%, transparent);
   color: var(--c);
 }
-.modal-btn.btn-demo:hover:not(:disabled),
 .modal-btn.btn-add:hover:not(:disabled) {
   background: color-mix(in srgb, var(--c) 26%, transparent);
 }
@@ -4325,9 +4324,9 @@ ul.cluster-rail-pins { list-style: none; margin: 0; padding: 0; }
 .cluster-pin-wrap:hover .cluster-pin-remove.ui-btn, .cluster-pin-wrap:focus-within .cluster-pin-remove.ui-btn { display: grid; }
 
 /* Context selector: provider colours via classes (no inline hex) + keyboard focus row */
-.ctx-provider-demo { color: #af52de; } .ctx-provider-aws { color: #ff9900; } .ctx-provider-azure { color: #3b96f0; }
+.ctx-provider-aws { color: #ff9900; } .ctx-provider-azure { color: #3b96f0; }
 .ctx-provider-gcp { color: #4285f4; } .ctx-provider-local { color: #8b949e; } .ctx-provider-other { color: #8b8fa3; }
-.ctx-dot-demo { background: #af52de; } .ctx-dot-aws { background: #ff9900; } .ctx-dot-azure { background: #3b96f0; }
+.ctx-dot-aws { background: #ff9900; } .ctx-dot-azure { background: #3b96f0; }
 .ctx-dot-gcp { background: #4285f4; } .ctx-dot-local { background: #8b949e; } .ctx-dot-other { background: #8b8fa3; }
 .ctx-option.focused { background: var(--bg-hover); color: var(--text); }
 .ctx-option.active.focused { background: var(--accent-tint); }
@@ -4372,7 +4371,6 @@ ul.prefs-mcp-tools { list-style: none; margin: 0; padding: 0; }
 .azure-modal a.ui-btn { text-decoration: none; }
 
 /* Kubeconfig / auth dialogs (inside <Modal>) */
-.modal-demo-btn.ui-btn { width: 100%; }
 .modal-hint-tight { margin-top: 8px; }
 .auth-modal .auth-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; width: 100%; }
 .auth-modal dl.auth-detail { margin-bottom: 0; }
