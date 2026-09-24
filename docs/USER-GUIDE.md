@@ -301,7 +301,7 @@ Versions follow **Semantic Versioning**: patch for fixes (`1.2.0 → 1.2.1`), mi
    |---|---|
    | **Verify tag == VERSION** | Fails immediately if the tag and `VERSION` disagree, or if a manual run was started from a branch other than `main`. |
    | **Build** (macOS arm64, Windows x64, Linux x64) | `npm ci`, tests, `npm run dist` → installers uploaded as artifacts. |
-   | **Publish GitHub Release** | Waits for approval on the `release` environment, then generates `SHA256SUMS.txt` and a CycloneDX SBOM. Publishes on the public [jaychandra1/KubePilot](https://github.com/jaychandra1/KubePilot) repo using the `KUBEPILOT_RELEASE_TOKEN` secret (a fine-grained PAT with Contents: read & write on that repo); the job fails with a clear error if the secret is missing. |
+   | **Publish GitHub Release** | Waits for approval on the `release` environment, then generates `SHA256SUMS.txt` and a CycloneDX SBOM. Publishes on the public [jaychandra1/KubePilot](https://github.com/jaychandra1/KubePilot) repo using the `RELEASE_TOKEN` secret (a fine-grained PAT with Contents: read & write on that repo); the job fails with a clear error if the secret is missing. |
    | **Publish Docker image (GHCR)** | Also gated by the `release` environment. Builds amd64 + arm64 and pushes `ghcr.io/jaychandra1/kubepilot:v1.2.0`, `:1.2` and `:latest`. |
 
    When the workflow pauses, a reviewer on the `release` environment approves it in the Actions UI. Nothing is published before that approval, and a release in progress is never cancelled by a newer run.

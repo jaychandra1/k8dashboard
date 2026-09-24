@@ -5,7 +5,7 @@ name: Build & Release
 # SHA256SUMS.txt + CycloneDX SBOM) and push the Docker image to
 # ghcr.io/jaychandra1/kubepilot. The source stays in this private repo.
 #
-# KUBEPILOT_RELEASE_TOKEN is a fine-grained PAT scoped to jaychandra1/KubePilot
+# RELEASE_TOKEN is a fine-grained PAT scoped to jaychandra1/KubePilot
 # with "Contents: Read and write" — store it as a secret on the `release`
 # environment (or the repo). The release job fails early without it.
 #
@@ -198,16 +198,16 @@ jobs:
       # Publishing happens on the PUBLIC repo, which needs a PAT — GITHUB_TOKEN
       # is scoped to this (source) repo only. Fail fast with instructions
       # instead of creating a release in the wrong place.
-      - name: Require KUBEPILOT_RELEASE_TOKEN
+      - name: Require RELEASE_TOKEN
         env:
-          KUBEPILOT_RELEASE_TOKEN: ${{ secrets.KUBEPILOT_RELEASE_TOKEN }}
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           set -euo pipefail
-          if [ -z "${KUBEPILOT_RELEASE_TOKEN:-}" ]; then
-            echo "::error::secrets.KUBEPILOT_RELEASE_TOKEN is empty. Create a fine-grained personal access token (GitHub → Settings → Developer settings → Fine-grained tokens) with Repository access limited to ${RELEASE_REPO} and the permission 'Contents: Read and write', then add it as KUBEPILOT_RELEASE_TOKEN under Settings → Environments → release (or Settings → Secrets and variables → Actions) on ${GITHUB_REPOSITORY}."
+          if [ -z "${RELEASE_TOKEN:-}" ]; then
+            echo "::error::secrets.RELEASE_TOKEN is empty. Create a fine-grained personal access token (GitHub → Settings → Developer settings → Fine-grained tokens) with Repository access limited to ${RELEASE_REPO} and the permission 'Contents: Read and write', then add it as RELEASE_TOKEN under Settings → Environments → release (or Settings → Secrets and variables → Actions) on ${GITHUB_REPOSITORY}."
             exit 1
           fi
-          echo "KUBEPILOT_RELEASE_TOKEN is set; publishing to ${RELEASE_REPO}"
+          echo "RELEASE_TOKEN is set; publishing to ${RELEASE_REPO}"
 
       - name: Download all build artifacts
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
@@ -289,7 +289,7 @@ jobs:
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           repository: jaychandra1/KubePilot
-          token: ${{ secrets.KUBEPILOT_RELEASE_TOKEN }}
+          token: ${{ secrets.RELEASE_TOKEN }}
           tag_name: ${{ needs.verify.outputs.tag }}
           # No target_commitish: KubePilot holds no source, so the tag is created
           # on its default branch (the repo must have at least one commit).
