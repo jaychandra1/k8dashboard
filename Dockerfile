@@ -129,7 +129,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 # links the package to its GitHub repo. docker/metadata-action overrides
 # source/revision/created automatically.
 # ------------------------------------------------------------------
-ARG APP_VERSION="1.0.0"
+ARG APP_VERSION="2.0.0"
 LABEL org.opencontainers.image.title="KubePilot" \
       org.opencontainers.image.description="Browse and operate Kubernetes clusters — workloads, nodes, events, logs, in-browser exec/terminal, service port-forwarding, Helm releases, RBAC and CRDs. Reads your kubeconfig and serves the UI + token-protected REST API on port 3001." \
       org.opencontainers.image.version="${APP_VERSION}" \
