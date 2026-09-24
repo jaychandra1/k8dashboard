@@ -10,6 +10,7 @@ import Icon from '../Icons';
  *     { label: 'Logs', icon: 'logs', onSelect() {} },
  *     { label: 'Scale…', icon: 'scale', onSelect() {}, disabled: true },
  *     { divider: true },
+ *     { heading: true, label: 'All contexts', hint: '12' },       // non-interactive group label
  *     { label: 'Copy', icon: 'copy', children: [{ label: 'Name', onSelect() {} }] },
  *     { label: 'Delete', icon: 'delete', danger: true, onSelect() {} },
  *   ]} />
@@ -29,7 +30,7 @@ function MenuList({ items, onClose, onSelectDone, x, y, level = 0, anchorRect, f
   const typeahead = useRef({ buf: '', t: null });
   const closeTimer = useRef(null);
 
-  const enabled = useMemo(() => items.map((it, i) => ({ it, i })).filter(({ it }) => !it.divider && !it.disabled), [items]);
+  const enabled = useMemo(() => items.map((it, i) => ({ it, i })).filter(({ it }) => !it.divider && !it.heading && !it.disabled), [items]);
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -67,7 +68,7 @@ function MenuList({ items, onClose, onSelectDone, x, y, level = 0, anchorRect, f
   };
 
   const select = (item) => {
-    if (!item || item.disabled || item.divider) return;
+    if (!item || item.disabled || item.divider || item.heading) return;
     if (item.children?.length) { setOpenSub(item); return; }
     onSelectDone?.();
     item.onSelect?.();
@@ -122,6 +123,15 @@ function MenuList({ items, onClose, onSelectDone, x, y, level = 0, anchorRect, f
       >
         {items.map((item, i) => {
           if (item.divider) return <div key={`d${i}`} className="context-menu-divider ui-menu-divider" role="separator" />;
+          // Non-interactive group label (e.g. "All contexts"); skipped by keyboard navigation.
+          if (item.heading) {
+            return (
+              <div key={item.key || `h${i}`} className="ui-menu-heading" role="presentation">
+                <span className="context-menu-label">{item.label}</span>
+                {item.hint && <span className="ui-menu-hint">{item.hint}</span>}
+              </div>
+            );
+          }
           const hasSub = !!item.children?.length;
           const isActive = i === active;
           return (

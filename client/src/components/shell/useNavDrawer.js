@@ -58,7 +58,6 @@ export default function useNavDrawer({ routeKey } = {}) {
 
   const toggle = useCallback(() => setOpen((o) => !o), []);
   const close = useCallback(() => setOpen(false), []);
-  const show = useCallback(() => setOpen(true), []);
 
   return {
     narrow,
@@ -66,7 +65,6 @@ export default function useNavDrawer({ routeKey } = {}) {
     navState: narrow ? (open ? 'open' : 'collapsed') : undefined,
     toggle,
     close,
-    show,
     toggleRef,
     navRef,
   };

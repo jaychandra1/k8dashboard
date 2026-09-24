@@ -20,7 +20,7 @@ import { ALL } from './routes';
  * bumps on manual/auto refresh — refetch in place, keep data on screen).
  *
  *   Overview            { allResources, selectedNamespaces, namespaces, onNamespaceSelect, loading, refetching, partialErrors, onResourceTypeChange, onNavigate, refreshSignal }
- *   Cluster             { configStatus, context, refreshSignal }
+ *   Cluster             { configStatus, context, refreshSignal, onSummaryLoaded(contextName) }
  *   Nodes               { focusNode, onFocusHandled, onNavigate, refreshSignal }
  *   Namespaces          { onNavigate, refreshSignal }
  *   Topology            { namespaces, selectedNamespaces, onNavigate, refreshSignal }
@@ -51,6 +51,7 @@ export default function ViewOutlet({
   subView, onSubViewChange,
   prefSection, onPrefSectionChange, onClosePreferences, onChangeConfig, onAddAzure, onAddAws,
   onResourceTypeChange, nav,
+  onClusterSummary,
 }) {
   const single = selectedNamespaces.length === 1 && selectedNamespaces[0] !== ALL ? selectedNamespaces[0] : ALL;
 
@@ -71,7 +72,7 @@ export default function ViewOutlet({
         />
       );
     case 'cluster':
-      return <Cluster configStatus={configStatus} context={configStatus.currentContext} refreshSignal={refreshSignal} />;
+      return <Cluster configStatus={configStatus} context={configStatus.currentContext} refreshSignal={refreshSignal} onSummaryLoaded={onClusterSummary} />;
     case 'nodes':
       return <Nodes focusNode={focusNode} onFocusHandled={onFocusHandled} onNavigate={nav} refreshSignal={refreshSignal} />;
     case 'namespaces':

@@ -6,60 +6,23 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **One cluster switcher.** The sidebar's **Context** selector is gone; the cluster name now appears once, in the top-bar cluster menu. The menu covers every case: pinned clusters (check on the current one) → **All contexts** (listed inline with provider icons when there are 12 or fewer, otherwise an **All contexts ▸** submenu) plus **Search contexts…**, which opens a searchable, provider-grouped picker dialog with keyboard navigation → **Pin/Unpin** the current cluster and **Add cluster ▸** (AWS EKS / Azure AKS). The desktop app's native **Clusters ▸ All contexts…** and the `kubepilot:open-contexts` event open the same picker. The auth-error dialog's "Switch to another cluster" uses the same list inline.
+- **Cluster Overview is the landing page.** Opening the app without a route, an unknown route, and every cluster switch now land on `#/cluster` (the Cluster overview) instead of the Workloads overview (`#/overview`, still available from the sidebar).
+- **Branded loading screen.** Startup (kubeconfig status and cluster authentication) and every cluster switch show the app icon with "Getting the data from <cluster>…" and an indeterminate bar (announced as a polite status; the pulse is disabled under reduced motion). During a switch it covers only the main region — sidebar and top bar stay usable — until the new cluster's summary is on screen, capped at 8 seconds.
+
+### Fixed
+
+- Overview / Cluster KPI row: five cards stay on one row on wide screens and collapse evenly (3+2, 2+2+1) on narrower ones instead of leaving one orphaned card; all cards share the same minimum height.
+- Pod Health / Node Health legends no longer truncate labels ("Runn…"); the donut and legend keep a small, consistent gap and the legend wraps under the ring only when the card is really narrow.
+- Top bar: back/forward and the cluster switcher share the same 30px height and an even 8–10px rhythm.
+- Long menus (e.g. **All contexts ▸** with dozens of clusters) scroll within the window instead of overflowing it.
+
 ### Removed
 
 - The built-in demo cluster is no longer shown; the synthetic fixture remains available to tests via `KUBEPILOT_DEMO=1`. The connect screen now offers exactly two paths: load a kubeconfig, or **Add cluster** (AWS EKS / Azure AKS).
 
 ### Fixed
-- Topology (and the Argo CD resource tree) now **fit the whole graph to the canvas** on load, on namespace/filter change and on Reset, instead of drawing at a fixed offset that left most of a large namespace off-screen. Wheel zoom is anchored at the cursor, the zoom floor allows very large graphs, and the view refits when the window is resized until you pan or zoom by hand.
-- Expanding **Custom Resources** in the sidebar made the whole window scroll (content shifted up leaving a black area): visually-hidden text inside the tree rows was absolutely positioned and escaped the sidebar's unpositioned scroll area, stretching the document. The sidebar scroll areas are now positioned containers and the document itself is pinned (`html, body { overflow: hidden }`), so only views scroll.
-- Desktop app: if the backend process exits unexpectedly (crash, OOM, port taken), KubePilot now restarts it in place (up to 3 times per minute) and reloads the window instead of showing a fatal dialog and quitting.
-- Mouse-wheel scrolling in list views: tables had a nested scroll container with `overscroll-behavior: contain` that swallowed wheel events; every list now has a single bounded scroller and wheel/trackpad scrolling works everywhere.
-- Switching views quickly no longer shows "Request aborted": shared in-flight requests are reference-counted so one view cancelling does not abort the request for others, and cancellations are never surfaced as errors.
-- Imported EKS/AKS clusters could not connect from the packaged desktop app ("Unexpected end of JSON input"): the kubeconfig exec entry relied on `ELECTRON_RUN_AS_NODE`, which the app's fuses disable. Entries now run `KubePilot --token-helper eks|azure …` (or `node eks-token.js …` from source), stale entries are repaired automatically when the kubeconfig loads, and an expired AWS SSO session shows a "Sign in with AWS SSO" prompt instead of a raw error.
-
-### Changed
-- New KubePilot app icon (transparent PNG source in `build/icon.png`; installers, favicon, sidebar brand mark, splash screen, website and social preview all updated). Source images live in `build/source/`; regenerate with the icon script.
-
-- The left "PINS" cluster rail is gone. Its job moved to a compact **cluster menu** in the toolbar (current context name next to the back/forward arrows): pinned clusters with a check on the current one, **Pin/Unpin "<context>"**, **All contexts…** (opens the sidebar selector) and **Add cluster ▸** (AWS EKS / Azure AKS); it is keyboard operable and works in the browser, Docker and desktop. The desktop app also gets a native **Clusters** menu (between View and Window) with the same pinned list, **All contexts…** and **Add … cluster…** entries. Pins are now stored server-side (`GET`/`PUT /api/settings/pins`, in the app's `settings.json`) so both menus share them; the old `localStorage` pins are migrated automatically on first load. The sidebar drawer on narrow screens now starts at the window edge.
-- `kubectl` is no longer required to browse or operate a cluster. Nodes, node pods and capacity, topology, cluster summary, CRDs and custom resources, metrics, Argo CD lists/detail and every simple mutation (server-side apply with field manager `kubepilot`, delete, scale, rollout restart, Argo CD sync/refresh/delete, one-shot exec) now go through the Kubernetes API on the current context. Only the interactive pod terminal and service port-forward still need `kubectl`; without it they answer `501 { code: "kubectl_required" }` with an install hint instead of a raw `spawn kubectl ENOENT`. New `GET /api/config/capabilities` reports `{ kubectl: { available, path }, terminal, portForward }` (cached 60 s, `?refresh=1` re-probes); `KUBEPILOT_KUBECTL_BIN` pins the binary.
-- Trivy is downloaded on first use instead of being bundled, shrinking the installer by ~50 MB; `npm run dist:bundled-trivy` restores bundling.
-- Renamed to KubePilot; legacy `K8DASHBOARD_*`/`K8SIGHT_*` env vars, `~/.config/k8dashboard` and the old MCP source header remain accepted.
-  Installers are now `KubePilot-macos.dmg`, `KubePilot-windows.exe`, `KubePilot-linux.AppImage` / `.deb`, published on
-  [jaychandra1/KubePilot](https://github.com/jaychandra1/KubePilot/releases); the container image is `ghcr.io/jaychandra1/kubepilot`.
-
-## [1.2.0] - 2026-09-23
-
-First public release of **k8dashboard**.
-
-### Added
-
-- Native desktop app for macOS (Apple Silicon), Windows and Linux, plus a Docker image.
-- Live cluster dashboard, resource browsing and editing, topology, logs, an in-pod terminal, Helm, Argo CD, and one-click EKS / AKS / GKE onboarding.
-- Security Center: image CVE scan (Trivy Operator or bundled Trivy), configuration and RBAC audit, exposed-secret detection.
-- Demo mode: explore every feature against a synthetic cluster with no kubeconfig.
-- MCP server (HTTP + stdio bridge) so agents can operate the connected cluster.
-- Optional AI assistant (bring your own OpenAI-compatible endpoint).
-
-### Security
-
-- **Bearer-token authentication** on `/api/*`, `/mcp` and the `/ws/exec` upgrade (`?token=`).
-  The token comes from `K8DASHBOARD_TOKEN`, else `~/.config/k8dashboard/token` (auto-generated, `0600`).
-  Only `GET /healthz` and `GET /api/version` are public. The server prints the login URL
-  (`http://127.0.0.1:3001/#token=…`) at boot and the UI stores the token in `sessionStorage`.
-- **Host allowlist** (`localhost`, `127.0.0.1`, `[::1]`, plus `ALLOWED_HOSTS`) — any other `Host`
-  gets HTTP 421, defeating DNS rebinding. Case-variant paths such as `/API/...` are 404.
-- **Strict input validation** (`lib/validate.mjs`) on every namespace / kind / name / container /
-  port / context parameter before it reaches `kubectl` or the Kubernetes API; flag-shaped values
-  (`--all`, `--server=…`) are rejected. Kubeconfig loading is restricted to the home directory.
-- **Hardened HTTP responses**: CSP on the UI document, `X-Frame-Options: DENY`, `nosniff`,
-  `Referrer-Policy`, `Permissions-Policy`, no `X-Powered-By`, JSON body limit, JSON-only error
-  responses, per-IP rate limiting.
-- **Electron**: fresh random token per launch; backend started on a verified-free port; allow-listed
-  environment; sandboxed renderer; DevTools only in unpackaged builds. Packaged builds carry
-  Electron fuses.
-- **Docker**: base image pinned by digest; `kubectl`, `kubelogin` and `trivy` installed from pinned
-  releases with checksum verification; `HEALTHCHECK` on `/healthz`.
-
-[Unreleased]: https://github.com/jaychandra1/k8dashboard/compare/v1.2.0...HEAD
-[1.2.0]: https://github.com/jaychandra1/KubePilot/releases/tag/v1.2.0
+- Add AWS EKS: the dialog no longer pre-selects a saved SSO profile (it defaults to entering a start URL; saved profiles are offered explicitly and pre-fill the URL and regions when chosen). A new **Cluster regions** field restricts discovery to the regions you name instead of scanning every AWS region; the server validates the list (`regions` on `POST /api/aws/clusters`).
+- Desktop app: the native Clusters menu is no longer rebuilt on a 15-second timer (only on focus, after a switch and on load), which could steal keyboard focus from dialog inputs on Windows.

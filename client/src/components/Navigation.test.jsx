@@ -5,11 +5,9 @@ import Navigation from './Navigation';
 
 vi.mock('./CustomResourceTree', () => ({ default: () => <div data-testid="cr-tree" /> }));
 
-const configStatus = { contexts: ['dev', 'prod'], contextsInfo: [{ name: 'dev', provider: 'local' }], currentContext: 'dev' };
-
 describe('Navigation', () => {
   it('renders every item as a link and marks the active one with aria-current', () => {
-    render(<Navigation configStatus={configStatus} view="pod" onNavigate={() => {}} onSwitchContext={() => {}} argocdInstalled onOpenPreferences={() => {}} />);
+    render(<Navigation view="pod" onNavigate={() => {}} argocdInstalled onOpenPreferences={() => {}} />);
     const nav = screen.getByRole('navigation', { name: 'Primary' });
     expect(nav).toHaveAttribute('id', 'primary-nav');
     // No clickable divs: every navigation item is an anchor with an #/… href.
@@ -27,10 +25,26 @@ describe('Navigation', () => {
     expect(within(nav).queryAllByRole('generic').filter((el) => el.className === 'nav-item')).toHaveLength(0);
   });
 
+  it('has no context selector: the brand block (title, version, Preferences) is the whole header', () => {
+    render(<Navigation view="pod" onNavigate={() => {}} onOpenPreferences={() => {}} />);
+    const nav = screen.getByRole('navigation', { name: 'Primary' });
+    expect(within(nav).queryByRole('combobox')).toBeNull();
+    expect(within(nav).queryByRole('listbox')).toBeNull();
+    expect(within(nav).queryByRole('button', { name: /context/i })).toBeNull();
+    expect(within(nav).queryByText(/^Context$/)).toBeNull();
+    expect(nav.querySelector('.nav-context-selector, .nav-cluster, .ctx-search')).toBeNull();
+    const header = nav.querySelector('.nav-header');
+    expect(header).toHaveTextContent('KubePilot');
+    expect(within(header).getByRole('button', { name: 'Preferences' })).toBeInTheDocument();
+    // Only the brand block lives in the header.
+    expect(header.children).toHaveLength(1);
+    expect(header.firstElementChild).toHaveClass('nav-brand');
+  });
+
   it('navigates via onNavigate on a plain click and toggles sections', async () => {
     const user = userEvent.setup();
     const onNavigate = vi.fn();
-    render(<Navigation configStatus={configStatus} view="overview" onNavigate={onNavigate} onSwitchContext={() => {}} linkQuery={{ ns: 'default' }} onOpenPreferences={() => {}} />);
+    render(<Navigation view="overview" onNavigate={onNavigate} linkQuery={{ ns: 'default' }} onOpenPreferences={() => {}} />);
     const nodes = screen.getByRole('link', { name: 'Nodes' });
     expect(nodes).toHaveAttribute('href', '#/nodes?ns=default');
     await user.click(nodes);
@@ -43,7 +57,7 @@ describe('Navigation', () => {
   });
 
   it('marks argo / security sub-views active from subView', () => {
-    render(<Navigation configStatus={configStatus} view="security" subView="images" onNavigate={() => {}} onSwitchContext={() => {}} onOpenPreferences={() => {}} />);
+    render(<Navigation view="security" subView="images" onNavigate={() => {}} onOpenPreferences={() => {}} />);
     const active = screen.getAllByRole('link', { current: 'page' });
     expect(active).toHaveLength(1);
     expect(active[0]).toHaveTextContent('Images');

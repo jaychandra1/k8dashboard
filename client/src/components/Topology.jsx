@@ -124,7 +124,7 @@ export default function Topology({
           <label htmlFor={nsId} className="sr-only">Namespace</label>
           <select
             id={nsId}
-            className="nav-context-selector topo-nssel"
+            className="topo-nssel"
             value={namespace}
             onChange={(e) => setNamespace(e.target.value)}
           >

@@ -76,11 +76,11 @@ export default function ArgoSelect({ label, value, options = [], placeholder = '
   };
 
   return (
-    <div className="ctx-select" ref={rootRef} style={{ width }}>
+    <div className="dd-select" ref={rootRef} style={{ width }}>
       <button
         ref={triggerRef}
         type="button"
-        className={`ctx-trigger ${open ? 'open' : ''}`}
+        className={`dd-trigger ${open ? 'open' : ''}`}
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -89,13 +89,13 @@ export default function ArgoSelect({ label, value, options = [], placeholder = '
         onClick={() => (open ? close() : openList())}
         onKeyDown={onTriggerKey}
       >
-        {icon && <Icon name={icon} size={15} className="ctx-trigger-icon" />}
-        <span className={`ctx-trigger-label ${current ? '' : 'ctx-trigger-placeholder'}`}>{current?.label || placeholder}</span>
-        <span className="ctx-trigger-arrow" aria-hidden="true"><Icon name={open ? 'chevronUp' : 'chevronDown'} size={13} strokeWidth={2.2} /></span>
+        {icon && <Icon name={icon} size={15} className="dd-trigger-icon" />}
+        <span className={`dd-trigger-label ${current ? '' : 'dd-trigger-placeholder'}`}>{current?.label || placeholder}</span>
+        <span className="dd-trigger-arrow" aria-hidden="true"><Icon name={open ? 'chevronUp' : 'chevronDown'} size={13} strokeWidth={2.2} /></span>
       </button>
       {open && (
-        <div className="ctx-dropdown" onKeyDown={onPopupKey}>
-          <div className="ctx-search">
+        <div className="dd-dropdown" onKeyDown={onPopupKey}>
+          <div className="dd-search">
             <Icon name="search" size={14} />
             <input
               ref={searchRef}
@@ -113,8 +113,8 @@ export default function ArgoSelect({ label, value, options = [], placeholder = '
               spellCheck={false}
             />
           </div>
-          <ul ref={listRef} id={listId} role="listbox" aria-label={label} className="ctx-list">
-            {filtered.length === 0 && <li className="ctx-empty" role="presentation">No matches</li>}
+          <ul ref={listRef} id={listId} role="listbox" aria-label={label} className="dd-list">
+            {filtered.length === 0 && <li className="dd-empty" role="presentation">No matches</li>}
             {filtered.map((o, i) => {
               const selected = o.value === value;
               return (
@@ -124,14 +124,14 @@ export default function ArgoSelect({ label, value, options = [], placeholder = '
                   role="option"
                   aria-selected={selected}
                   data-idx={i}
-                  className={`ctx-option ${selected ? 'active' : ''} ${i === active ? 'focused' : ''}`}
+                  className={`dd-option ${selected ? 'active' : ''} ${i === active ? 'focused' : ''}`}
                   title={o.label}
                   onMouseEnter={() => setActive(i)}
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => pick(o)}
                 >
-                  <span className="ctx-option-check" aria-hidden="true">{selected && <Icon name="check" size={14} strokeWidth={2.4} />}</span>
-                  <span className="ctx-option-label">{o.label}</span>
+                  <span className="dd-option-check" aria-hidden="true">{selected && <Icon name="check" size={14} strokeWidth={2.4} />}</span>
+                  <span className="dd-option-label">{o.label}</span>
                 </li>
               );
             })}

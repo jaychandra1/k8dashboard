@@ -1,6 +1,7 @@
 // Route grammar helpers for the hash router (see hooks/useHashRoute.js).
 //
-//   #/overview?ns=a,b
+//   #/cluster                                                 default / landing view (DEFAULT_VIEW)
+//   #/overview?ns=a,b                                         workloads overview
 //   #/<resourceKey>[/<namespace|->/<name>]?ns=a,b&q=text     resource list (+ drawer)
 //   #/nodes[/<nodeName>]
 //   #/events?ns=a
@@ -14,6 +15,8 @@
 // `['all']` sentinel is what views receive as `selectedNamespaces`).
 // `q`: free-text filter (owned by ResourceViewer). `-` stands for "no namespace".
 import { byKey, isStandalone } from '../../lib/kinds';
+
+export { DEFAULT_VIEW } from '../../hooks/useHashRoute';
 
 export const ALL = 'all';
 export const NONE = '-';

@@ -9,7 +9,6 @@ import AzureIntegration from './components/AzureIntegration';
 import AwsIntegration from './components/AwsIntegration';
 import Assistant from './components/Assistant';
 import AgentPanel from './components/AgentPanel';
-import Loader from './components/Loader';
 import { useToast } from './components/Toast';
 import TokenPrompt from './components/ui/TokenPrompt';
 import ErrorBoundary from './components/ui/ErrorBoundary';
@@ -27,9 +26,10 @@ import useResourceFanOut from './components/shell/useResourceFanOut';
 import useNavDrawer from './components/shell/useNavDrawer';
 import ShortcutsSheet from './components/shell/ShortcutsSheet';
 import ViewOutlet from './components/shell/ViewOutlet';
-import { OPEN_CONTEXTS_EVENT } from './components/ContextSelector';
+import LoadingScreen from './components/shell/LoadingScreen';
+import ContextPickerModal, { OPEN_CONTEXTS_EVENT } from './components/ContextPickerModal';
 import {
-  ALL, nsFromQuery, nsToQuery, isKnownView, isResourceView,
+  ALL, DEFAULT_VIEW, nsFromQuery, nsToQuery, isKnownView, isResourceView,
   selectionFromRoute, selectionToParams, crSelectionFromRoute, crSelectionToParams, namespaceTargetView,
 } from './components/shell/routes';
 
@@ -45,6 +45,11 @@ const isEditable = (el) => {
 };
 
 const byPlural = Object.fromEntries(RESOURCE_TYPES.map((t) => [t.plural, t]));
+
+// A context switch shows the branded LoadingScreen over <main> until the new
+// cluster's summary is on screen — but never longer than this, so a slow
+// cluster hands over to the view's own skeletons instead of trapping the user.
+const SWITCH_OVERLAY_CAP_MS = 8000;
 
 function App() {
   const toast = useToast();
@@ -66,9 +71,9 @@ function App() {
   const focusNode = view === 'nodes' ? (route.params[0] || null) : null;
   const nsQuery = route.query.ns;
 
-  // Unknown view key in the hash → overview.
+  // Unknown view key in the hash → the landing view (Cluster overview).
   useEffect(() => {
-    if (!isKnownView(view)) navigate('overview', [], {}, { replace: true });
+    if (!isKnownView(view)) navigate(DEFAULT_VIEW, [], {}, { replace: true });
   }, [view, navigate]);
 
   // ---- theme -------------------------------------------------------------
@@ -91,9 +96,31 @@ function App() {
   const { configStatus, authOk } = gate;
   const contextKey = configStatus.currentContext || '';
 
-  const onBeforeSwitch = useCallback(() => { navigate('overview', [], {}); }, [navigate]);
-  const { switchContext, afterSwitch } = useContexts({ gate, toast, onBeforeSwitch });
+  // useContexts routes to the Cluster overview itself (POST_SWITCH_VIEW).
+  const { switchContext, afterSwitch, switching, switchTarget } = useContexts({ gate, toast });
   const { pins, togglePin } = usePins({ enabled: tokenOk && authOk, toast });
+
+  // ---- context-switch loading screen ------------------------------------
+  // Shown over <main> from the moment a switch starts (`switching`) until the
+  // switch has settled (config status + auth re-checked) AND the Cluster view
+  // has reported its first summary for the new context — capped at
+  // SWITCH_OVERLAY_CAP_MS. Navigating away from the Cluster view also ends it.
+  const [overlayAt, setOverlayAt] = useState(0); // start time of the current overlay, 0 = hidden
+  const [summaryFor, setSummaryFor] = useState(null); // context name of the latest Cluster summary payload
+  const onClusterSummary = useCallback((ctx) => setSummaryFor(ctx || ''), []);
+  useEffect(() => {
+    if (switching) { setOverlayAt(Date.now()); setSummaryFor(null); }
+  }, [switching]);
+  useEffect(() => {
+    if (!overlayAt) return undefined;
+    const t = setTimeout(() => setOverlayAt(0), SWITCH_OVERLAY_CAP_MS);
+    return () => clearTimeout(t);
+  }, [overlayAt]);
+  const summaryReady = summaryFor != null && (!switchTarget || !summaryFor || summaryFor === switchTarget);
+  useEffect(() => {
+    if (overlayAt && !switching && (!switchTarget || summaryReady || view !== 'cluster')) setOverlayAt(0);
+  }, [overlayAt, switching, switchTarget, summaryReady, view]);
+  const showSwitchOverlay = overlayAt > 0 && authOk;
 
   const ns = useNamespaces({ enabled: tokenOk && authOk, contextKey, toast });
   const namespaces = ns.namespaces;
@@ -178,7 +205,7 @@ function App() {
 
   const openPreferences = useCallback((section = 'general') => navigate('preferences', [section], {}), [navigate]);
   const onPrefSectionChange = useCallback((section) => navigate('preferences', [section], {}, { replace: true }), [navigate]);
-  const closePreferences = useCallback(() => { if (canBack) back(); else navigate('overview'); }, [canBack, back, navigate]);
+  const closePreferences = useCallback(() => { if (canBack) back(); else navigate(DEFAULT_VIEW); }, [canBack, back, navigate]);
   const onFocusHandled = useCallback(() => {
     const r = routeRef.current;
     if (r.view === 'nodes' && r.params.length) navigate('nodes', [], r.query, { replace: true });
@@ -242,14 +269,16 @@ function App() {
   // ---- responsive nav drawer ---------------------------------------------
   const drawer = useNavDrawer({ routeKey: `${view}/${route.params.join('/')}` });
 
-  // "All contexts…" (cluster menu / desktop Clusters menu) → the searchable
-  // sidebar selector. On narrow layouts the sidebar is a drawer: open it first.
-  const drawerShow = drawer.show;
-  const drawerNarrow = drawer.narrow;
-  const openContexts = useCallback(() => {
-    if (drawerNarrow) drawerShow();
-    window.dispatchEvent(new CustomEvent(OPEN_CONTEXTS_EVENT));
-  }, [drawerNarrow, drawerShow]);
+  // Searchable context picker (cluster menu "Search contexts…", palette "All
+  // contexts…", desktop Clusters menu). Anything may also dispatch
+  // OPEN_CONTEXTS_EVENT on window to open it.
+  const [contextsOpen, setContextsOpen] = useState(false);
+  const openContexts = useCallback(() => setContextsOpen(true), []);
+  const closeContexts = useCallback(() => setContextsOpen(false), []);
+  useEffect(() => {
+    window.addEventListener(OPEN_CONTEXTS_EVENT, openContexts);
+    return () => window.removeEventListener(OPEN_CONTEXTS_EVENT, openContexts);
+  }, [openContexts]);
 
   // Desktop host (Electron main process) → renderer. The native "Clusters" menu
   // talks to the backend over HTTP itself and then dispatches
@@ -365,8 +394,6 @@ function App() {
         <div className="layout-main">
           <Navigation
             ref={drawer.navRef}
-            configStatus={configStatus}
-            onSwitchContext={switchContext}
             view={view}
             subView={subView}
             linkQuery={linkQuery}
@@ -374,15 +401,15 @@ function App() {
             crSelection={crSelection}
             onSelectCustomResource={onSelectCustomResource}
             argocdInstalled={argocdInstalled}
-            onAddAzure={openAzure}
-            onAddAws={openAws}
-            onAddLocal={openLocal}
             onOpenPreferences={goPrefs}
           />
           <div className="nav-backdrop" onClick={drawer.close} aria-hidden="true" />
 
           <div className="content-col">
-            <main id="main" className="app-main" tabIndex={-1}>
+            <main id="main" className="app-main" tabIndex={-1} aria-busy={showSwitchOverlay || undefined}>
+              {showSwitchOverlay && (
+                <LoadingScreen overlay context={switchTarget || configStatus.currentContext} />
+              )}
               <ErrorBoundary resetKey={view} title="This view crashed">
                 <ViewOutlet
                   view={view}
@@ -420,6 +447,7 @@ function App() {
                   onAddAws={openAws}
                   onResourceTypeChange={goView}
                   nav={nav}
+                  onClusterSummary={onClusterSummary}
                 />
               </ErrorBoundary>
             </main>
@@ -432,11 +460,14 @@ function App() {
         <div className="loading-state" />
       ) : !configChecked ? (
         <div className="loading-state">
-          <Loader label="Loading kubeconfig…" size={36} />
+          <LoadingScreen hint="Loading kubeconfig…" />
         </div>
       ) : checkingAuth ? (
         <div className="loading-state">
-          <Loader label={autoRecovering ? 'Reconnecting — refreshing credentials…' : 'Checking cluster authentication…'} size={36} />
+          <LoadingScreen
+            context={configStatus.currentContext}
+            hint={autoRecovering ? 'Reconnecting — refreshing credentials…' : 'Checking cluster authentication…'}
+          />
         </div>
       ) : (
         // A modal (config / auth / server error) is overlaid above; keep a
@@ -452,10 +483,24 @@ function App() {
           contexts={configStatus.contexts || []}
           currentContext={configStatus.currentContext}
           onSwitchContext={switchContext}
+          onOpenContexts={openContexts}
           onOpenPreferences={goPrefs}
           onRefresh={handleRefresh}
           onSetTheme={setTheme}
           argocdInstalled={argocdInstalled}
+        />
+      )}
+      {tokenOk && authOk && (
+        <ContextPickerModal
+          open={contextsOpen}
+          onClose={closeContexts}
+          contexts={configStatus.contexts || []}
+          contextsInfo={configStatus.contextsInfo}
+          currentContext={configStatus.currentContext}
+          onChange={switchContext}
+          onAddAws={openAws}
+          onAddAzure={openAzure}
+          onAddLocal={openLocal}
         />
       )}
       <ShortcutsSheet open={shortcutsOpen} onClose={closeShortcuts} />

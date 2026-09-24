@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import ClusterSwitcher from './ClusterSwitcher';
+import ClusterSwitcher, { MAX_INLINE } from './ClusterSwitcher';
 
 const contexts = ['prod-eks', 'dev-aks', 'kind-local'];
 const contextsInfo = [
@@ -27,7 +27,7 @@ const setup = (props = {}) => {
 const trigger = () => screen.getByRole('button', { name: /Switch cluster/ });
 
 describe('ClusterSwitcher', () => {
-  it('shows the current context and opens a menu of pinned clusters with a check on the current one', async () => {
+  it('shows the current context and opens a menu: pinned clusters, then every context under "All contexts"', async () => {
     const { user } = setup();
     const btn = trigger();
     expect(btn).toHaveTextContent('prod-eks');
@@ -38,30 +38,58 @@ describe('ClusterSwitcher', () => {
     const menu = await screen.findByRole('menu', { name: 'Switch cluster' });
     expect(btn).toHaveAttribute('aria-expanded', 'true');
 
-    // Pins that no longer exist in the kubeconfig are hidden.
-    const pinned = within(menu).getAllByRole('menuitemcheckbox');
-    expect(pinned.map((el) => el.textContent)).toEqual(['prod-eks', 'dev-aks']);
-    expect(pinned[0]).toHaveAttribute('aria-checked', 'true');
-    expect(pinned[1]).toHaveAttribute('aria-checked', 'false');
+    // Pins that no longer exist in the kubeconfig are hidden; then (≤ MAX_INLINE
+    // contexts) the full list follows a non-interactive "All contexts" heading.
+    const checks = within(menu).getAllByRole('menuitemcheckbox');
+    expect(checks.map((el) => el.textContent)).toEqual(['prod-eks', 'dev-aks', 'dev-aks', 'kind-local', 'prod-eks']);
+    expect(checks[0]).toHaveAttribute('aria-checked', 'true');
+    expect(checks[1]).toHaveAttribute('aria-checked', 'false');
+    expect(checks[4]).toHaveAttribute('aria-checked', 'true'); // prod-eks again, in the all-contexts group
+    const heading = within(menu).getByText('All contexts');
+    expect(heading.closest('.ui-menu-heading')).toHaveTextContent('3');
+    expect(within(menu).queryByRole('menuitem', { name: /All contexts/ })).toBeNull();
 
+    expect(within(menu).getByRole('menuitem', { name: 'Search contexts…' })).toBeInTheDocument();
     expect(within(menu).getByRole('menuitem', { name: 'Unpin "prod-eks"' })).toBeInTheDocument();
-    expect(within(menu).getByRole('menuitem', { name: /All contexts/ })).toBeInTheDocument();
     expect(within(menu).getByRole('menuitem', { name: 'Add cluster' })).toHaveAttribute('aria-haspopup', 'menu');
+    expect(within(menu).getAllByRole('separator')).toHaveLength(2);
   });
 
-  it('selecting a pinned cluster switches; picking the current one is a no-op', async () => {
-    const { user, onSwitch } = setup();
+  it('selecting a pinned or listed cluster switches; picking the current one is a no-op', async () => {
+    const { user, onSwitch } = setup({ pins: ['prod-eks'] });
     await user.click(trigger());
-    await user.click(within(await screen.findByRole('menu')).getByRole('menuitemcheckbox', { name: 'dev-aks' }));
-    expect(onSwitch).toHaveBeenCalledWith('dev-aks');
+    // kind-local is not pinned: it is only reachable through the all-contexts group.
+    await user.click(within(await screen.findByRole('menu')).getByRole('menuitemcheckbox', { name: 'kind-local' }));
+    expect(onSwitch).toHaveBeenCalledWith('kind-local');
     expect(screen.queryByRole('menu')).toBeNull();
 
     await user.click(trigger());
-    await user.click(within(await screen.findByRole('menu')).getByRole('menuitemcheckbox', { name: 'prod-eks' }));
+    await user.click(within(await screen.findByRole('menu')).getAllByRole('menuitemcheckbox', { name: 'prod-eks' })[0]);
     expect(onSwitch).toHaveBeenCalledTimes(1);
   });
 
-  it('offers Pin/Unpin for the current context, All contexts… and an Add cluster submenu', async () => {
+  it('moves the contexts into an "All contexts" submenu when there are more than MAX_INLINE', async () => {
+    const many = Array.from({ length: MAX_INLINE + 1 }, (_, i) => `cluster-${String(i).padStart(2, '0')}`);
+    const { user, onSwitch } = setup({ contexts: many, contextsInfo: [], currentContext: 'cluster-00', pins: [] });
+    await user.click(trigger());
+    const menu = await screen.findByRole('menu', { name: 'Switch cluster' });
+    expect(within(menu).queryAllByRole('menuitemcheckbox')).toHaveLength(0);
+    const all = within(menu).getByRole('menuitem', { name: /All contexts/ });
+    expect(all).toHaveAttribute('aria-haspopup', 'menu');
+    expect(all).toHaveTextContent(String(MAX_INLINE + 1));
+    expect(within(menu).getByRole('menuitem', { name: 'Search contexts…' })).toBeInTheDocument();
+
+    await user.click(all);
+    const sub = await screen.findByRole('menu', { name: 'All contexts' });
+    const items = within(sub).getAllByRole('menuitemcheckbox');
+    expect(items).toHaveLength(MAX_INLINE + 1);
+    expect(items[0]).toHaveAttribute('aria-checked', 'true');
+    await user.click(within(sub).getByRole('menuitemcheckbox', { name: 'cluster-05' }));
+    expect(onSwitch).toHaveBeenCalledWith('cluster-05');
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('offers Pin/Unpin for the current context, Search contexts… (opens the picker) and an Add cluster submenu', async () => {
     const { user, onTogglePin, onOpenContexts, onAddAws, onAddAzure } = setup({ pins: ['dev-aks'] });
 
     await user.click(trigger());
@@ -69,8 +97,9 @@ describe('ClusterSwitcher', () => {
     expect(onTogglePin).toHaveBeenCalledWith('prod-eks');
 
     await user.click(trigger());
-    await user.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: /All contexts/ }));
-    expect(onOpenContexts).toHaveBeenCalled();
+    await user.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Search contexts…' }));
+    expect(onOpenContexts).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('menu')).toBeNull();
 
     await user.click(trigger());
     await user.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Add cluster' }));
@@ -82,21 +111,23 @@ describe('ClusterSwitcher', () => {
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
-  it('shows a placeholder when nothing is pinned', async () => {
+  it('shows a placeholder when nothing is pinned (the all-contexts list still works)', async () => {
     const { user } = setup({ pins: [] });
     await user.click(trigger());
     const menu = await screen.findByRole('menu');
-    expect(within(menu).queryAllByRole('menuitemcheckbox')).toHaveLength(0);
     expect(within(menu).getByText('No pinned clusters')).toBeInTheDocument();
+    expect(within(menu).getAllByRole('menuitemcheckbox').map((el) => el.textContent)).toEqual(['dev-aks', 'kind-local', 'prod-eks']);
   });
 
-  it('is keyboard operable: Enter opens, Escape closes and returns focus, ArrowDown opens', async () => {
-    const { user } = setup();
+  it('is keyboard operable: Enter opens, headings are skipped, Escape closes and returns focus, ArrowDown opens', async () => {
+    const { user } = setup({ pins: [] });
     const btn = trigger();
     btn.focus();
     await user.keyboard('{Enter}');
     const menu = await screen.findByRole('menu');
     await waitFor(() => expect(menu.contains(document.activeElement)).toBe(true));
+    // First enabled item ("No pinned clusters" is disabled, the heading is not focusable) → dev-aks.
+    await waitFor(() => expect(within(menu).getByRole('menuitemcheckbox', { name: 'dev-aks' })).toHaveClass('active'));
 
     await user.keyboard('{Escape}');
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());

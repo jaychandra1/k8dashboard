@@ -30,11 +30,18 @@ function CapacityBar({ label, icon, used, total, unit, tone }) {
   );
 }
 
-export default function Cluster({ refreshSignal = 0, context }) {
+// `onSummaryLoaded(contextName)` fires on every successful summary fetch with
+// the context the payload belongs to; the shell uses it to end the
+// context-switch loading screen once the new cluster's data is on screen.
+export default function Cluster({ refreshSignal = 0, context, onSummaryLoaded }) {
   useDocumentTitle('Cluster');
   const { data, error, loading, refetching, refetch } = useRequest(
     ({ signal }) => getJson(p('api', 'cluster', 'summary'), { signal }),
-    { deps: [refreshSignal, context], dedupeKey: 'cluster:summary' },
+    {
+      deps: [refreshSignal, context],
+      dedupeKey: 'cluster:summary',
+      onSuccess: (d) => onSummaryLoaded?.(d?.currentContext || context || ''),
+    },
   );
 
   const counts = bucketPhases(data?.pods?.phases);

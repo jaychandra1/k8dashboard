@@ -10,7 +10,9 @@
 // uses the browser/Electron back buttons).
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-export const DEFAULT_VIEW = 'overview';
+// Landing view when the URL has no hash (and after a context switch): the
+// Cluster overview. Re-exported by components/shell/routes.js.
+export const DEFAULT_VIEW = 'cluster';
 
 const enc = (s) => encodeURIComponent(String(s));
 const dec = (s) => { try { return decodeURIComponent(s); } catch { return s; } };

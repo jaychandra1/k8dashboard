@@ -96,16 +96,18 @@ function regionsFor(region) {
   return region && !AWS_REGIONS.includes(region) ? [region, ...AWS_REGIONS] : AWS_REGIONS;
 }
 
-export async function discoverClusters({ credentials, region, account, accountName }) {
-  const regions = regionsFor(region);
-  const perRegion = await Promise.all(regions.map(async (r) => {
+// `regions` (an explicit list from the UI) wins; otherwise the broad static scan.
+export async function discoverClusters({ credentials, region, regions, account, accountName }) {
+  const wanted = Array.isArray(regions) ? [...new Set(regions.filter(Boolean))] : [];
+  const scan = wanted.length ? wanted : regionsFor(region);
+  const perRegion = await Promise.all(scan.map(async (r) => {
     try {
       const eks = new EKSClient({ region: r, credentials });
       const out = await eks.send(new ListClustersCommand({}));
       return (out.clusters || []).map((name) => ({ name, region: r, account, accountName }));
     } catch { return []; }
   }));
-  return { clusters: perRegion.flat(), regions: regions.length };
+  return { clusters: perRegion.flat(), regions: scan.length, scanned: scan };
 }
 
 // ---- AWS SSO (IAM Identity Center) device flow --------------------------

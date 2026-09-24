@@ -9,7 +9,7 @@ import { NAV_GROUPS, typesInGroup } from '../lib/kinds';
 // or run a quick action — keyboard-first. ARIA combobox + listbox inside a
 // modal dialog (focus trap, Escape from anywhere, backdrop click).
 
-export default function CommandPalette({ open, onClose, onNavigate, contexts = [], currentContext, onSwitchContext, onOpenPreferences, onRefresh, onSetTheme, argocdInstalled = false }) {
+export default function CommandPalette({ open, onClose, onNavigate, contexts = [], currentContext, onSwitchContext, onOpenContexts, onOpenPreferences, onRefresh, onSetTheme, argocdInstalled = false }) {
   const id = useId();
   const [query, setQuery] = useState('');
   const [sel, setSel] = useState(0);
@@ -29,6 +29,8 @@ export default function CommandPalette({ open, onClose, onNavigate, contexts = [
       cmds.push({ id: `nav:${t.key}`, group: 'Apps', label: t.label, icon: t.icon, run: () => onNavigate(t.key) });
     }
     for (const ctx of contexts) cmds.push({ id: `ctx:${ctx}`, group: 'Switch context', label: ctx, icon: 'cluster', hint: ctx === currentContext ? 'current' : '', run: () => onSwitchContext(ctx) });
+    // The searchable, provider-grouped context picker (same dialog as the cluster menu's "Search contexts…").
+    if (onOpenContexts) cmds.push({ id: 'ctx:all', group: 'Switch context', label: 'All contexts…', icon: 'search', hint: contexts.length ? String(contexts.length) : '', run: () => onOpenContexts() });
     cmds.push(
       { id: 'act:refresh', group: 'Actions', label: 'Refresh', icon: 'refresh', run: () => onRefresh?.() },
       { id: 'act:prefs', group: 'Actions', label: 'Open Preferences', icon: 'settings', run: () => onOpenPreferences?.() },
@@ -37,7 +39,7 @@ export default function CommandPalette({ open, onClose, onNavigate, contexts = [
       { id: 'act:theme-system', group: 'Actions', label: 'Theme: System', icon: 'settings', run: () => onSetTheme?.('system') },
     );
     return cmds;
-  }, [contexts, currentContext, argocdInstalled, onNavigate, onSwitchContext, onOpenPreferences, onRefresh, onSetTheme]);
+  }, [contexts, currentContext, argocdInstalled, onNavigate, onSwitchContext, onOpenContexts, onOpenPreferences, onRefresh, onSetTheme]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

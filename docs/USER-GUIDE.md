@@ -72,20 +72,28 @@ When the app starts it shows one of:
 
 - **Connect a cluster** — no kubeconfig was found. Either enter the path to a kubeconfig file, or use **Add cluster** to import an **AWS EKS** or **Azure AKS** cluster straight from your cloud account (KubePilot signs you in and writes the kubeconfig; no CLI needed).
 - **Could not connect to the cluster** — a kubeconfig was loaded but its credentials failed. Use **Add cluster** to onboard an EKS or AKS cluster, switch to another context, or fix the kubeconfig and press **Retry**. Authentication failures are classified for you (expired token, unreachable API server, TLS error, missing auth plugin) with a one-click or copyable fix.
-- The dashboard — the current kubeconfig context loaded.
+- The dashboard — the current kubeconfig context loaded. You land on the **Cluster Overview** (`#/cluster`): nodes, CPU/memory capacity, pod health, Kubernetes version and the kubeconfig's contexts and clusters. While the data is fetched the app shows a branded loading screen ("Getting the data from <context>…").
 
-Switch clusters any time from the **cluster menu** in the toolbar (the button showing the current context, next to the back/forward arrows), from the searchable **Context** selector in the sidebar, or with `⌘K` / `Ctrl+K` → type the context name. The cluster menu lists your **pinned** clusters with a check on the current one; **Pin "<context>"** / **Unpin** adds or removes the current cluster, **All contexts…** opens the searchable selector, and **Add cluster ▸** imports an AWS EKS or Azure AKS cluster. Pins are stored with the app's settings, so the desktop app's native **Clusters** menu (between View and Window) shows the same list — switch there too, or use its **All contexts…** / **Add … cluster…** entries.
+Switching clusters happens from **one place**: the **cluster menu** in the toolbar (the button showing the current context, next to the back/forward arrows) — or, in the desktop app, the native **Clusters** menu (between View and Window), which mirrors it. `⌘K` / `Ctrl+K` → type the context name also works. The cluster menu is laid out as:
+
+1. your **pinned** clusters, with a check on the current one — click to switch;
+2. **All contexts** — with up to 12 contexts every context is listed right here (provider icon, check on the current one); with more, **All contexts ▸** opens them as a submenu. **Search contexts…** opens a searchable picker grouped by provider (type to filter, `↑`/`↓` to move, Enter to switch, Esc to close);
+3. **Pin "<context>"** / **Unpin "<context>"** for the current cluster, and **Add cluster ▸** to import an **AWS EKS** or **Azure AKS** cluster.
+
+After a switch the app returns to the **Cluster Overview** of the new cluster (the selection and namespace filter are cleared) behind the loading screen until the new cluster's summary is in — never longer than about 8 seconds, after which the view shows its own loading placeholders. Pins are stored with the app's settings, so the desktop **Clusters** menu shows the same pinned list; its **All contexts…** entry opens the same searchable picker.
 
 ### 1.4 Getting around
 
-- **Sidebar** — Cluster, Nodes, Namespaces, Topology; Workloads (Pods, Deployments, StatefulSets, DaemonSets, ReplicaSets, Jobs, CronJobs…); Config; Network; Storage; Events, Helm, Access Control, Argo CD (shown when installed), Security Center, Custom Resources. Every item is a real link, so keyboard navigation, middle-click and "open in new tab" work.
-- **Cluster menu** — the toolbar button with the current context name: pinned clusters (check = current), Pin/Unpin, All contexts…, Add cluster ▸. Fully keyboard operable (Enter or ↓ opens, arrows move, Esc closes). In the desktop app the same list is in the native **Clusters** menu.
+- **Sidebar** — the KubePilot brand, version and the Preferences gear at the top (the cluster switcher is in the toolbar, not the sidebar); then Cluster, Nodes, Namespaces, Topology; Workloads (Overview, Pods, Deployments, StatefulSets, DaemonSets, ReplicaSets, Jobs, CronJobs…); Config; Network; Storage; Events, Helm, Access Control, Argo CD (shown when installed), Security Center, Custom Resources. Every item is a real link, so keyboard navigation, middle-click and "open in new tab" work.
+- **Cluster menu** — the toolbar button with the current context name: pinned clusters (check = current), All contexts (inline list or submenu) + Search contexts…, Pin/Unpin, Add cluster ▸ (see §1.3). Fully keyboard operable (Enter or ↓ opens, arrows move, Esc closes). In the desktop app the same list is in the native **Clusters** menu.
+- **Landing page** — the **Cluster Overview** (`#/cluster`) opens on start and after every cluster switch. The **Overview** under Workloads (`#/overview`) is the pod-health / workload-counts dashboard.
 - **Command palette** — `⌘K` (`Ctrl+K` on Windows/Linux) jumps to any view, switches context, refreshes, opens Preferences or changes the theme. Type to filter, arrows to move, Enter to run.
 - **Back / Forward** — the toolbar arrows and your browser's back/forward both work, because every view has a URL:
 
   | URL | Opens |
   |---|---|
-  | `#/overview` | Cluster overview |
+  | `#/cluster` (or no hash) | Cluster overview — the landing page |
+  | `#/overview` | Workloads overview (pod health, counts by type) |
   | `#/pod?ns=default,shop` | Pods filtered to two namespaces |
   | `#/pod/default/my-pod-abc` | Pods list with the detail drawer open on that pod |
   | `#/deployment?q=api` | Deployments with the search box pre-filled |

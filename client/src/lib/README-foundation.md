@@ -123,7 +123,7 @@ Delete `import hljs from 'highlight.js'` and `import 'highlight.js/styles/atom-o
 | `ErrorState` | `{ error, onRetry, title?, retryLabel?, busy?, compact? }` |
 | `Skeleton` | `{ rows, cols } | { block, height }` |
 | `Tooltip` | `{ content, placement, delay }` wrapping one focusable child; hover+focus, `aria-describedby`, Escape |
-| `Menu` | `{ open, x, y, items, onClose(reason), returnFocusTo?, ariaLabel }` items `{ label, icon?, danger?, disabled?, hint?, checked?, onSelect, children? , divider? }`; `Menu.open({x,y,items,returnFocusTo})` → `Promise<{close}>`. Full keyboard support + typeahead + submenus. Legacy `onClick` on items still works |
+| `Menu` | `{ open, x, y, items, onClose(reason), returnFocusTo?, ariaLabel }` items `{ label, icon?, danger?, disabled?, hint?, checked?, onSelect, children?, divider?, heading? }` (`heading: true` = non-interactive group label, skipped by the keyboard); `Menu.open({x,y,items,returnFocusTo})` → `Promise<{close}>`. Full keyboard support + typeahead + submenus; long menus scroll. Legacy `onClick` on items still works |
 | `TokenPrompt` | `{ open?, onSuccess, onClose?, autoOpenWhenMissing=true }` — mount once in App; self-opens on missing token or any 401 |
 | `ErrorBoundary` | `{ resetKey?, fallback?(err, reset), title?, onError? }` — wrap each routed view with `resetKey={route.view}` |
 | `HighlightedCode` | `{ code, lang, className, trailingNewline }` |
@@ -193,6 +193,7 @@ Typography is now `rem` (root 16px); don't add `px` font sizes; nothing under `0
 Routing is `useHashRoute`; App derives everything from the hash and passes it down (no view keeps nav state):
 
 ```
+#/cluster (default / landing view, also after a context switch)
 #/overview?ns=a,b                      #/<resourceKey>[/<ns|->/<name>]?ns=a,b&q=text   (drawer = params)
 #/nodes[/<node>]   #/events?ns=a       #/argocd/<sub>   #/security/<sub>   #/preferences/<section>
 #/customResources/<group>/<version>/<plural>[/<ns|->/<name>]   #/cluster · #/namespaces · #/topology · #/helm · #/accessControl
@@ -205,7 +206,7 @@ Every view gets `refreshSignal: number` (bumps on manual/auto refresh — refetc
 | view | props |
 | --- | --- |
 | Overview | `allResources, selectedNamespaces, namespaces, onNamespaceSelect, loading, refetching, partialErrors, onResourceTypeChange, onNavigate, refreshSignal` |
-| Cluster | `configStatus, context, refreshSignal` |
+| Cluster | `configStatus, context, refreshSignal, onSummaryLoaded(contextName)` — the shell ends the context-switch LoadingScreen on the first summary for the new context |
 | Nodes | `focusNode, onFocusHandled, onNavigate, refreshSignal` |
 | Namespaces / AccessControl | `onNavigate, refreshSignal` |
 | Topology / Helm | `namespaces, selectedNamespaces, onNavigate, refreshSignal` |

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import Icon from './Icons';
-import ContextSelector from './ContextSelector';
+import { ContextList } from './ContextPickerModal';
 import Modal from './ui/Modal';
 import Button from './ui/Button';
 import Menu from './ui/Menu';
@@ -198,13 +198,11 @@ export default function AuthErrorModal({ open = true, auth, onRetry, onChangeCon
       {onSwitchContext && contexts.length > 1 && (
         <div className="auth-switch">
           <span className="auth-switch-label" id="auth-switch-label">Switch to another cluster</span>
-          <ContextSelector
+          <ContextList
             contexts={contexts}
             contextsInfo={contextsInfo}
             currentContext={currentContext || auth?.currentContext}
-            onChange={onSwitchContext}
-            onAddAzure={onAddAzure}
-            onAddAws={onAddAws}
+            onPick={(ctx) => { if (ctx && ctx !== (currentContext || auth?.currentContext)) onSwitchContext(ctx); }}
             label="Switch to another cluster"
           />
         </div>

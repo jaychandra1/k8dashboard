@@ -30,6 +30,8 @@ export default function AwsIntegration({ onClose, onImported }) {
   const id = useId();
   const [phase, setPhase] = useState('checking'); // checking|not-installed|method|sso-login|sso-account|sso-role|listing|list|importing|done
   const [profiles, setProfiles] = useState([]);
+  const [profileDetails, setProfileDetails] = useState([]);
+  const [clusterRegions, setClusterRegions] = useState('');
   const [method, setMethod] = useState('sso'); // sso | access-key | role
   const [advanced, setAdvanced] = useState(false);
   const [profileName, setProfileName] = useState('');
@@ -68,7 +70,9 @@ export default function AwsIntegration({ onClose, onImported }) {
       if (!data.installed) return setPhase('not-installed');
       const ps = data.profiles || [];
       setProfiles(ps);
-      if (ps.length) { setSsoProfile(ps[0]); setSourceProfile(ps[0]); setExistingProfile(ps[0]); }
+      setProfileDetails(Array.isArray(data.profileDetails) ? data.profileDetails : ps.map((name) => ({ name })));
+      // Never pre-select a saved profile: the default path is "enter your start URL".
+      if (ps.length) { setSourceProfile(ps[0]); setExistingProfile(ps[0]); }
       return setPhase('method');
     } catch (e) { setError(errorMessage(e)); return setPhase('not-installed'); }
   }, []);
@@ -121,17 +125,30 @@ export default function AwsIntegration({ onClose, onImported }) {
     setPhase('list');
   };
 
+  // Regions typed in the "Cluster regions" field (empty → the server scans every region).
+  const regionList = () => clusterRegions.split(',').map((r) => r.trim().toLowerCase()).filter(Boolean);
+  const hostOf = (u) => { try { return new URL(u).host; } catch { return u; } };
+  const ssoProfiles = profileDetails.filter((p) => p && (p.type === 'sso' || p.ssoStartUrl));
+  // Picking a saved profile pre-fills the start URL / regions; clearing it keeps whatever was typed.
+  const onPickSsoProfile = (name) => {
+    setSsoProfile(name);
+    const p = ssoProfiles.find((x) => x.name === name);
+    if (!p) return;
+    if (p.ssoStartUrl) setSsoStartUrl(p.ssoStartUrl);
+    if (p.ssoRegion) setSsoRegionField(p.ssoRegion);
+    if (p.region && !clusterRegions.trim()) setClusterRegions(p.region);
+  };
   const discoverSso = async (account, role) => {
     setActiveProfile(null);
     setPhase('listing'); setError(null);
-    try { applyClusters(await postJson('/api/aws/clusters', { account, role })); }
+    try { applyClusters(await postJson('/api/aws/clusters', { account, role, regions: regionList() })); }
     catch (e) { setError(errorMessage(e)); setPhase('list'); }
   };
 
   const discover = async (profile) => {
     setActiveProfile(profile || null);
     setPhase('listing'); setError(null); setDevice(null);
-    try { applyClusters(await postJson('/api/aws/clusters', { profile: profile || undefined })); }
+    try { applyClusters(await postJson('/api/aws/clusters', { profile: profile || undefined, regions: regionList() })); }
     catch (e) { setError(errorMessage(e)); setPhase('list'); }
   };
 
@@ -142,6 +159,7 @@ export default function AwsIntegration({ onClose, onImported }) {
     secretKey: !secretKey ? 'Secret access key is required.' : null,
     region: region && !REGION_RE.test(region) ? 'Use a region like us-east-1.' : null,
     ssoRegion: ssoRegionField && !REGION_RE.test(ssoRegionField) ? 'Use a region like us-east-1.' : null,
+    clusterRegions: clusterRegions.split(',').map((r) => r.trim()).filter(Boolean).some((r) => !REGION_RE.test(r)) ? 'Use region codes like eu-west-1, separated by commas.' : null,
     roleArn: !roleArn.trim() ? 'Role ARN is required.' : !/^arn:aws[a-z-]*:iam::\d{12}:role\/.+/.test(roleArn.trim()) ? 'Use the form arn:aws:iam::123456789012:role/Name.' : null,
     sourceProfile: !sourceProfile.trim() ? 'Source profile is required.' : null,
   };
@@ -219,11 +237,11 @@ export default function AwsIntegration({ onClose, onImported }) {
                 <div className="azure-dim">IAM Identity Center — sign in in the browser and authorize access.</div>
               </div>
             </div>
-            {profiles.length > 0 && (
-              <Field id={f('sso-profile')} label="SSO profile (optional)">
-                <select id={f('sso-profile')} className="aws-input" value={ssoProfile} onChange={(e) => setSsoProfile(e.target.value)}>
-                  <option value="">— enter start URL below —</option>
-                  {profiles.map((pr) => <option key={pr} value={pr}>{pr}</option>)}
+            {ssoProfiles.length > 0 && (
+              <Field id={f('sso-profile')} label="Saved SSO sign-in (optional)" hint="Profiles KubePilot or the AWS CLI saved in ~/.aws/config. Pick one to reuse its start URL, or leave this on 'enter a start URL'.">
+                <select id={f('sso-profile')} className="aws-input" value={ssoProfile} onChange={(e) => onPickSsoProfile(e.target.value)}>
+                  <option value="">— enter a start URL below —</option>
+                  {ssoProfiles.map((pr) => <option key={pr.name} value={pr.name}>{pr.name}{pr.ssoStartUrl ? ` · ${hostOf(pr.ssoStartUrl)}` : ''}{pr.ssoRegion ? ` (${pr.ssoRegion})` : ''}</option>)}
                 </select>
               </Field>
             )}
@@ -232,13 +250,16 @@ export default function AwsIntegration({ onClose, onImported }) {
                 <Field id={f('sso-url')} label="AWS SSO start URL">
                   <input id={f('sso-url')} className="aws-input" type="url" placeholder="https://my-org.awsapps.com/start" value={ssoStartUrl} onChange={(e) => setSsoStartUrl(e.target.value)} autoComplete="off" spellCheck={false} required aria-required="true" />
                 </Field>
-                <Field id={f('sso-region')} label="SSO region (optional)" hint="e.g. us-east-1" error={show('ssoRegion')}>
+                <Field id={f('sso-region')} label="SSO region (optional)" hint="Where IAM Identity Center is enabled, e.g. us-east-1. Leave empty to auto-detect." error={show('ssoRegion')}>
                   <input id={f('sso-region')} className="aws-input" placeholder="e.g. us-east-1" value={ssoRegionField} onChange={(e) => setSsoRegionField(e.target.value.trim())} onBlur={() => touch('ssoRegion')} pattern="^[a-z]{2}-[a-z]+-\d$" aria-invalid={show('ssoRegion') ? 'true' : undefined} aria-describedby={describedBy(f('sso-region'), show('ssoRegion'), 'e.g. us-east-1')} autoComplete="off" spellCheck={false} />
                 </Field>
               </>
             )}
+            <Field id={f('cluster-regions')} label="Cluster regions" hint="Only these regions are searched for EKS clusters, e.g. eu-west-1, us-east-1. Leave empty to search every AWS region (slower)." error={show('clusterRegions')}>
+              <input id={f('cluster-regions')} className="aws-input" placeholder="eu-west-1, us-east-1" value={clusterRegions} onChange={(e) => setClusterRegions(e.target.value)} onBlur={() => touch('clusterRegions')} aria-invalid={show('clusterRegions') ? 'true' : undefined} aria-describedby={describedBy(f('cluster-regions'), show('clusterRegions'), 'Only these regions are searched for EKS clusters, e.g. eu-west-1, us-east-1. Leave empty to search every AWS region (slower).')} autoComplete="off" spellCheck={false} />
+            </Field>
             <div className="aws-sso-actions">
-              <Button variant="primary" onClick={() => startSsoLogin(ssoProfile)} disabled={(!ssoProfile && !ssoStartUrl.trim()) || !!v.ssoRegion}>Sign in with AWS SSO</Button>
+              <Button variant="primary" onClick={() => startSsoLogin(ssoProfile)} disabled={(!ssoProfile && !ssoStartUrl.trim()) || !!v.ssoRegion || !!v.clusterRegions}>Sign in with AWS SSO</Button>
               {profiles.length > 0 && <button type="button" className="azure-alt" onClick={() => discover(existingProfile)}>Skip — already signed in, just discover clusters</button>}
             </div>
           </div>
@@ -366,7 +387,7 @@ export default function AwsIntegration({ onClose, onImported }) {
         </div>
       )}
 
-      {phase === 'listing' && <div className="azure-center"><Loader label="Discovering EKS clusters across all regions…" /></div>}
+      {phase === 'listing' && <div className="azure-center"><Loader label={regionList().length ? `Discovering EKS clusters in ${regionList().join(', ')}…` : 'Discovering EKS clusters across all AWS regions…'} /></div>}
 
       {phase === 'list' && (
         <>

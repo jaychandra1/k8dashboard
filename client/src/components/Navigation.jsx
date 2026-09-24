@@ -1,7 +1,6 @@
 import React, { forwardRef, useCallback, useEffect, useMemo, useState } from 'react';
 import Icon from './Icons';
 import CustomResourceTree from './CustomResourceTree';
-import ContextSelector from './ContextSelector';
 import { NAV_GROUPS, byKey, typesInGroup } from '../lib/kinds';
 import { buildHash } from '../hooks/useHashRoute';
 
@@ -36,13 +35,12 @@ const isPlainClick = (e) => e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shi
  * Primary sidebar. Every item is a real link (`<a href="#/…">`, so middle-click
  * / open-in-new-tab work) built from the resource registry; the active one has
  * `aria-current="page"`. Sections are `<button aria-expanded>` + `<ul>`.
+ * Cluster switching lives in the top bar (ClusterSwitcher), not here.
  *
- * Props: { configStatus, onSwitchContext, view, subView, linkQuery, onNavigate(view, params?),
- *          crSelection, onSelectCustomResource, argocdInstalled, onAddAzure, onAddAws, onAddLocal, onOpenPreferences }
+ * Props: { view, subView, linkQuery, onNavigate(view, params?),
+ *          crSelection, onSelectCustomResource, argocdInstalled, onOpenPreferences }
  */
 const Navigation = forwardRef(function Navigation({
-  configStatus,
-  onSwitchContext,
   view,
   subView,
   linkQuery,
@@ -50,9 +48,6 @@ const Navigation = forwardRef(function Navigation({
   crSelection,
   onSelectCustomResource,
   argocdInstalled,
-  onAddAzure,
-  onAddAws,
-  onAddLocal,
   onOpenPreferences,
 }, ref) {
   const [expanded, setExpanded] = useState(loadExpanded);
@@ -163,16 +158,6 @@ const Navigation = forwardRef(function Navigation({
             <Icon name="settings" size={16} />
           </button>
         </div>
-        <div className="nav-cluster" id="nav-context-label">Context</div>
-        <ContextSelector
-          contexts={configStatus.contexts || []}
-          contextsInfo={configStatus.contextsInfo}
-          currentContext={configStatus.currentContext}
-          onChange={onSwitchContext}
-          onAddAzure={onAddAzure}
-          onAddAws={onAddAws}
-          onAddLocal={onAddLocal}
-        />
       </div>
 
       <div className="nav-sections">

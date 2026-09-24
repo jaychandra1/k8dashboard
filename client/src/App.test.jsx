@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, act, waitFor } from '@testing-library/react';
+import { render, screen, act, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { _resetHistoryIndex } from './hooks/useHashRoute';
 
 // ---- mocks ---------------------------------------------------------------
 const responses = {
-  '/api/config/status': { loaded: true, contexts: ['test-cluster'], contextsInfo: [{ name: 'test-cluster', provider: 'local' }], currentContext: 'test-cluster' },
+  '/api/config/status': { loaded: true, contexts: ['test-cluster', 'other-cluster'], contextsInfo: [{ name: 'test-cluster', provider: 'local' }, { name: 'other-cluster', provider: 'aws' }], currentContext: 'test-cluster' },
   '/api/config/auth': { ok: true, currentContext: 'test-cluster' },
   '/api/namespaces': { namespaces: ['default', 'kube-system'] },
   '/api/argocd/status': { installed: false },
@@ -55,13 +55,20 @@ const settle = () => act(async () => { await new Promise((r) => setTimeout(r, 30
 describe('App routing', () => {
   beforeEach(() => { _resetHistoryIndex(); window.location.hash = ''; localStorage.clear(); });
 
-  it('boots into the overview and navigates by changing the hash', async () => {
+  it('boots into the Cluster overview and navigates by changing the hash', async () => {
     renderApp();
+    // Startup: branded loading screen until config status + auth are in.
+    expect(screen.getByRole('status')).toHaveTextContent('Getting the data');
     await waitFor(() => expect(screen.getByRole('navigation', { name: 'Primary' })).toBeInTheDocument());
     expect(screen.getByRole('main')).toHaveAttribute('id', 'main');
     expect(screen.getByRole('banner')).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByTestId('overview')).toHaveAttribute('data-pods', '2'));
-    expect(document.title).toMatch(/^Overview · all namespaces · test-cluster — KubePilot$/);
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Cluster' })).toBeInTheDocument());
+    expect(screen.queryByTestId('overview')).toBeNull();
+    expect(document.title).toMatch(/^Cluster · test-cluster — KubePilot$/);
+    // The sidebar has no context selector any more; the top bar switcher is the one place.
+    const nav = screen.getByRole('navigation', { name: 'Primary' });
+    expect(nav.querySelector('.nav-context-selector, .nav-cluster')).toBeNull();
+    expect(screen.getByRole('button', { name: /Switch cluster/ })).toHaveTextContent('test-cluster');
 
     const user = userEvent.setup();
     await user.click(screen.getByRole('link', { name: 'Pods' }));
@@ -72,10 +79,62 @@ describe('App routing', () => {
 
     // Back button in the top bar → previous view.
     await user.click(screen.getByRole('button', { name: 'Back' }));
-    await waitFor(() => expect(screen.getByTestId('overview')).toBeInTheDocument());
-    // The first entry was the bare URL (no hash) — both spellings mean "overview".
-    expect(['', '#/overview']).toContain(window.location.hash);
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Cluster' })).toBeInTheDocument());
+    // The first entry was the bare URL (no hash) — both spellings mean the landing view.
+    expect(['', '#/cluster']).toContain(window.location.hash);
     expect(screen.getByRole('button', { name: 'Forward' })).toBeEnabled();
+  }, 15000);
+
+  it('the workloads overview is still reachable at #/overview', async () => {
+    window.location.hash = '#/overview';
+    renderApp();
+    await waitFor(() => expect(screen.getByTestId('overview')).toHaveAttribute('data-pods', '2'));
+    expect(document.title).toMatch(/^Overview · all namespaces · test-cluster — KubePilot$/);
+  });
+
+  it('switching cluster from the top-bar menu lands on the Cluster overview behind the branded loading screen', async () => {
+    window.location.hash = '#/pod?ns=default';
+    renderApp();
+    await waitFor(() => expect(screen.getByTestId('rv')).toBeInTheDocument());
+    const { postJson } = await import('./lib/api');
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /Switch cluster/ }));
+    const menu = await screen.findByRole('menu', { name: 'Switch cluster' });
+    // "other-cluster" is not pinned: it is listed under the All contexts heading.
+    await user.click(within(menu).getByRole('menuitemcheckbox', { name: 'other-cluster' }));
+    expect(postJson).toHaveBeenCalledWith('/api/config/context', { contextName: 'other-cluster' });
+    await waitFor(() => expect(window.location.hash).toBe('#/cluster'));
+    // Overlay inside <main> (sidebar + top bar stay), naming the target cluster.
+    const main = screen.getByRole('main');
+    await waitFor(() => expect(within(main).getByText('Getting the data from other-cluster…')).toBeInTheDocument());
+    expect(main).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('navigation', { name: 'Primary' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('Switched to other-cluster')).toBeInTheDocument());
+  }, 15000);
+
+  it('"Search contexts…" and the kubepilot:open-contexts event open the searchable context picker', async () => {
+    renderApp();
+    await waitFor(() => expect(screen.getByRole('navigation', { name: 'Primary' })).toBeInTheDocument());
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /Switch cluster/ }));
+    await user.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Search contexts…' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Switch cluster' });
+    const search = within(dialog).getByRole('combobox');
+    await waitFor(() => expect(search).toHaveFocus());
+    expect(within(dialog).getAllByRole('option').map((o) => o.textContent)).toEqual(['other-cluster', 'test-cluster']);
+    expect(within(dialog).getByRole('option', { name: 'test-cluster' })).toHaveAttribute('aria-selected', 'true');
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Switch cluster' })).toBeNull());
+
+    // Desktop app path (native Clusters menu → App): same dialog.
+    await act(async () => { window.dispatchEvent(new CustomEvent('kubepilot:host', { detail: { type: 'open-contexts' } })); });
+    expect(await screen.findByRole('dialog', { name: 'Switch cluster' })).toBeInTheDocument();
+    await user.type(screen.getByRole('combobox'), 'oth');
+    expect(within(screen.getByRole('dialog', { name: 'Switch cluster' })).getAllByRole('option')).toHaveLength(1);
+    await user.keyboard('{Enter}');
+    const { postJson } = await import('./lib/api');
+    expect(postJson).toHaveBeenCalledWith('/api/config/context', { contextName: 'other-cluster' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Switch cluster' })).toBeNull());
   }, 15000);
 
   it('restores the view, namespace filter and selection from the hash', async () => {

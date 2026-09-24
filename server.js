@@ -937,8 +937,10 @@ let awsSession = null; // { sso: { accessToken, ssoRegion, startUrl }, ssoCluste
 app.get('/api/aws/status', async (req, res) => {
   // The SDK is bundled, so the integration is always available — no CLI needed.
   try {
-    const profiles = (await awsEks.listProfiles()).map((p) => p.name);
-    res.json({ installed: true, profiles });
+    const details = await awsEks.listProfiles();
+    // `profiles` (names) stays for older clients; `profileDetails` lets the UI
+    // show saved SSO profiles with their start URL / regions.
+    res.json({ installed: true, profiles: details.map((p) => p.name), profileDetails: details });
   } catch (e) { res.json({ installed: true, profiles: [] }); }
 });
 
@@ -1015,23 +1017,35 @@ app.post('/api/aws/configure', async (req, res) => {
   } catch (e) { res.status(500).json({ error: firstLine(e.message) }); }
 });
 
+const AWS_REGION_RE = /^[a-z]{2}-[a-z]+-\d$/;
+// Optional explicit region list for EKS discovery; empty → scan every region.
+const parseRegions = (raw) => {
+  if (raw == null || raw === '') return [];
+  const list = Array.isArray(raw) ? raw : String(raw).split(',');
+  const out = [...new Set(list.map((r) => String(r).trim().toLowerCase()).filter(Boolean))];
+  if (out.length > 30 || out.some((r) => !AWS_REGION_RE.test(r))) return null;
+  return out;
+};
+
 app.post('/api/aws/clusters', async (req, res) => {
   const { profile, account, role } = req.body || {};
+  const regions = parseRegions(req.body?.regions);
+  if (regions === null) return bad(res, 'regions', 'regions must be AWS region codes like eu-west-1 (at most 30)');
   try {
     const existing = new Set((kubeConfig?.contexts || []).map((c) => c.name));
     // Active SSO session with a chosen account + role → list that account's clusters.
     if (awsSession?.sso?.accessToken && account && role) {
       const credentials = await awsEks.ssoRoleCredentials(awsSession.sso, account, role);
       awsSession.ssoSelected = { account, role, credentials };
-      const { clusters, regions } = await awsEks.discoverClusters({ credentials, account });
+      const { clusters, regions: scannedCount, scanned } = await awsEks.discoverClusters({ credentials, account, regions });
       awsSession.ssoClusters = new Map(clusters.map((c) => [`${c.region}/${c.name}`, { ...c, account, role }]));
-      return res.json({ clusters: clusters.map((c) => ({ name: c.name, region: c.region, account, imported: existing.has(c.name) })), regions });
+      return res.json({ clusters: clusters.map((c) => ({ name: c.name, region: c.region, account, imported: existing.has(c.name) })), regions: scannedCount, scanned });
     }
     // Otherwise use a profile's credentials (access-key / role / existing).
     const { fromNodeProviderChain } = await import('@aws-sdk/credential-providers');
     const credentials = await fromNodeProviderChain(profile ? { profile } : {})();
-    const { clusters, regions } = await awsEks.discoverClusters({ credentials });
-    res.json({ clusters: clusters.map((c) => ({ name: c.name, region: c.region, imported: existing.has(c.name) })), regions });
+    const { clusters, regions: scannedCount, scanned } = await awsEks.discoverClusters({ credentials, regions });
+    res.json({ clusters: clusters.map((c) => ({ name: c.name, region: c.region, imported: existing.has(c.name) })), regions: scannedCount, scanned });
   } catch (e) { res.status(500).json({ error: firstLine(e.message) }); }
 });
 

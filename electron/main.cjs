@@ -69,10 +69,8 @@ let serverProcess = null;
 let mainWindow = null;
 
 // Native "Clusters" menu state (mirrors the in-app top-bar cluster switcher).
-const CLUSTERS_POLL_MS = 15_000;
 let clusters = { current: null, contexts: [], pins: [] };
 let clustersKey = ''; // JSON of `clusters` as last rendered into the menu
-let clustersTimer = null; // periodic refresh while the window is focused
 const debug = (...args) => {
   if (process.env.KUBEPILOT_DEBUG) console.debug('[KubePilot]', ...args);
 };
@@ -396,13 +394,11 @@ function createWindow() {
     if (isBackendUrl(wc.getURL())) refreshClustersMenu();
   });
 
-  // Keep the native Clusters menu in sync while the window is in use: on
-  // focus, then every CLUSTERS_POLL_MS while focused (two cheap GETs).
-  mainWindow.on('focus', () => {
-    refreshClustersMenu();
-    startClustersPolling();
-  });
-  mainWindow.on('blur', stopClustersPolling);
+  // Keep the native Clusters menu in sync: refresh when the window gains focus,
+  // after a switch, and when the UI finishes loading. Deliberately NO periodic
+  // rebuild — Menu.setApplicationMenu can steal keyboard focus from the
+  // renderer on Windows, which interrupted typing in dialogs.
+  mainWindow.on('focus', () => { refreshClustersMenu(); });
 
   // Only the backend origin may be navigated to inside the window. The
   // loading page is loaded by us via loadFile (which doesn't trigger these
@@ -428,7 +424,6 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => mainWindow.show());
 
   mainWindow.on('closed', () => {
-    stopClustersPolling();
     mainWindow = null;
   });
 }
@@ -505,19 +500,6 @@ async function refreshClustersMenu({ force = false } = {}) {
     Menu.setApplicationMenu(buildMenu());
   } catch (err) {
     debug('Clusters menu refresh skipped:', err.message);
-  }
-}
-
-function startClustersPolling() {
-  stopClustersPolling();
-  clustersTimer = setInterval(() => refreshClustersMenu(), CLUSTERS_POLL_MS);
-  if (typeof clustersTimer.unref === 'function') clustersTimer.unref();
-}
-
-function stopClustersPolling() {
-  if (clustersTimer) {
-    clearInterval(clustersTimer);
-    clustersTimer = null;
   }
 }
 

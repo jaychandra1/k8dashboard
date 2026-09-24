@@ -5,14 +5,14 @@ import useHashRoute, { parseHash, buildHash, _resetHistoryIndex } from './useHas
 describe('parseHash / buildHash', () => {
   it('parses view, params and query', () => {
     expect(parseHash('#/pod/kube-system/coredns-1?tab=logs&q=a%20b')).toEqual({ view: 'pod', params: ['kube-system', 'coredns-1'], query: { tab: 'logs', q: 'a b' } });
-    expect(parseHash('')).toEqual({ view: 'overview', params: [], query: {} });
-    expect(parseHash('#')).toEqual({ view: 'overview', params: [], query: {} });
+    expect(parseHash('')).toEqual({ view: 'cluster', params: [], query: {} });
+    expect(parseHash('#')).toEqual({ view: 'cluster', params: [], query: {} });
     expect(parseHash('#/argocd')).toEqual({ view: 'argocd', params: [], query: {} });
     expect(parseHash('#/x?flag')).toEqual({ view: 'x', params: [], query: { flag: '' } });
   });
   it('builds and round-trips', () => {
     expect(buildHash('pod', ['ns', 'na/me'], { tab: 'logs', empty: '' })).toBe('#/pod/ns/na%2Fme?tab=logs');
-    expect(buildHash()).toBe('#/overview');
+    expect(buildHash()).toBe('#/cluster');
     const r = parseHash(buildHash('svc', ['a b'], { q: 'x&y' }));
     expect(r).toEqual({ view: 'svc', params: ['a b'], query: { q: 'x&y' } });
   });
@@ -23,7 +23,7 @@ describe('useHashRoute', () => {
 
   it('navigates and tracks back/forward', async () => {
     const { result } = renderHook(() => useHashRoute());
-    expect(result.current.route.view).toBe('overview');
+    expect(result.current.route.view).toBe('cluster');
     expect(result.current.canBack).toBe(false);
     act(() => result.current.navigate('pod', ['kube-system'], { tab: 'logs' }));
     expect(window.location.hash).toBe('#/pod/kube-system?tab=logs');
