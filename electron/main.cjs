@@ -68,6 +68,15 @@ let authToken = null;
 let serverProcess = null;
 let mainWindow = null;
 
+// Native "Clusters" menu state (mirrors the in-app top-bar cluster switcher).
+const CLUSTERS_POLL_MS = 15_000;
+let clusters = { current: null, contexts: [], pins: [] };
+let clustersKey = ''; // JSON of `clusters` as last rendered into the menu
+let clustersTimer = null; // periodic refresh while the window is focused
+const debug = (...args) => {
+  if (process.env.KUBEPILOT_DEBUG) console.debug('[KubePilot]', ...args);
+};
+
 // --- 1. PATH repair -------------------------------------------------------
 // Ask the user's login shell for its PATH, then union with the usual GUI-app
 // blind spots. Falls back gracefully if the shell can't be queried. On Windows
@@ -241,17 +250,56 @@ function startServer({ fixedPath, port, token }) {
   // utilityProcess 'exit' reports the exit code only (no signal argument).
   serverProcess.on('exit', (code) => {
     serverProcess = null;
-    // If the server dies unexpectedly while the app is up, surface it.
+    // If the server dies unexpectedly while the app is up, restart it in place
+    // (a crash, an OOM kill, or another process taking the port must not take
+    // the whole desktop app down). Only after repeated failures in a short
+    // window do we give up and tell the user.
     if (!app.isQuitting && code !== 0 && code !== null) {
       const portTaken = /EADDRINUSE|already in use/i.test(stderrTail);
       const detail = portTaken
-        ? `Port ${port} was taken by another process while KubePilot was starting. Relaunch the app.`
+        ? `Port ${port} was taken by another process.`
         : `The backend exited unexpectedly (code ${code}).` +
           (stderrTail.trim() ? `\n\n${stderrTail.trim().split('\n').slice(-4).join('\n')}` : '');
-      dialog.showErrorBox('KubePilot', detail);
-      app.quit();
+      restartBackend(detail).then((ok) => {
+        if (ok || app.isQuitting) return;
+        dialog.showErrorBox('KubePilot', `${detail}\n\nKubePilot tried to restart it ${MAX_RESTARTS} times without success. Relaunch the app.`);
+        app.quit();
+      });
     }
   });
+}
+
+// Restart the backend after an unexpected exit: at most MAX_RESTARTS times per
+// RESTART_WINDOW_MS, preferring the port we already had (a different one is
+// fine — the window is reloaded on the new origin with the same token).
+const MAX_RESTARTS = 3;
+const RESTART_WINDOW_MS = 60_000;
+let restartTimes = [];
+let restarting = false;
+async function restartBackend(reason) {
+  if (restarting) return true; // a restart is already in flight
+  const now = Date.now();
+  restartTimes = restartTimes.filter((t) => now - t < RESTART_WINDOW_MS);
+  if (restartTimes.length >= MAX_RESTARTS) return false;
+  restartTimes.push(now);
+  restarting = true;
+  try {
+    console.warn(`[KubePilot] ${reason} Restarting the backend (${restartTimes.length}/${MAX_RESTARTS}).`);
+    backendPort = await findFreePort(backendPort || PREFERRED_PORT);
+    backendOrigin = `http://127.0.0.1:${backendPort}`;
+    startServer({ fixedPath: resolveUserPath(), port: backendPort, token: authToken });
+    if (!serverProcess) return false;
+    const ready = await waitForServer();
+    if (ready && mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.loadURL(`${backendOrigin}/#token=${authToken}`);
+    }
+    return ready;
+  } catch (err) {
+    console.error(`[KubePilot] backend restart failed: ${err.message}`);
+    return false;
+  } finally {
+    restarting = false;
+  }
 }
 
 function stopServer() {
@@ -344,7 +392,17 @@ function createWindow() {
   // lights and expose a draggable region (CSS `.is-electron` rules).
   wc.on('did-finish-load', () => {
     wc.executeJavaScript("document.documentElement.classList.add('is-electron')").catch(() => {});
+    // First fill of the native Clusters menu once the UI (not loading.html) is up.
+    if (isBackendUrl(wc.getURL())) refreshClustersMenu();
   });
+
+  // Keep the native Clusters menu in sync while the window is in use: on
+  // focus, then every CLUSTERS_POLL_MS while focused (two cheap GETs).
+  mainWindow.on('focus', () => {
+    refreshClustersMenu();
+    startClustersPolling();
+  });
+  mainWindow.on('blur', stopClustersPolling);
 
   // Only the backend origin may be navigated to inside the window. The
   // loading page is loaded by us via loadFile (which doesn't trigger these
@@ -370,8 +428,135 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => mainWindow.show());
 
   mainWindow.on('closed', () => {
+    stopClustersPolling();
     mainWindow = null;
   });
+}
+
+// --- Native "Clusters" menu -----------------------------------------------
+// The main process has no preload/IPC. It reads the same backend the renderer
+// uses (with the token it generated) and tells the renderer what happened via
+// a DOM event the app listens for:
+//   window.dispatchEvent(new CustomEvent('kubepilot:host', { detail }))
+//   detail = { type: 'context-changed', context }
+//          | { type: 'open-contexts' }
+//          | { type: 'add-cluster', provider: 'aws' | 'azure' }
+// Nothing here blocks startup; failures are logged at debug and ignored.
+function backendJson(method, apiPath, body) {
+  return new Promise((resolve, reject) => {
+    if (!backendOrigin || !authToken) return reject(new Error('backend not ready'));
+    const payload = body === undefined ? null : JSON.stringify(body);
+    const req = http.request(
+      `${backendOrigin}${apiPath}`,
+      {
+        method,
+        headers: {
+          Host: `127.0.0.1:${backendPort}`,
+          Authorization: `Bearer ${authToken}`,
+          Accept: 'application/json',
+          ...(payload ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } : {}),
+        },
+      },
+      (res) => {
+        let data = '';
+        res.setEncoding('utf8');
+        res.on('data', (c) => {
+          if (data.length < 1_000_000) data += c;
+        });
+        res.on('end', () => {
+          let parsed = null;
+          try {
+            parsed = data ? JSON.parse(data) : null;
+          } catch {
+            /* non-JSON body */
+          }
+          if (res.statusCode >= 200 && res.statusCode < 300) resolve(parsed);
+          else reject(new Error(`${method} ${apiPath} → ${res.statusCode}${parsed && parsed.error ? `: ${parsed.error}` : ''}`));
+        });
+      }
+    );
+    req.on('error', reject);
+    req.setTimeout(4000, () => req.destroy(new Error(`${method} ${apiPath} timed out`)));
+    if (payload) req.write(payload);
+    req.end();
+  });
+}
+
+function notifyRenderer(detail) {
+  const wc = mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null;
+  if (!wc || !isBackendUrl(wc.getURL())) return;
+  wc.executeJavaScript(`window.dispatchEvent(new CustomEvent('kubepilot:host', { detail: ${JSON.stringify(detail)} }))`).catch(() => {});
+}
+
+async function refreshClustersMenu({ force = false } = {}) {
+  if (!backendOrigin || !authToken) return;
+  try {
+    const [status, pins] = await Promise.all([backendJson('GET', '/api/config/status'), backendJson('GET', '/api/settings/pins')]);
+    const str = (v) => typeof v === 'string';
+    const next = {
+      current: status && str(status.currentContext) ? status.currentContext : null,
+      contexts: status && Array.isArray(status.contexts) ? status.contexts.filter(str) : [],
+      pins: pins && Array.isArray(pins.pins) ? pins.pins.filter(str) : [],
+    };
+    const key = JSON.stringify(next);
+    if (!force && key === clustersKey) return;
+    clusters = next;
+    clustersKey = key;
+    Menu.setApplicationMenu(buildMenu());
+  } catch (err) {
+    debug('Clusters menu refresh skipped:', err.message);
+  }
+}
+
+function startClustersPolling() {
+  stopClustersPolling();
+  clustersTimer = setInterval(() => refreshClustersMenu(), CLUSTERS_POLL_MS);
+  if (typeof clustersTimer.unref === 'function') clustersTimer.unref();
+}
+
+function stopClustersPolling() {
+  if (clustersTimer) {
+    clearInterval(clustersTimer);
+    clustersTimer = null;
+  }
+}
+
+async function switchClusterFromMenu(contextName) {
+  if (contextName === clusters.current) return;
+  try {
+    await backendJson('POST', '/api/config/context', { contextName });
+    // The renderer runs its normal post-switch path (route reset, config
+    // status + auth re-check, toast) without POSTing again.
+    notifyRenderer({ type: 'context-changed', context: contextName });
+  } catch (err) {
+    debug('context switch from menu failed:', err.message);
+  }
+  // Force a rebuild so the radio check reflects the backend's actual context
+  // (also reverts it when the switch failed).
+  await refreshClustersMenu({ force: true });
+}
+
+// `&` is a mnemonic marker in Windows/Linux menu labels.
+const menuLabel = (s) => String(s).replace(/&/g, '&&');
+
+function clustersMenu() {
+  const { current, contexts, pins } = clusters;
+  const known = new Set(contexts);
+  // Same rule as the in-app switcher: pins that still exist (plus the active one).
+  const pinned = pins.filter((c) => known.has(c) || c === current);
+  const items = pinned.length
+    ? pinned.map((ctx) => ({ label: menuLabel(ctx), type: 'radio', checked: ctx === current, click: () => switchClusterFromMenu(ctx) }))
+    : [{ label: 'No pinned clusters', enabled: false }];
+  return {
+    label: 'Clusters',
+    submenu: [
+      ...items,
+      { type: 'separator' },
+      { label: 'All contexts…', click: () => notifyRenderer({ type: 'open-contexts' }) },
+      { label: 'Add AWS EKS cluster…', click: () => notifyRenderer({ type: 'add-cluster', provider: 'aws' }) },
+      { label: 'Add Azure AKS cluster…', click: () => notifyRenderer({ type: 'add-cluster', provider: 'azure' }) },
+    ],
+  };
 }
 
 async function boot() {
@@ -486,6 +671,7 @@ function buildMenu() {
         { role: 'togglefullscreen' },
       ],
     },
+    clustersMenu(),
     {
       label: 'Window',
       submenu: [{ role: 'minimize' }, { role: 'zoom' }, { role: 'close' }],

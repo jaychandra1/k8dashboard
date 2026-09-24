@@ -203,6 +203,72 @@ describe('demo mode (KUBEPILOT_DEMO=1) & input validation', () => {
   });
 });
 
+describe('settings: pinned clusters (/api/settings/pins)', () => {
+  const put = (body, raw = false) =>
+    srv.authed('/api/settings/pins', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: raw ? body : JSON.stringify(body),
+    });
+
+  test('requires the token', async () => {
+    const res = await fetch(`${srv.base}/api/settings/pins`);
+    assert.equal(res.status, 401);
+  });
+
+  test('starts empty in a fresh config dir', async () => {
+    const res = await srv.authed('/api/settings/pins');
+    assert.equal(res.status, 200);
+    assert.deepEqual(await json(res), { pins: [] });
+  });
+
+  test('PUT persists a de-duplicated list; GET returns it', async () => {
+    const res = await put({ pins: ['demo-cluster', 'prod-eks', 'demo-cluster'] });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await json(res), { pins: ['demo-cluster', 'prod-eks'] });
+    const back = await json(await srv.authed('/api/settings/pins'));
+    assert.deepEqual(back, { pins: ['demo-cluster', 'prod-eks'] });
+
+    // Still served while the demo context is active (the demo interceptor must
+    // not swallow settings routes).
+    await srv.authed('/api/config/context', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contextName: 'demo-cluster' }),
+    });
+    const inDemo = await json(await srv.authed('/api/settings/pins'));
+    assert.deepEqual(inDemo, { pins: ['demo-cluster', 'prod-eks'] });
+
+    const cleared = await put({ pins: [] });
+    assert.equal(cleared.status, 200);
+    assert.deepEqual(await json(await srv.authed('/api/settings/pins')), { pins: [] });
+  });
+
+  test('PUT validates: array of ≤ 50 context names, each non-flag-shaped', async () => {
+    const cases = [
+      { pins: 'demo-cluster' },
+      { pins: null },
+      {},
+      { pins: [42] },
+      { pins: [''] },
+      { pins: ['--kubeconfig=/etc/passwd'] },
+      { pins: ['ok', 'bad\nname'] },
+      { pins: Array.from({ length: 51 }, (_, i) => `ctx-${i}`) },
+    ];
+    for (const body of cases) {
+      const res = await put(body);
+      assert.equal(res.status, 400, JSON.stringify(body).slice(0, 80));
+      const parsed = await json(res);
+      assert.equal(parsed.code, 'invalid_param');
+      assert.equal(parsed.field, 'pins');
+    }
+    const malformed = await put('{"pins": [', true);
+    assert.equal(malformed.status, 400);
+    // Nothing above changed the stored list.
+    assert.deepEqual(await json(await srv.authed('/api/settings/pins')), { pins: [] });
+  });
+});
+
 describe('security headers', () => {
   test('X-Content-Type-Options / X-Frame-Options / Referrer-Policy on every response; no X-Powered-By', async () => {
     for (const p of ['/healthz', '/', '/api/version']) {

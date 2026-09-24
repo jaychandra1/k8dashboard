@@ -81,9 +81,9 @@ export default function Topology({
   const [cats, setCats] = useState({ network: true, storage: true, config: true, rbac: true });
   const [listView, setListView] = useState(false);
   const vp = useGraphViewport({ initial: { x: 40, y: 40 } });
-  const { reset: resetView } = vp;
-  // New namespace → back to the origin (a refresh keeps the current pan/zoom).
-  useEffect(() => { resetView(); }, [namespace, resetView]);
+  const { fit: fitView, setContent: setGraphSize } = vp;
+  // New namespace → fit the whole graph again (a refresh keeps the user's pan/zoom).
+  useEffect(() => { fitView(); }, [namespace, fitView]);
 
   const filtered = useMemo(() => {
     const kept = nodes.filter((n) => categoryOf(n) === 'workload' || cats[categoryOf(n)]);
@@ -97,10 +97,13 @@ export default function Topology({
     return c;
   }, [nodes]);
 
-  const { positioned, links } = useMemo(
+  const { positioned, links, width: graphW, height: graphH } = useMemo(
     () => layoutGraph({ nodes: filtered.nodes, edges: filtered.edges, nodeW: NODE_W, nodeH: NODE_H, gapX: GAP_X, gapY: GAP_Y }),
     [filtered],
   );
+  // The viewport fits the graph to the canvas whenever its extent changes
+  // (load, namespace switch, category filter) — until the user pans or zooms.
+  useEffect(() => { setGraphSize({ width: graphW, height: graphH }); }, [graphW, graphH, setGraphSize]);
 
   const nsId = useId();
   const hintId = useId();
@@ -196,6 +199,7 @@ export default function Topology({
         </div>
       ) : (
         <div
+          ref={vp.canvasRef}
           className={`topology-canvas ${vp.dragging ? 'dragging' : ''}`}
           role="group"
           aria-label="Topology graph canvas"

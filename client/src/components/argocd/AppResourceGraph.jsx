@@ -55,10 +55,10 @@ export default function AppResourceGraph({ app, resources = [], onOpenResource }
   const [listView, setListView] = useState(false);
   const hintId = useId();
   const vp = useGraphViewport({ initial: { x: 40, y: 24 } });
-  const { reset: fitView } = vp;
+  const { reset: fitView, setContent: setGraphSize } = vp;
   useEffect(() => { fitView(); }, [app.name, fitView]);
 
-  const { positioned, links } = useMemo(() => {
+  const { positioned, links, width: graphW, height: graphH } = useMemo(() => {
     const { nodes, edges } = buildAppTree(app, resources);
     const depth = bfsDepths(ROOT, edges);
     return layoutGraph({
@@ -66,6 +66,7 @@ export default function AppResourceGraph({ app, resources = [], onOpenResource }
       stack: 'tree', nodeW: NODE_W, nodeH: NODE_H, gapX: GAP_X, gapY: GAP_Y, minHeight: 200,
     });
   }, [app, resources]);
+  useEffect(() => { setGraphSize({ width: graphW, height: graphH }); }, [graphW, graphH, setGraphSize]);
 
   const canOpen = (n) => !!onOpenResource && !n.isApp && !!KIND_TYPE[n.kind];
   const open = (n) => { if (canOpen(n)) onOpenResource(n); };
@@ -103,6 +104,7 @@ export default function AppResourceGraph({ app, resources = [], onOpenResource }
         </div>
       ) : (
         <div
+          ref={vp.canvasRef}
           className={`topology-canvas argo-tree-canvas ${vp.dragging ? 'dragging' : ''}`}
           role="group"
           aria-label={`Resource graph canvas for ${app.name}`}

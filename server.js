@@ -249,7 +249,8 @@ app.use((req, res, next) => {
   const p = req.path;
   // Real config handlers stay in charge (they are demo-aware).
   if (p === '/api/config/status' || p === '/api/config/context' ||
-      p === '/api/config/load' || p === '/api/config/reload' || p === '/api/config/capabilities') return next();
+      p === '/api/config/load' || p === '/api/config/reload' || p === '/api/config/capabilities' ||
+      p === '/api/settings/pins') return next();
   // Auth always "passes" in demo.
   if (p === '/api/config/auth') return res.json({ ok: true, currentContext: demo.DEMO_CONTEXT });
   // Assistant: report enabled + stream canned answers (no LLM required).
@@ -488,6 +489,27 @@ app.post('/api/mcp/config', (req, res) => {
   mcpAllowWrite = allowWrite;
   writeSettings({ mcpAllowWrite: allowWrite });
   res.json({ allowWrite: mcpAllowWrite });
+});
+
+// Pinned clusters — shared by the in-app cluster switcher (top bar) and the
+// desktop app's native "Clusters" menu, so both show the same list. Stored in
+// the same settings.json as mcpAllowWrite. Read-only for MCP callers (GET).
+const MAX_PINS = 50;
+const readPins = () => {
+  const s = readSettings();
+  return Array.isArray(s.pins) ? [...new Set(s.pins.filter(isContextName))].slice(0, MAX_PINS) : [];
+};
+app.get('/api/settings/pins', (req, res) => {
+  res.json({ pins: readPins() });
+});
+app.put('/api/settings/pins', mcpWriteGate, (req, res) => {
+  const { pins } = req.body || {};
+  if (!Array.isArray(pins) || pins.length > MAX_PINS || !pins.every(isContextName)) {
+    return bad(res, 'pins', `pins must be an array of at most ${MAX_PINS} context names`);
+  }
+  const next = [...new Set(pins)];
+  writeSettings({ pins: next });
+  res.json({ pins: next });
 });
 
 app.get('/api/config/status', (req, res) => {

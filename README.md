@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="build/icon.png" alt="KubePilot" width="104" />
+<img src="build/icon-detailed.png" alt="KubePilot" width="128" />
 
 # KubePilot
 
@@ -142,8 +142,8 @@ The backend prints `open http://127.0.0.1:3001/#token=…` at start — open the
 ## Usage
 
 1. **⌘K** (Ctrl+K) — jump to any view, cluster, or action; the toolbar's back/forward arrows retrace your steps.
-2. **Pick a context** — the searchable sidebar selector switches clusters; pin favourites to the left rail.
-3. **Add a cloud cluster** — the **+** button → **AWS** or **Azure** discovers and merges clusters into your kubeconfig.
+2. **Pick a context** — the toolbar's cluster menu (current context name, next to the arrows) switches between your pinned clusters, pins/unpins the current one and opens **All contexts…** (the searchable sidebar selector). The desktop app mirrors it in a native **Clusters** menu.
+3. **Add a cloud cluster** — cluster menu → **Add cluster ▸** → **AWS EKS** or **Azure AKS** discovers and merges clusters into your kubeconfig.
 4. **Click a row** — opens the detail drawer (with live pod metric graphs); the **⋮** menu has Details, Logs, Terminal, Edit YAML.
 5. **AI & agents** — launch from the toolbar; configure in **Preferences → AI / External Tools**.
 

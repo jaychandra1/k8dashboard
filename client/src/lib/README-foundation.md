@@ -183,7 +183,7 @@ The wrapper has class `dt-wrap resource-table-wrap` and the table `dt resource-t
 
 ### CSS you can rely on
 
-Tokens: `--focus-ring`, `--amber`, `--blue`, `--bg`, `--bg-code`, `--rail-w`, `--z-sticky|dropdown|drawer|modal|toast|palette|tooltip`.
+Tokens: `--focus-ring`, `--amber`, `--blue`, `--bg`, `--bg-code`, `--sidebar-w`, `--z-sticky|dropdown|drawer|modal|toast|palette|tooltip`.
 Classes: `.sr-only`, `.skip-link`, `.tone-*`, `.bg-tone-*`, `.status-dot[data-tone]`, `.ui-modal*`, `.ui-btn[data-variant][data-size][data-icon-only]`, `.ui-badge[data-tone]`, `.ui-search*`, `.ui-donut*`, `.dt*` (`.dt-ellipsis`, `.dt-mono`, `.dt-align-right`, `.dt-actions`), `.ui-empty*`, `.ui-error*`, `.ui-skeleton*`, `.ui-tooltip`, `.ui-menu*` (+ legacy `.context-menu*`), `.token-prompt*`, `.hljs-*`, `.nav-toggle`, `.nav-backdrop`, `.app-shell[data-nav="collapsed"|"open"]`.
 TopBar owner: render `<button className="nav-toggle" aria-label="Toggle navigation" aria-expanded={navOpen} aria-controls="app-nav">` and toggle `data-nav` on `.app-shell`; add `<div className="nav-backdrop" onClick={close} />` inside `.layout-main`. Give the routed view container `id="main"` (skip-link target).
 Typography is now `rem` (root 16px); don't add `px` font sizes; nothing under `0.6875rem` (11px).

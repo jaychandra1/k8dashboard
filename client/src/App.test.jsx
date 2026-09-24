@@ -9,6 +9,7 @@ const responses = {
   '/api/config/auth': { ok: true, currentContext: 'test-cluster' },
   '/api/namespaces': { namespaces: ['default', 'kube-system'] },
   '/api/argocd/status': { installed: false },
+  '/api/settings/pins': { pins: ['test-cluster'] },
   '/api/resources/default': { pods: [{ name: 'web-1', namespace: 'default', status: 'Running' }], deployments: [] },
   '/api/resources/kube-system': { pods: [{ name: 'coredns', namespace: 'kube-system', status: 'Running' }], deployments: [], partial: true, errors: [{ kind: 'secrets', error: 'forbidden' }] },
 };

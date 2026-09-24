@@ -3,7 +3,8 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import Icon from './Icons';
 import useClickOutside from '../hooks/useClickOutside';
 
-const PROVIDERS = {
+// Provider → label/icon, shared with the top-bar ClusterSwitcher.
+export const PROVIDERS = {
   aws: { label: 'AWS EKS', icon: 'aws' },
   azure: { label: 'Azure AKS', icon: 'azure' },
   gcp: { label: 'Google GKE', icon: 'cluster' },
@@ -11,6 +12,12 @@ const PROVIDERS = {
   other: { label: 'Other clusters', icon: 'cluster' },
 };
 const ORDER = ['aws', 'azure', 'gcp', 'local', 'other'];
+// Unknown provider tags (e.g. from an older or test-only server) fall into "Other clusters".
+export const providerKeyOf = (provider) => (PROVIDERS[provider] ? provider : 'other');
+
+// Dispatched by the top-bar cluster menu ("All contexts…") and by the desktop
+// app's Clusters menu (via App) to pop this selector open.
+export const OPEN_CONTEXTS_EVENT = 'kubepilot:open-contexts';
 
 /**
  * Searchable context dropdown: trigger `aria-haspopup="listbox"`, labelled
@@ -31,6 +38,12 @@ export default function ContextSelector({ contexts = [], contextsInfo, currentCo
   useClickOutside(ref, close, open);
 
   useEffect(() => {
+    const onOpen = () => setOpen(true);
+    window.addEventListener(OPEN_CONTEXTS_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_CONTEXTS_EVENT, onOpen);
+  }, []);
+
+  useEffect(() => {
     if (!open) { setQuery(''); setAddOpen(false); setActive(-1); return undefined; }
     const cancelRaf = afterPaint(() => searchRef.current?.focus());
     const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); triggerRef.current?.focus(); } };
@@ -43,8 +56,7 @@ export default function ContextSelector({ contexts = [], contextsInfo, currentCo
     (contextsInfo || []).forEach((c) => m.set(c.name, c.provider));
     return m;
   }, [contextsInfo]);
-  // Unknown provider tags (e.g. from an older or test-only server) fall into "Other clusters".
-  const providerOf = useCallback((name) => { const p = providerByName.get(name); return PROVIDERS[p] ? p : 'other'; }, [providerByName]);
+  const providerOf = useCallback((name) => providerKeyOf(providerByName.get(name)), [providerByName]);
   const currentKey = providerOf(currentContext);
   const currentP = PROVIDERS[currentKey] || PROVIDERS.other;
 

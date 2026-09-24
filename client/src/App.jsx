@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './App.css';
 import Navigation from './components/Navigation';
 import TopBar from './components/TopBar';
-import ClusterRail from './components/ClusterRail';
 import CommandPalette from './components/CommandPalette';
 import KubeConfigModal from './components/KubeConfigModal';
 import AuthErrorModal from './components/AuthErrorModal';
@@ -22,11 +21,13 @@ import { RESOURCE_TYPES, byKey, pluralKey } from './lib/kinds';
 import { refreshMs } from './components/RefreshControl';
 import useAuthGate from './components/shell/useAuthGate';
 import useContexts from './components/shell/useContexts';
+import usePins from './components/shell/usePins';
 import useNamespaces from './components/shell/useNamespaces';
 import useResourceFanOut from './components/shell/useResourceFanOut';
 import useNavDrawer from './components/shell/useNavDrawer';
 import ShortcutsSheet from './components/shell/ShortcutsSheet';
 import ViewOutlet from './components/shell/ViewOutlet';
+import { OPEN_CONTEXTS_EVENT } from './components/ContextSelector';
 import {
   ALL, nsFromQuery, nsToQuery, isKnownView, isResourceView,
   selectionFromRoute, selectionToParams, crSelectionFromRoute, crSelectionToParams, namespaceTargetView,
@@ -91,7 +92,8 @@ function App() {
   const contextKey = configStatus.currentContext || '';
 
   const onBeforeSwitch = useCallback(() => { navigate('overview', [], {}); }, [navigate]);
-  const { switchContext } = useContexts({ gate, toast, onBeforeSwitch });
+  const { switchContext, afterSwitch } = useContexts({ gate, toast, onBeforeSwitch });
+  const { pins, togglePin } = usePins({ enabled: tokenOk && authOk, toast });
 
   const ns = useNamespaces({ enabled: tokenOk && authOk, contextKey, toast });
   const namespaces = ns.namespaces;
@@ -240,6 +242,35 @@ function App() {
   // ---- responsive nav drawer ---------------------------------------------
   const drawer = useNavDrawer({ routeKey: `${view}/${route.params.join('/')}` });
 
+  // "All contexts…" (cluster menu / desktop Clusters menu) → the searchable
+  // sidebar selector. On narrow layouts the sidebar is a drawer: open it first.
+  const drawerShow = drawer.show;
+  const drawerNarrow = drawer.narrow;
+  const openContexts = useCallback(() => {
+    if (drawerNarrow) drawerShow();
+    window.dispatchEvent(new CustomEvent(OPEN_CONTEXTS_EVENT));
+  }, [drawerNarrow, drawerShow]);
+
+  // Desktop host (Electron main process) → renderer. The native "Clusters" menu
+  // talks to the backend over HTTP itself and then dispatches
+  //   window.dispatchEvent(new CustomEvent('kubepilot:host', { detail }))
+  // with detail = { type: 'context-changed', context? } | { type: 'open-contexts' }
+  //             | { type: 'add-cluster', provider: 'aws' | 'azure' }.
+  const hostRef = useRef(null);
+  hostRef.current = { afterSwitch, openContexts, openAws, openAzure };
+  useEffect(() => {
+    const onHost = (e) => {
+      const d = e?.detail || {};
+      const h = hostRef.current;
+      if (!h) return;
+      if (d.type === 'context-changed') h.afterSwitch(typeof d.context === 'string' ? d.context : undefined);
+      else if (d.type === 'open-contexts') h.openContexts();
+      else if (d.type === 'add-cluster') { if (d.provider === 'azure') h.openAzure(); else h.openAws(); }
+    };
+    window.addEventListener('kubepilot:host', onHost);
+    return () => window.removeEventListener('kubepilot:host', onHost);
+  }, []);
+
   // ---- document title -----------------------------------------------------
   const title = useMemo(() => {
     const label = byKey[view]?.label || 'KubePilot';
@@ -279,6 +310,15 @@ function App() {
           navOpen={drawer.open}
           onToggleNav={drawer.toggle}
           navToggleRef={drawer.toggleRef}
+          contexts={configStatus.contexts || []}
+          contextsInfo={configStatus.contextsInfo}
+          currentContext={configStatus.currentContext}
+          pins={pins}
+          onSwitchContext={switchContext}
+          onTogglePin={togglePin}
+          onOpenContexts={openContexts}
+          onAddAws={openAws}
+          onAddAzure={openAzure}
         />
       )}
 
@@ -323,11 +363,6 @@ function App() {
 
       {tokenOk && authOk ? (
         <div className="layout-main">
-          <ClusterRail
-            contexts={configStatus.contexts || []}
-            currentContext={configStatus.currentContext}
-            onSwitch={switchContext}
-          />
           <Navigation
             ref={drawer.navRef}
             configStatus={configStatus}

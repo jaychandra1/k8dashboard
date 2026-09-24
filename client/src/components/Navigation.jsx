@@ -142,7 +142,7 @@ const Navigation = forwardRef(function Navigation({
       <div className="nav-header">
         <div className="nav-brand">
           <div className="nav-brand-logo" aria-hidden="true">
-            <Icon name="logo" size={19} strokeWidth={1.8} />
+            <img className="nav-brand-img" src="/logo.png" alt="" width="30" height="30" decoding="async" />
           </div>
           <div className="nav-brand-text">
             <span className="nav-brand-title">KubePilot</span>

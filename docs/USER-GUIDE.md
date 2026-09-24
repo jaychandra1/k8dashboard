@@ -74,11 +74,12 @@ When the app starts it shows one of:
 - **Could not connect to the cluster** — a kubeconfig was loaded but its credentials failed. Use **Add cluster** to onboard an EKS or AKS cluster, switch to another context, or fix the kubeconfig and press **Retry**. Authentication failures are classified for you (expired token, unreachable API server, TLS error, missing auth plugin) with a one-click or copyable fix.
 - The dashboard — the current kubeconfig context loaded.
 
-Switch clusters any time from the **Context** selector in the sidebar (searchable) or with `⌘K` / `Ctrl+K` → type the context name. Pin favourites to the left rail with the **+** button.
+Switch clusters any time from the **cluster menu** in the toolbar (the button showing the current context, next to the back/forward arrows), from the searchable **Context** selector in the sidebar, or with `⌘K` / `Ctrl+K` → type the context name. The cluster menu lists your **pinned** clusters with a check on the current one; **Pin "<context>"** / **Unpin** adds or removes the current cluster, **All contexts…** opens the searchable selector, and **Add cluster ▸** imports an AWS EKS or Azure AKS cluster. Pins are stored with the app's settings, so the desktop app's native **Clusters** menu (between View and Window) shows the same list — switch there too, or use its **All contexts…** / **Add … cluster…** entries.
 
 ### 1.4 Getting around
 
 - **Sidebar** — Cluster, Nodes, Namespaces, Topology; Workloads (Pods, Deployments, StatefulSets, DaemonSets, ReplicaSets, Jobs, CronJobs…); Config; Network; Storage; Events, Helm, Access Control, Argo CD (shown when installed), Security Center, Custom Resources. Every item is a real link, so keyboard navigation, middle-click and "open in new tab" work.
+- **Cluster menu** — the toolbar button with the current context name: pinned clusters (check = current), Pin/Unpin, All contexts…, Add cluster ▸. Fully keyboard operable (Enter or ↓ opens, arrows move, Esc closes). In the desktop app the same list is in the native **Clusters** menu.
 - **Command palette** — `⌘K` (`Ctrl+K` on Windows/Linux) jumps to any view, switches context, refreshes, opens Preferences or changes the theme. Type to filter, arrows to move, Enter to run.
 - **Back / Forward** — the toolbar arrows and your browser's back/forward both work, because every view has a URL:
 

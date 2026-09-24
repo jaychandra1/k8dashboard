@@ -61,7 +61,6 @@
   --mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Code', Menlo, Consolas, monospace;
 
   --sidebar-w: 264px;
-  --rail-w: 64px;
   --term-bg: #0a0a0a;
 
   /* Aliases (some views reference these) */
@@ -146,6 +145,7 @@
 }
 
 html { font-size: 100%; }
+html, body { height: 100%; overflow: hidden; }
 
 body {
   font-family: var(--font);
@@ -606,6 +606,10 @@ body {
    Sidebar (tree)
    ============================================================ */
 .nav-sidebar {
+  /* Positioned so absolutely-placed descendants (e.g. .sr-only text inside
+     tree rows) are contained and clipped by this scroll area instead of
+     escaping to the document and making the whole page scrollable. */
+  position: relative;
   width: var(--sidebar-w);
   min-width: var(--sidebar-w);
   background: var(--sidebar-bg, linear-gradient(180deg, #10151d 0%, #0d1117 100%));
@@ -731,15 +735,23 @@ body {
 .refresh-menu-label { flex: 1; }
 .refresh-menu-hint { font-size: 0.6875rem; color: var(--text-muted); font-family: var(--mono); }
 
+/* Brand mark: the app icon itself (transparent PNG with its own rounded
+   square), so no tile background or shadow of our own — it must sit cleanly
+   on both the dark and the light sidebar. */
 .nav-brand-logo {
   width: 30px;
   height: 30px;
-  border-radius: 8px;
   display: grid;
   place-items: center;
-  color: #fff;
-  background: var(--logo-tile, linear-gradient(135deg, var(--accent-strong), #7c3aed));
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  background: transparent;
+  flex: 0 0 auto;
+}
+.nav-brand-img {
+  width: 30px;
+  height: 30px;
+  display: block;
+  border-radius: 7px;
+  object-fit: contain;
 }
 
 .nav-brand-text {
@@ -1010,7 +1022,9 @@ body {
 
 .nav-sections {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  position: relative; /* see .nav-sidebar */
   padding: 8px 8px 20px;
 }
 
@@ -3004,133 +3018,22 @@ h5.md-h, h6.md-h { font-size: 0.7813rem; color: var(--text-secondary); }
 .assistant-forget:hover { color: var(--red); }
 
 /* ============================================================
-   Cluster rail (pinned clusters, far left)
+   Cluster switcher (top bar) — replaces the pinned-cluster rail
    ============================================================ */
-.cluster-rail {
-  flex-shrink: 0;
-  width: 64px;
-  background: var(--bg-surface-2);
-  border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 12px 0 10px;
-  gap: 10px;
-  overflow-y: auto;
-  overflow-x: visible;
+.topbar-cluster { display: flex; align-items: center; min-width: 0; }
+.topbar-cluster-btn {
+  display: flex; align-items: center; gap: 7px;
+  height: 30px; padding: 0 8px 0 9px; max-width: 240px;
+  border: 1px solid var(--border-strong); border-radius: 8px;
+  background: var(--bg-elevated); color: var(--text); cursor: pointer;
+  font-family: var(--font); font-size: 0.7813rem; font-weight: 600;
+  transition: background 0.12s, border-color 0.12s;
 }
-.cluster-rail-label {
-  font-size: 0.6875rem;
-  font-weight: 700;
-  letter-spacing: 1px;
-  color: var(--text-muted);
-}
-.cluster-rail-pins { display: flex; flex-direction: column; align-items: center; gap: 10px; }
-
-.cluster-pin {
-  position: relative;
-  width: 42px;
-  height: 42px;
-  border-radius: 13px;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  background: transparent;
-  display: grid;
-  place-items: center;
-  transition: transform 0.1s ease;
-}
-.cluster-pin:hover { transform: translateY(-1px); }
-.cluster-pin-badge {
-  width: 42px;
-  height: 42px;
-  border-radius: 13px;
-  display: grid;
-  place-items: center;
-  font-size: 0.8125rem;
-  font-weight: 700;
-  letter-spacing: 0.3px;
-  color: #fff;
-  background: hsl(var(--pin-hue, 210) 55% 45%);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
-}
-.cluster-pin.active .cluster-pin-badge {
-  border-radius: 15px;
-  box-shadow: 0 0 0 2px var(--bg-surface-2), 0 0 0 4px var(--accent);
-}
-.cluster-pin-remove {
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  display: none;
-  place-items: center;
-  color: #fff;
-  background: var(--red);
-  box-shadow: 0 0 0 2px var(--bg-surface-2);
-}
-.cluster-pin-remove::before { content: ''; position: absolute; inset: -3px; } /* 24px hit area */
-.cluster-pin:hover .cluster-pin-remove, .cluster-pin:focus-within .cluster-pin-remove { display: grid; }
-
-.cluster-add-wrap { position: relative; margin-top: auto; }
-.cluster-add {
-  width: 42px;
-  height: 42px;
-  border-radius: 13px;
-  border: 1.5px dashed var(--border-strong);
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  display: grid;
-  place-items: center;
-}
-.cluster-add:hover { border-color: var(--accent); color: var(--accent); }
-
-.cluster-add-menu {
-  position: fixed;
-  left: 72px;
-  bottom: 14px;
-  z-index: var(--z-dropdown);
-  width: 260px;
-  max-height: 340px;
-  overflow-y: auto;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-3);
-  padding: 8px;
-  animation: drawer-in 0.14s var(--ease-out);
-}
-.cluster-add-title { font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; color: var(--text-muted); padding: 4px 6px 8px; }
-.cluster-add-empty { font-size: 0.7813rem; color: var(--text-muted); padding: 6px; }
-.cluster-add-option {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 7px 8px;
-  border: none;
-  background: transparent;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  text-align: left;
-}
-.cluster-add-option:hover { background: var(--bg-hover); }
-.cluster-add-dot {
-  flex-shrink: 0;
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
-  display: grid;
-  place-items: center;
-  font-size: 0.6875rem;
-  font-weight: 700;
-  color: #fff;
-  background: hsl(var(--pin-hue, 210) 55% 45%);
-}
-.cluster-add-name { font-size: 0.7813rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
+.topbar-cluster-btn:hover,
+.topbar-cluster-btn[aria-expanded='true'] { background: var(--bg-hover); border-color: var(--accent); }
+.topbar-cluster-name { min-width: 0; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar-cluster-caret { color: var(--text-muted); }
+@media (max-width: 720px) { .topbar-cluster-name { max-width: 96px; } }
 
 
 /* ============================================================
@@ -3559,8 +3462,7 @@ button:active:not(:disabled) { transform: scale(0.97); }
 .nav-item:active,
 .ctx-option:active,
 .resource-table-row:active,
-.crtree-row:active,
-.cluster-pin:active { filter: brightness(1.25); }
+.crtree-row:active { filter: brightness(1.25); }
 
 /* Accessibility: honor the three user settings (Apple §14). */
 @media (prefers-reduced-motion: reduce) {
@@ -3862,25 +3764,22 @@ button.sec-tr.row.sel { background: var(--accent-tint); }
 
 .app-shell[data-nav='collapsed'] { --sidebar-w: 0px; }
 .app-shell[data-nav='collapsed'] .nav-sidebar { display: none; }
-.app-shell[data-nav='collapsed'] .refresh-control.floating { left: calc(var(--rail-w) + 16px); }
+.app-shell[data-nav='collapsed'] .refresh-control.floating { left: 16px; }
 .app-shell[data-nav='collapsed'] .nav-toggle { display: grid; }
 
 @media (max-width: 1024px) {
   .nav-toggle { display: grid; }
   .layout-main { position: relative; }
-  .cluster-rail,
   .nav-sidebar {
     position: fixed;
-    top: 44px; bottom: 0;
+    top: 44px; bottom: 0; left: 0;
+    width: min(var(--sidebar-w), 100vw); min-width: 0;
     z-index: var(--z-drawer);
     transform: translateX(-100%);
     transition: transform var(--dur-normal) var(--ease-out);
     box-shadow: none;
   }
-  .cluster-rail { left: 0; }
-  .nav-sidebar { left: var(--rail-w); width: min(var(--sidebar-w), calc(100vw - var(--rail-w))); min-width: 0; }
   .app-shell[data-nav='collapsed'] .nav-sidebar { display: flex; }
-  .app-shell[data-nav='open'] .cluster-rail,
   .app-shell[data-nav='open'] .nav-sidebar { transform: translateX(0); box-shadow: 12px 0 32px rgba(0, 0, 0, 0.4); }
   .app-shell[data-nav='open'] .nav-backdrop {
     display: block;
@@ -4188,7 +4087,9 @@ button.sec-tr.row.sel { background: var(--accent-tint); }
 .ui-menu-item.disabled:hover { background: transparent; color: var(--text-secondary); }
 .ui-menu-item.danger.active { background: var(--red-tint); color: var(--red); }
 .ui-menu-item.danger.active .icon { color: var(--red); }
-.ui-menu-item[role='menuitemcheckbox'][aria-checked='true']::before { content: '✓'; font-size: 0.6875rem; color: var(--accent); }
+/* Checkable items reserve the check column so labels stay aligned. */
+.ui-menu-item[role='menuitemcheckbox']::before { content: ''; display: inline-block; flex: none; width: 12px; text-align: center; font-size: 0.6875rem; color: var(--accent); }
+.ui-menu-item[role='menuitemcheckbox'][aria-checked='true']::before { content: '✓'; }
 .ui-menu-hint { margin-left: auto; padding-left: 12px; font-size: 0.6875rem; color: var(--text-muted); font-family: var(--mono); }
 .ui-menu-item:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
 
@@ -4318,17 +4219,6 @@ button.nav-section-title:focus-visible, a.nav-item:focus-visible { outline: 2px 
 .topbar-kbd kbd { font-family: var(--font); font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.3px; }
 .topbar .refresh-control { margin-left: 2px; }
 @media (max-width: 720px) { .topbar-kbd { display: none; } }
-
-/* Cluster rail: pin + unpin are sibling controls */
-ul.cluster-rail-pins { list-style: none; margin: 0; padding: 0; }
-.cluster-pin-wrap { position: relative; }
-.cluster-pin-wrap .cluster-pin-remove.ui-btn {
-  position: absolute; top: 0; right: 0; width: 18px; height: 18px; min-width: 0; min-height: 0; padding: 0;
-  border: none; border-radius: 50%; display: none; place-items: center;
-  color: #fff; background: var(--red); box-shadow: 0 0 0 2px var(--bg-surface-2);
-}
-.cluster-pin-wrap .cluster-pin-remove.ui-btn:hover:not(:disabled) { background: var(--red); color: #fff; filter: brightness(1.1); }
-.cluster-pin-wrap:hover .cluster-pin-remove.ui-btn, .cluster-pin-wrap:focus-within .cluster-pin-remove.ui-btn { display: grid; }
 
 /* Context selector: provider colours via classes (no inline hex) + keyboard focus row */
 .ctx-provider-aws { color: #ff9900; } .ctx-provider-azure { color: #3b96f0; }

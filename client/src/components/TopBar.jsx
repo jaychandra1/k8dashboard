@@ -1,20 +1,24 @@
 import React, { useEffect, useState } from 'react';
 import Icon from './Icons';
 import RefreshControl from './RefreshControl';
+import ClusterSwitcher from './ClusterSwitcher';
 import Tooltip from './ui/Tooltip';
 import { getAiConfig, isExternalAgent, aiToolName, aiToolIcon } from '../aiConfig';
 import { MOD } from './shell/ShortcutsSheet';
 
 // Native-style global top toolbar. Spans the full window width, doubles as the
 // window drag region (macOS traffic lights sit at its left), and holds the
-// nav toggle (narrow layouts), back/forward history, the ⌘K hint, the AI
-// launcher, notifications and the refresh control.
+// nav toggle (narrow layouts), back/forward history, the cluster switcher,
+// the ⌘K hint, the AI launcher, notifications and the refresh control.
 function TopBar({
   onBack, onForward, canBack, canForward,
   onNotifications, onConfigureAi,
   onRefresh, refreshing, refreshInterval, onSetRefreshInterval,
   onOpenPalette,
   navOpen = false, onToggleNav, navToggleRef,
+  // Cluster switcher (omit `contexts` to hide it)
+  contexts, contextsInfo, currentContext, pins,
+  onSwitchContext, onTogglePin, onOpenContexts, onAddAws, onAddAzure,
 }) {
   const [cfg, setCfg] = useState(getAiConfig);
   useEffect(() => {
@@ -57,6 +61,19 @@ function TopBar({
           <button type="button" className="topbar-btn" disabled={!canForward} onClick={onForward} aria-label="Forward"><Icon name="arrowRight" size={17} /></button>
         </Tooltip>
       </div>
+      {contexts && (
+        <ClusterSwitcher
+          contexts={contexts}
+          contextsInfo={contextsInfo}
+          currentContext={currentContext}
+          pins={pins}
+          onSwitch={onSwitchContext}
+          onTogglePin={onTogglePin}
+          onOpenContexts={onOpenContexts}
+          onAddAws={onAddAws}
+          onAddAzure={onAddAzure}
+        />
+      )}
       <div className="topbar-spacer" />
       <div className="topbar-actions">
         <button type="button" className="topbar-kbd" onClick={onOpenPalette} aria-label={`Open command palette (${MOD} K)`}>
