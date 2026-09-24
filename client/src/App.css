@@ -60,7 +60,7 @@
   --font: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
   --mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Code', Menlo, Consolas, monospace;
 
-  --sidebar-w: 264px;
+  --sidebar-w: 232px;
   --term-bg: #0a0a0a;
 
   /* Aliases (some views reference these) */
@@ -621,7 +621,9 @@ body {
 }
 
 .nav-header {
-  padding: 16px 16px 14px;
+  /* 14px sides: at --sidebar-w 232px the brand sub-line (KUBERNETES + version
+     pill) and the cluster row below it need the extra 4px to stay on one line. */
+  padding: 16px 14px 14px;
   border-bottom: 1px solid var(--border-subtle);
   position: sticky;
   top: 0;
@@ -656,7 +658,7 @@ body {
 .refresh-control.floating {
   position: fixed;
   top: 20px;
-  left: 344px; /* just past the fixed sidebar (pins rail 64 + nav 264 + gap) */
+  left: calc(var(--sidebar-w) + 16px); /* just past the sidebar */
   z-index: var(--z-dropdown);
   box-shadow: var(--shadow-2);
   border-radius: 8px;
@@ -757,6 +759,7 @@ body {
   display: flex;
   flex-direction: column;
   line-height: 1.2;
+  min-width: 0; /* may shrink; the sub-line never wraps (nowrap below) */
 }
 
 .nav-brand-title {
@@ -771,9 +774,10 @@ body {
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.6px;
+  white-space: nowrap;
 }
 .nav-brand-version {
-  margin-left: 6px;
+  margin-left: 4px;
   padding: 1px 5px;
   border-radius: 5px;
   background: var(--bg-hover);
@@ -2970,22 +2974,46 @@ h5.md-h, h6.md-h { font-size: 0.7813rem; color: var(--text-secondary); }
 .assistant-forget:hover { color: var(--red); }
 
 /* ============================================================
-   Cluster switcher (top bar) — replaces the pinned-cluster rail
+   Cluster switcher — the one place to change cluster. Default variant is a
+   compact toolbar-sized button; `.cluster-switcher--sidebar` (what App mounts)
+   fills the sidebar header row next to the history arrows.
    ============================================================ */
-.topbar-cluster { display: flex; align-items: center; min-width: 0; }
-.topbar-cluster-btn {
+.cluster-switcher { display: flex; align-items: center; min-width: 0; }
+.cluster-switcher-btn {
   display: flex; align-items: center; gap: 7px;
-  height: 30px; padding: 0 8px 0 9px; max-width: 240px;
+  height: 30px; padding: 0 8px 0 9px; max-width: 240px; box-sizing: border-box;
   border: 1px solid var(--border-strong); border-radius: 8px;
   background: var(--bg-elevated); color: var(--text); cursor: pointer;
   font-family: var(--font); font-size: 0.7813rem; font-weight: 600;
   transition: background 0.12s, border-color 0.12s;
 }
-.topbar-cluster-btn:hover,
-.topbar-cluster-btn[aria-expanded='true'] { background: var(--bg-hover); border-color: var(--accent); }
-.topbar-cluster-name { min-width: 0; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.topbar-cluster-caret { color: var(--text-muted); }
-@media (max-width: 720px) { .topbar-cluster-name { max-width: 96px; } }
+.cluster-switcher-btn:hover,
+.cluster-switcher-btn[aria-expanded='true'] { background: var(--bg-hover); border-color: var(--accent); }
+.cluster-switcher-btn .ctx-provider { flex: 0 0 auto; }
+.cluster-switcher-name { min-width: 0; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cluster-switcher-caret { color: var(--text-muted); flex: 0 0 auto; }
+
+/* Sidebar header row, under the brand: [ switcher (flex 1) ] [ ◀ ] [ ▶ ].
+   The switcher is left-aligned with the chevron pinned right; the name
+   ellipsises (its tooltip carries the full context name). */
+.nav-cluster-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.cluster-switcher--sidebar { flex: 1 1 auto; min-width: 0; }
+.cluster-switcher--sidebar .cluster-switcher-btn {
+  width: 100%; max-width: none; height: 32px; padding: 0 7px 0 9px;
+  justify-content: flex-start; text-align: left;
+}
+.cluster-switcher--sidebar .cluster-switcher-name { flex: 1 1 auto; max-width: none; }
+.cluster-switcher--sidebar .cluster-switcher-caret { margin-left: auto; }
+.nav-hist { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+.nav-hist-btn {
+  display: grid; place-items: center;
+  width: 30px; height: 30px; border-radius: 8px;
+  background: transparent; border: none; cursor: pointer;
+  color: var(--text-secondary); transition: background 0.12s, color 0.12s;
+}
+.nav-hist-btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
+.nav-hist-btn:active:not(:disabled) { transform: scale(0.94); }
+.nav-hist-btn:disabled { opacity: 0.3; cursor: default; }
 
 
 /* ============================================================
@@ -3195,10 +3223,11 @@ h5.md-h, h6.md-h { font-size: 0.7813rem; color: var(--text-secondary); }
 .argo-event-age { color: var(--text-muted); font-size: 0.6875rem; margin-left: auto; flex-shrink: 0; }
 
 /* ---- Global top toolbar (native macOS-style) ----
-   Full-width bar at the top of the window: back/forward on the left, AI +
-   notifications on the right. It doubles as the window drag region; on macOS
-   the traffic lights sit at its left (padding clears them). Buttons opt out of
-   dragging so they stay clickable. */
+   Full-width bar at the top of the window: nav toggle + page breadcrumb on the
+   left, ⌘K / AI / notifications / refresh on the right (cluster switcher and
+   back/forward live in the sidebar header). It doubles as the window drag
+   region; on macOS the traffic lights sit at its left (padding clears them).
+   Buttons opt out of dragging so they stay clickable. */
 .topbar {
   flex: none;
   display: flex;
@@ -3213,7 +3242,13 @@ h5.md-h, h6.md-h { font-size: 0.7813rem; color: var(--text-secondary); }
 .is-electron .topbar { padding-left: 82px; } /* clear the macOS traffic lights */
 .topbar button,
 .topbar .topbar-ai { -webkit-app-region: no-drag; }
-.topbar-nav { display: flex; gap: 2px; }
+/* Current page, e.g. "Pods · all namespaces" — decorative (aria-hidden); the
+   view's <h1> is the heading. Shrinks and ellipsises before anything else. */
+.topbar-crumb {
+  flex: 0 1 auto; min-width: 0; padding: 0 2px;
+  font-size: 0.7813rem; font-weight: 600; color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .topbar-spacer { flex: 1; }
 .topbar-actions { display: flex; align-items: center; gap: 8px; }
 .topbar-btn {
@@ -3755,7 +3790,10 @@ button.sec-tr.row.sel { background: var(--accent-tint); }
   .prefs-inline, .prefs-toggle-row { flex-direction: column; align-items: flex-start; }
   .prefs-cards { grid-template-columns: 1fr; }
   .topbar-ai-main span { max-width: 90px; }
+  .topbar-crumb { max-width: 40vw; }
 }
+/* Phone widths: the toolbar's controls come first; drop the breadcrumb. */
+@media (max-width: 480px) { .topbar-crumb { display: none; } }
 
 /* Tables scroll inside .dt-wrap, never the page. No overscroll-behavior here:
    'contain' on a container that happens not to overflow swallows wheel events
@@ -4038,7 +4076,9 @@ button.sec-tr.row.sel { background: var(--accent-tint); }
 /* ---- Menu (reuses the .context-menu look; adds keyboard/disabled states) ---- */
 /* Long menus (e.g. "All contexts ▸" with dozens of clusters) scroll instead of
    overflowing the window; submenus are portal siblings, so this never clips them. */
-.ui-menu { z-index: var(--z-modal); outline: none; max-height: calc(100vh - 16px); overflow-y: auto; }
+/* --ui-menu-min-w: set inline by <Menu minWidth> (e.g. the trigger's width);
+   never narrower than the .context-menu default. */
+.ui-menu { z-index: var(--z-modal); outline: none; max-height: calc(100vh - 16px); overflow-y: auto; min-width: max(190px, var(--ui-menu-min-w, 0px)); }
 .ui-menu[data-level='1'], .ui-menu[data-level='2'] { min-width: 200px; }
 /* Non-interactive group label ({ heading: true }) */
 .ui-menu-heading {
@@ -4416,13 +4456,9 @@ h3.sec-drawer-section:first-child { margin-top: 0; }
 .donut-wrap .ui-donut { gap: 18px; }
 .donut-wrap .ui-donut-legend { flex: 1 1 8rem; }
 
-/* Top bar, left group: nav toggle · back/forward · cluster switcher share the
-   same 30px height and 8–10px rhythm. */
+/* Top bar: nav toggle · breadcrumb on the left, controls on the right, all on
+   a 30px height and 8–10px rhythm. */
 .topbar { gap: 10px; }
-.topbar-nav { gap: 4px; }
-.topbar-cluster { margin-left: 2px; }
-.topbar-cluster-btn { height: 30px; box-sizing: border-box; }
-.topbar-nav .topbar-btn { height: 30px; width: 30px; }
 
 /* Branded loading screen (startup + context switch) */
 .loading-screen {

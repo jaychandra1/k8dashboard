@@ -21,7 +21,7 @@ import Icon from '../Icons';
  */
 const SUB_W = 200;
 
-function MenuList({ items, onClose, onSelectDone, x, y, level = 0, anchorRect, flipHint, labelledBy, ariaLabel, autoFocus = true }) {
+function MenuList({ items, onClose, onSelectDone, x, y, level = 0, anchorRect, flipHint, labelledBy, ariaLabel, autoFocus = true, minWidth }) {
   const ref = useRef(null);
   const [pos, setPos] = useState({ left: x, top: y });
   const [flip, setFlip] = useState(!!flipHint);
@@ -116,7 +116,7 @@ function MenuList({ items, onClose, onSelectDone, x, y, level = 0, anchorRect, f
         aria-labelledby={labelledBy}
         aria-label={ariaLabel}
         data-level={level}
-        style={{ left: pos.left, top: pos.top }}
+        style={{ left: pos.left, top: pos.top, '--ui-menu-min-w': minWidth ? `${minWidth}px` : undefined }}
         onKeyDown={onKeyDown}
         onMouseLeave={hoverLeave}
         onMouseEnter={() => clearTimeout(closeTimer.current)}
@@ -174,7 +174,9 @@ function MenuList({ items, onClose, onSelectDone, x, y, level = 0, anchorRect, f
   );
 }
 
-export default function Menu({ open = true, x = 0, y = 0, items = [], onClose, returnFocusTo, ariaLabel = 'Actions', labelledBy }) {
+// `minWidth` (px) widens the root menu to at least that much — e.g. the width of
+// the button it drops down from — without going under the stylesheet's default.
+export default function Menu({ open = true, x = 0, y = 0, items = [], onClose, returnFocusTo, ariaLabel = 'Actions', labelledBy, minWidth }) {
   const prev = useRef(null);
   useEffect(() => {
     if (!open) return undefined;
@@ -195,7 +197,7 @@ export default function Menu({ open = true, x = 0, y = 0, items = [], onClose, r
   if (!open || typeof document === 'undefined') return null;
   const root = document.getElementById('modal-root') || document.body;
   return createPortal(
-    <MenuList items={items} x={x} y={y} onClose={onClose} onSelectDone={done} ariaLabel={ariaLabel} labelledBy={labelledBy} />,
+    <MenuList items={items} x={x} y={y} onClose={onClose} onSelectDone={done} ariaLabel={ariaLabel} labelledBy={labelledBy} minWidth={minWidth} />,
     root,
   );
 }

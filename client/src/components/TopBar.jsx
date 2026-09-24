@@ -1,24 +1,22 @@
 import React, { useEffect, useState } from 'react';
 import Icon from './Icons';
 import RefreshControl from './RefreshControl';
-import ClusterSwitcher from './ClusterSwitcher';
 import Tooltip from './ui/Tooltip';
 import { getAiConfig, isExternalAgent, aiToolName, aiToolIcon } from '../aiConfig';
 import { MOD } from './shell/ShortcutsSheet';
 
 // Native-style global top toolbar. Spans the full window width, doubles as the
 // window drag region (macOS traffic lights sit at its left), and holds the
-// nav toggle (narrow layouts), back/forward history, the cluster switcher,
-// the ⌘K hint, the AI launcher, notifications and the refresh control.
+// nav toggle (narrow layouts), the current page as a muted breadcrumb, the
+// ⌘K hint, the AI launcher, notifications and the refresh control. The cluster
+// switcher and back/forward live at the top of the sidebar (App → Navigation
+// `headerExtra`).
 function TopBar({
-  onBack, onForward, canBack, canForward,
+  crumb,
   onNotifications, onConfigureAi,
   onRefresh, refreshing, refreshInterval, onSetRefreshInterval,
   onOpenPalette,
   navOpen = false, onToggleNav, navToggleRef,
-  // Cluster switcher (omit `contexts` to hide it)
-  contexts, contextsInfo, currentContext, pins,
-  onSwitchContext, onTogglePin, onOpenContexts, onAddAws, onAddAzure,
 }) {
   const [cfg, setCfg] = useState(getAiConfig);
   useEffect(() => {
@@ -53,27 +51,8 @@ function TopBar({
       >
         <Icon name="apps" size={17} />
       </button>
-      <div className="topbar-nav">
-        <Tooltip content="Back">
-          <button type="button" className="topbar-btn" disabled={!canBack} onClick={onBack} aria-label="Back"><Icon name="arrowLeft" size={17} /></button>
-        </Tooltip>
-        <Tooltip content="Forward">
-          <button type="button" className="topbar-btn" disabled={!canForward} onClick={onForward} aria-label="Forward"><Icon name="arrowRight" size={17} /></button>
-        </Tooltip>
-      </div>
-      {contexts && (
-        <ClusterSwitcher
-          contexts={contexts}
-          contextsInfo={contextsInfo}
-          currentContext={currentContext}
-          pins={pins}
-          onSwitch={onSwitchContext}
-          onTogglePin={onTogglePin}
-          onOpenContexts={onOpenContexts}
-          onAddAws={onAddAws}
-          onAddAzure={onAddAzure}
-        />
-      )}
+      {/* Decorative: the view's own <h1> is the accessible heading. */}
+      {crumb && <div className="topbar-crumb" aria-hidden="true">{crumb}</div>}
       <div className="topbar-spacer" />
       <div className="topbar-actions">
         <button type="button" className="topbar-kbd" onClick={onOpenPalette} aria-label={`Open command palette (${MOD} K)`}>

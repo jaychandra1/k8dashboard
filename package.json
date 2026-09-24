@@ -130,7 +130,7 @@
       ]
     },
     "win": {
-      "icon": "build/icon.png",
+      "icon": "build/icon.ico",
       "artifactName": "${productName}-windows.${ext}",
       "target": [
         "nsis"
@@ -138,7 +138,10 @@
     },
     "nsis": {
       "shortcutName": "KubePilot",
-      "uninstallDisplayName": "KubePilot"
+      "uninstallDisplayName": "KubePilot",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico"
     },
     "deb": {
       "fpm": [

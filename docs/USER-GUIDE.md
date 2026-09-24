@@ -74,7 +74,7 @@ When the app starts it shows one of:
 - **Could not connect to the cluster** — a kubeconfig was loaded but its credentials failed. Use **Add cluster** to onboard an EKS or AKS cluster, switch to another context, or fix the kubeconfig and press **Retry**. Authentication failures are classified for you (expired token, unreachable API server, TLS error, missing auth plugin) with a one-click or copyable fix.
 - The dashboard — the current kubeconfig context loaded. You land on the **Cluster Overview** (`#/cluster`): nodes, CPU/memory capacity, pod health, Kubernetes version and the kubeconfig's contexts and clusters. While the data is fetched the app shows a branded loading screen ("Getting the data from <context>…").
 
-Switching clusters happens from **one place**: the **cluster menu** in the toolbar (the button showing the current context, next to the back/forward arrows) — or, in the desktop app, the native **Clusters** menu (between View and Window), which mirrors it. `⌘K` / `Ctrl+K` → type the context name also works. The cluster menu is laid out as:
+Switching clusters happens from **one place**: the **cluster menu** at the top of the sidebar (the full-width button showing the current context, directly under the KubePilot brand, with the back/forward arrows to its right) — or, in the desktop app, the native **Clusters** menu (between View and Window), which mirrors it. `⌘K` / `Ctrl+K` → type the context name also works. The cluster menu is laid out as:
 
 1. your **pinned** clusters, with a check on the current one — click to switch;
 2. **All contexts** — with up to 12 contexts every context is listed right here (provider icon, check on the current one); with more, **All contexts ▸** opens them as a submenu. **Search contexts…** opens a searchable picker grouped by provider (type to filter, `↑`/`↓` to move, Enter to switch, Esc to close);
@@ -84,11 +84,11 @@ After a switch the app returns to the **Cluster Overview** of the new cluster (t
 
 ### 1.4 Getting around
 
-- **Sidebar** — the KubePilot brand, version and the Preferences gear at the top (the cluster switcher is in the toolbar, not the sidebar); then Cluster, Nodes, Namespaces, Topology; Workloads (Overview, Pods, Deployments, StatefulSets, DaemonSets, ReplicaSets, Jobs, CronJobs…); Config; Network; Storage; Events, Helm, Access Control, Argo CD (shown when installed), Security Center, Custom Resources. Every item is a real link, so keyboard navigation, middle-click and "open in new tab" work.
-- **Cluster menu** — the toolbar button with the current context name: pinned clusters (check = current), All contexts (inline list or submenu) + Search contexts…, Pin/Unpin, Add cluster ▸ (see §1.3). Fully keyboard operable (Enter or ↓ opens, arrows move, Esc closes). In the desktop app the same list is in the native **Clusters** menu.
+- **Sidebar** — the KubePilot brand, version and the Preferences gear at the top, then one row with the cluster selector and the ◀ ▶ history arrows; then Cluster, Nodes, Namespaces, Topology; Workloads (Overview, Pods, Deployments, StatefulSets, DaemonSets, ReplicaSets, Jobs, CronJobs…); Config; Network; Storage; Events, Helm, Access Control, Argo CD (shown when installed), Security Center, Custom Resources. Every item is a real link, so keyboard navigation, middle-click and "open in new tab" work.
+- **Cluster menu** — the button at the top of the sidebar with the current context name (hover it for the full name when it is cut short): pinned clusters (check = current), All contexts (inline list or submenu) + Search contexts…, Pin/Unpin, Add cluster ▸ (see §1.3). Fully keyboard operable (Enter or ↓ opens, arrows move, Esc closes). In the desktop app the same list is in the native **Clusters** menu.
 - **Landing page** — the **Cluster Overview** (`#/cluster`) opens on start and after every cluster switch. The **Overview** under Workloads (`#/overview`) is the pod-health / workload-counts dashboard.
-- **Command palette** — `⌘K` (`Ctrl+K` on Windows/Linux) jumps to any view, switches context, refreshes, opens Preferences or changes the theme. Type to filter, arrows to move, Enter to run.
-- **Back / Forward** — the toolbar arrows and your browser's back/forward both work, because every view has a URL:
+- **Command palette** — `⌘K` (`Ctrl+K` on Windows/Linux), or the `⌘ K` button in the toolbar, jumps to any view, switches context (the same contexts as the sidebar's cluster selector), refreshes, opens Preferences or changes the theme. Type to filter, arrows to move, Enter to run. The toolbar also shows where you are ("Pods · all namespaces", "Argo CD · Applications").
+- **Back / Forward** — the ◀ ▶ arrows next to the cluster selector at the top of the sidebar and your browser's back/forward both work, because every view has a URL:
 
   | URL | Opens |
   |---|---|

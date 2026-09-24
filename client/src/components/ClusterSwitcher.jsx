@@ -4,8 +4,10 @@ import Menu from './ui/Menu';
 import Tooltip from './ui/Tooltip';
 import { PROVIDERS, providerKeyOf } from './ContextPickerModal';
 
-// Compact cluster switcher in the top bar — the ONE place to change cluster
-// (the sidebar no longer has a context selector).
+// Compact cluster switcher — the ONE place to change cluster. App mounts it at
+// the top of the sidebar (`variant="sidebar"`: full width, the history arrows
+// sit to its right); the default variant is the same button/menu sized for a
+// toolbar.
 //
 // Button: provider icon + current context name (ellipsised). Menu (ui/Menu):
 //   pinned clusters (✓ on the current one; selecting switches context)
@@ -24,13 +26,15 @@ export const MAX_INLINE = 12;
 function ClusterSwitcher({
   contexts = [], contextsInfo, currentContext, pins = [],
   onSwitch, onTogglePin, onOpenContexts, onAddAws, onAddAzure,
+  variant = 'default',
 }) {
   const btnRef = useRef(null);
   const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState({ x: 0, y: 0 });
+  const [pos, setPos] = useState({ x: 0, y: 0, w: 0 });
   // Clicking the trigger while the menu is open: the menu's outside-mousedown
   // handler already closed it, so the follow-up click must not reopen it.
   const wasOpenOnDown = useRef(false);
+  const sidebar = variant === 'sidebar';
 
   const providerOf = useMemo(() => {
     const m = new Map();
@@ -46,9 +50,11 @@ function ClusterSwitcher({
   const isPinned = !!currentContext && pins.includes(currentContext);
   const sorted = useMemo(() => [...contexts].sort((a, b) => a.localeCompare(b)), [contexts]);
 
+  // The menu drops down from the button's left edge; in the sidebar it is at
+  // least as wide as the button so it reads as the button unfolding.
   const openMenu = useCallback(() => {
     const r = btnRef.current?.getBoundingClientRect?.();
-    setPos({ x: r ? r.left : 0, y: r ? r.bottom + 4 : 0 });
+    setPos({ x: r ? r.left : 0, y: r ? r.bottom + 4 : 0, w: r ? r.width : 0 });
     setOpen(true);
   }, []);
   const close = useCallback(() => setOpen(false), []);
@@ -91,13 +97,17 @@ function ClusterSwitcher({
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (!open) openMenu(); }
   };
 
+  // The sidebar button is narrow and the name ellipsises, so its tooltip
+  // carries the full context name.
+  const tip = sidebar && currentContext ? `Switch cluster · ${currentContext}` : 'Switch cluster';
+
   return (
-    <div className="topbar-cluster">
-      <Tooltip content="Switch cluster" placement="bottom">
+    <div className={`cluster-switcher${sidebar ? ' cluster-switcher--sidebar' : ''}`}>
+      <Tooltip content={tip} placement="bottom">
         <button
           ref={btnRef}
           type="button"
-          className="topbar-cluster-btn"
+          className="cluster-switcher-btn"
           aria-haspopup="menu"
           aria-expanded={open}
           aria-label={`Switch cluster (current: ${currentContext || 'none'})`}
@@ -109,14 +119,15 @@ function ClusterSwitcher({
           onKeyDown={onKeyDown}
         >
           <Icon name={currentP.icon} size={15} className={`ctx-provider ctx-provider-${currentKey}`} />
-          <span className="topbar-cluster-name">{currentContext || 'No cluster'}</span>
-          <Icon name="chevronDown" size={12} strokeWidth={2.2} className="topbar-cluster-caret" />
+          <span className="cluster-switcher-name">{currentContext || 'No cluster'}</span>
+          <Icon name="chevronDown" size={12} strokeWidth={2.2} className="cluster-switcher-caret" />
         </button>
       </Tooltip>
       <Menu
         open={open}
         x={pos.x}
         y={pos.y}
+        minWidth={sidebar ? pos.w : undefined}
         items={items}
         onClose={close}
         returnFocusTo={btnRef.current}
