@@ -9,8 +9,8 @@ describe('LoadingScreen', () => {
     expect(status).toHaveAttribute('aria-live', 'polite');
     expect(status).toHaveTextContent('Getting the data…');
     const logo = status.querySelector('img.loading-screen-logo');
-    expect(logo).toHaveAttribute('src', '/logo.png');
-    expect(logo).toHaveAttribute('width', '72');
+    expect(logo).toHaveAttribute('src', '/logo-detailed.png');
+    expect(logo).toHaveAttribute('width', '120');
     expect(logo).toHaveAttribute('alt', ''); // decorative
     expect(status.querySelector('.loading-screen-bar')).toHaveAttribute('aria-hidden', 'true');
     expect(status).not.toHaveAttribute('data-overlay');

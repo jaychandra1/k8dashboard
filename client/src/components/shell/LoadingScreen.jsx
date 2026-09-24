@@ -1,6 +1,8 @@
-// Branded loading screen: app icon (gentle pulse, off under
-// prefers-reduced-motion), "Getting the data…" (+ cluster name when known)
-// and a thin indeterminate bar. Announced once via role=status.
+// Branded loading screen: the detailed KubePilot artwork (gentle pulse, off
+// under prefers-reduced-motion), "Getting the data…" (+ cluster name when
+// known) and a thin indeterminate bar. Announced once via role=status.
+// Used at startup, over <main> during a context switch, and by the Cluster
+// page while its summary loads.
 //
 //   <LoadingScreen />                                  startup (no context yet)
 //   <LoadingScreen context="dev-env-cluster" />        "Getting the data from dev-env-cluster…"
@@ -22,7 +24,7 @@ export default function LoadingScreen({ context, label, hint, overlay = false, c
       role="status"
       aria-live="polite"
     >
-      <img className="loading-screen-logo" src="/logo.png" alt="" width={72} height={72} decoding="async" />
+      <img className="loading-screen-logo" src="/logo-detailed.png" alt="" width={120} height={120} decoding="async" />
       <p className="loading-screen-text">{text}</p>
       {hint && <p className="loading-screen-hint">{hint}</p>}
       <div className="loading-screen-bar" aria-hidden="true"><span /></div>

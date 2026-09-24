@@ -4476,7 +4476,10 @@ h3.sec-drawer-section:first-child { margin-top: 0; }
   background: var(--bg-base); color: var(--text-secondary); text-align: center;
 }
 .loading-screen[data-overlay] { position: absolute; inset: 0; z-index: var(--z-dropdown); }
-.loading-screen-logo { width: 72px; height: 72px; border-radius: 0; animation: loading-pulse 1.6s ease-in-out infinite; }
+.loading-screen-logo { width: 120px; height: 120px; border-radius: 0; animation: loading-pulse 1.6s ease-in-out infinite; }
+/* Cluster page while its first summary loads: the loading screen fills the page. */
+.dashboard.dashboard--loading { display: flex; flex-direction: column; min-height: 100%; }
+.dashboard--loading .loading-screen { flex: 1; }
 .loading-screen-text { margin: 0; font-size: 0.9375rem; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
 .loading-screen-hint { margin: -6px 0 0; font-size: 0.75rem; color: var(--text-muted); }
 .loading-screen-bar { width: 200px; max-width: 80%; height: 3px; border-radius: 999px; background: var(--bg-hover); overflow: hidden; }

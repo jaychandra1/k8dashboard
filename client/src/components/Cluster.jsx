@@ -1,6 +1,6 @@
 import Icon from './Icons';
 import Donut from './ui/Donut';
-import Skeleton from './ui/Skeleton';
+import LoadingScreen from './shell/LoadingScreen';
 import ErrorState from './ui/ErrorState';
 import useRequest from '../hooks/useRequest';
 import useDocumentTitle from '../hooks/useDocumentTitle';
@@ -72,6 +72,18 @@ export default function Cluster({ refreshSignal = 0, context, onSummaryLoaded })
 
   const title = data?.currentContext || context || 'Cluster';
 
+  // First load: the branded loading screen fills the page (the same screen the
+  // shell shows during startup and a context switch). The heading stays for
+  // screen readers.
+  if (loading && !data) {
+    return (
+      <div className="dashboard dashboard--loading" aria-busy="true">
+        <h1 className="sr-only">{title}</h1>
+        <LoadingScreen context={context || undefined} />
+      </div>
+    );
+  }
+
   return (
     <div className="dashboard">
       <div className="dashboard-header">
@@ -90,12 +102,6 @@ export default function Cluster({ refreshSignal = 0, context, onSummaryLoaded })
         </div>
       )}
 
-      {loading && !data && (
-        <div className="dashboard-body" aria-busy="true">
-          <div className="kpi-row"><Skeleton block height={84} label="Loading cluster information" /></div>
-          <div className="chart-grid"><Skeleton block height={220} /><Skeleton block height={220} /><Skeleton block height={220} /></div>
-        </div>
-      )}
       {error && !data && <div className="dashboard-body"><ErrorState error={error} title="Couldn't load the cluster summary" onRetry={refetch} busy={refetching} /></div>}
 
       {data && (
