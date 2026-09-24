@@ -76,7 +76,7 @@ KubePilot is a **desktop UI for clusters you already have** — closest in spiri
 > No kubeconfig yet? Launch the app and use **Add cluster** to import an **AWS EKS** or **Azure AKS** cluster straight from your cloud account — KubePilot signs you in and writes the kubeconfig for you, no CLI required.
 
 > [!NOTE]
-> KubePilot needs `kubectl` on your `PATH` and a working `kubeconfig` (`~/.kube/config`, or set `KUBECONFIG`). The `helm` CLI is **not** required — Helm releases are read straight from the Kubernetes API. The packaged desktop app bundles its own Node runtime; building from source needs **Node.js 22+** (see `.nvmrc`).
+> KubePilot needs a working `kubeconfig` (`~/.kube/config`, or set `KUBECONFIG`). Every view and action talks to the Kubernetes API directly — `kubectl` is only needed for the in-pod terminal and port-forward (`GET /api/config/capabilities` reports what the current machine can do). The `helm` CLI is **not** required — Helm releases are read straight from the Kubernetes API. The packaged desktop app bundles its own Node runtime; building from source needs **Node.js 22+** (see `.nvmrc`).
 
 ### Desktop app
 

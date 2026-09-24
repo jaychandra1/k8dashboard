@@ -16,6 +16,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- `kubectl` is no longer required to browse or operate a cluster. Nodes, node pods and capacity, topology, cluster summary, CRDs and custom resources, metrics, Argo CD lists/detail and every simple mutation (server-side apply with field manager `kubepilot`, delete, scale, rollout restart, Argo CD sync/refresh/delete, one-shot exec) now go through the Kubernetes API on the current context. Only the interactive pod terminal and service port-forward still need `kubectl`; without it they answer `501 { code: "kubectl_required" }` with an install hint instead of a raw `spawn kubectl ENOENT`. New `GET /api/config/capabilities` reports `{ kubectl: { available, path }, terminal, portForward }` (cached 60 s, `?refresh=1` re-probes); `KUBEPILOT_KUBECTL_BIN` pins the binary.
 - Trivy is downloaded on first use instead of being bundled, shrinking the installer by ~50 MB; `npm run dist:bundled-trivy` restores bundling.
 - Renamed to KubePilot; legacy `K8DASHBOARD_*`/`K8SIGHT_*` env vars, `~/.config/k8dashboard` and the old MCP source header remain accepted.
   Installers are now `KubePilot-macos.dmg`, `KubePilot-windows.exe`, `KubePilot-linux.AppImage` / `.deb`, published on

@@ -12,9 +12,9 @@ Current version: `1.2.0` (see the `VERSION` file). Node.js **22 or newer** is re
 
 | To do this | You need |
 |---|---|
-| Browse a real cluster | A working kubeconfig (`~/.kube/config` or `KUBECONFIG`) and `kubectl` on your `PATH` (used for exec, port-forward and a few reads). |
+| Browse a real cluster | A working kubeconfig (`~/.kube/config` or `KUBECONFIG`). Nothing else: every read and action (apply, delete, scale, restart, Argo CD sync) goes through the Kubernetes API. |
 | Import an EKS or AKS cluster | An AWS or Azure account with access to the cluster — **Add cluster** signs you in and writes the kubeconfig; no `aws`/`az` CLI needed. |
-| Pod shell / port-forward | `kubectl` on `PATH`. |
+| Pod shell / port-forward | `kubectl` on `PATH` — the only two features that need it. `GET /api/config/capabilities` reports whether it was found. |
 | Security Center image scans | Nothing extra: the Docker image includes Trivy; the desktop app and source builds download it on first use (pinned version, checksum-verified) into `~/.config/kubepilot/bin`. |
 | AI assistant | Any OpenAI-compatible endpoint (OpenAI, Azure OpenAI, Ollama, LM Studio, vLLM, LiteLLM…). |
 
@@ -214,7 +214,8 @@ App data lives in `~/.config/kubepilot` (token, assistant config, scan cache). L
 | HTTP 421 Misdirected request | You used a hostname the server does not know. Add it to `ALLOWED_HOSTS`. |
 | "No kubeconfig loaded" | Create `~/.kube/config` or set `KUBECONFIG`. |
 | Metrics show `—` | Install `metrics-server` in the cluster. |
-| Terminal will not open | The container has no shell, or `kubectl` is not on `PATH`. |
+| Terminal will not open | The container has no shell, or `kubectl` is not on `PATH` (the terminal and port-forward are the only features that need it; the error says `kubectl_required`). Install it from <https://kubernetes.io/docs/tasks/tools/>, then `GET /api/config/capabilities?refresh=1`. |
+| "kubectl is required for the pod terminal and port-forward" | Same fix. Everything else keeps working without `kubectl`. |
 | Helm view empty | The cluster has no Helm-managed releases (v3 Secrets storage). |
 | "All namespaces" slow the first time | One request per namespace; results are cached. Pick a namespace for faster loads. |
 | Port 3001 in use | Set `PORT=<other>` (the desktop app picks a free port automatically). |

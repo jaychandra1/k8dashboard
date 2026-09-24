@@ -1260,9 +1260,15 @@ body {
 .events-refresh-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
 /* Table */
+/* Outer frame: a flex column that never scrolls itself, so the DataTable's
+   own container (.dt-wrap) is the single bounded scroller. Nested scroll
+   containers broke wheel scrolling and virtualization measurement. */
 .resource-table-wrapper {
   flex: 1;
-  overflow: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   position: relative;
 }
 
@@ -3897,14 +3903,15 @@ button.sec-tr.row.sel { background: var(--accent-tint); }
   .topbar-ai-main span { max-width: 90px; }
 }
 
-/* tables scroll inside their wrapper, never the page */
+/* Tables scroll inside .dt-wrap, never the page. No overscroll-behavior here:
+   'contain' on a container that happens not to overflow swallows wheel events
+   instead of passing them to the real scroller (the "scrolling does nothing"
+   bug), so scroll chaining stays default. */
 .resource-table-wrap,
-.resource-table-wrapper,
 .dt-wrap {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  overscroll-behavior: contain;
   position: relative;
 }
 

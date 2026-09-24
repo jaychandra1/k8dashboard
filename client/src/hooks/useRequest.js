@@ -21,22 +21,45 @@ const inflight = new Map(); // dedupeKey → { promise, controller, count }
 /** Test/diagnostic hook: number of shared in-flight requests. */
 export const _inflightSize = () => inflight.size;
 
+// Attach a subscriber to a shared in-flight entry: the shared request is only
+// aborted when the LAST interested subscriber goes away. Without this, one
+// component cancelling its own request (tab switch, unmount) would abort the
+// request for every other subscriber sharing the key — surfacing spurious
+// "Request aborted" errors in views that still wanted the data.
+function subscribe(entry, subscriberSignal) {
+  entry.count += 1;
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    entry.count -= 1;
+    if (entry.count <= 0) entry.controller.abort();
+  };
+  if (subscriberSignal.aborted) release();
+  else subscriberSignal.addEventListener('abort', release, { once: true });
+}
+
 function runShared(key, fn, controller) {
-  if (key && inflight.has(key)) {
+  if (!key) {
+    let promise;
+    try { promise = Promise.resolve(fn({ signal: controller.signal })); } catch (e) { promise = Promise.reject(e); }
+    return { promise, shared: false };
+  }
+  if (inflight.has(key)) {
     const entry = inflight.get(key);
-    entry.count += 1;
+    subscribe(entry, controller.signal);
     return { promise: entry.promise, shared: true };
   }
-  // Start synchronously so the AbortController is wired before any await.
+  // The shared request gets its own controller; subscribers hold references.
+  const internal = new AbortController();
   let promise;
-  try { promise = Promise.resolve(fn({ signal: controller.signal })); } catch (e) { promise = Promise.reject(e); }
-  if (key) {
-    const entry = { promise, controller, count: 1 };
-    inflight.set(key, entry);
-    // The derived promise from .finally() would otherwise surface a rejection
-    // nobody awaits (the caller awaits the original `promise`).
-    promise.finally(() => { if (inflight.get(key) === entry) inflight.delete(key); }).catch(() => {});
-  }
+  try { promise = Promise.resolve(fn({ signal: internal.signal })); } catch (e) { promise = Promise.reject(e); }
+  const entry = { promise, controller: internal, count: 0 };
+  inflight.set(key, entry);
+  subscribe(entry, controller.signal);
+  // The derived promise from .finally() would otherwise surface a rejection
+  // nobody awaits (the caller awaits the original `promise`).
+  promise.finally(() => { if (inflight.get(key) === entry) inflight.delete(key); }).catch(() => {});
   return { promise, shared: false };
 }
 
@@ -106,7 +129,13 @@ export default function useRequest(fn, {
       return data;
     } catch (err) {
       if (id !== runId.current || !mounted.current) return undefined;
-      if (isAbortError(err) && !shared) return undefined;
+      if (isAbortError(err)) {
+        // A cancellation is never an error for the UI. If this subscriber did
+        // not cancel (a shared request was torn down underneath it) and it is
+        // still the current run, fetch again so the view is not left empty.
+        if (shared && !controller.signal.aborted) return run();
+        return undefined;
+      }
       failures.current += 1;
       setState((s) => ({ ...s, error: err, loading: false, refetching: false }));
       cbRef.current.onError?.(err);

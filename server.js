@@ -36,7 +36,13 @@ import { CONFIG_DIR, DEMO_ENABLED, configFile, findConfigFile, isMcpSource, exec
 import { repairExecEntries } from './lib/kubeconfig-repair.mjs';
 import {
   createKubectl, positional, spawnBin, collectChild, commandExists, resolveBinSync, loginShellPath,
+  hasKubectl, kubectlMissingError, isSpawnMissing, KUBECTL_REQUIRED_MESSAGE,
 } from './lib/kubectl.mjs';
+import {
+  restMappingFor, restartPatch, restartTarget, scaleTarget, scalePatch, argoSyncPatch, argoRefreshPatch,
+  dropFinalizersPatch, parseApplyDocuments, requestOptions, patchOptions, PatchStrategy, applyDocuments,
+  deleteResource, execInPod, resourceLabel,
+} from './lib/k8s-ops.mjs';
 
 // node-pty powers the pod terminal (a real PTY bridged to `kubectl exec`). Load
 // it defensively so a missing/unbuildable native module never crashes the whole
@@ -78,12 +84,14 @@ const getCacheKey = (prefix, params) => cache.key(prefix, params);
 const setCache = (key, value, ttl) => cache.set(key, value, ttl);
 const getCache = (key) => cache.get(key);
 
-// kubectl runner bound to the in-memory context (lib/kubectl.mjs). The app
-// switches context in-memory (kubeConfig.setCurrentContext); the on-disk
-// kubeconfig kubectl reads does NOT reflect that, so every spawn is pinned
-// with --context. User-supplied names go through positional() (after `--`)
-// and flag values use the --flag=value form, so nothing can become a flag.
-const { runKubectl, runKubectlJson, execKubectl, spawnKubectl } = createKubectl({ getContext: () => currentContext });
+// kubectl runner bound to the in-memory context (lib/kubectl.mjs). kubectl is
+// only needed for the interactive pod terminal, service port-forward, the
+// one-shot exec when it happens to be installed, and deleting a kind whose
+// REST mapping cannot be resolved; everything else is the Kubernetes API. The
+// on-disk kubeconfig does NOT reflect the in-memory context switch, so every
+// spawn is pinned with --context; user-supplied names go through positional()
+// (after `--`) and flag values use the --flag=value form.
+const { runKubectl, execKubectl, spawnKubectl } = createKubectl({ getContext: () => currentContext });
 
 // 400 { error, code: 'invalid_param', field } for the first failing check.
 const bad = (res, field, message) =>
@@ -241,7 +249,7 @@ app.use((req, res, next) => {
   const p = req.path;
   // Real config handlers stay in charge (they are demo-aware).
   if (p === '/api/config/status' || p === '/api/config/context' ||
-      p === '/api/config/load' || p === '/api/config/reload') return next();
+      p === '/api/config/load' || p === '/api/config/reload' || p === '/api/config/capabilities') return next();
   // Auth always "passes" in demo.
   if (p === '/api/config/auth') return res.json({ ok: true, currentContext: demo.DEMO_CONTEXT });
   // Assistant: report enabled + stream canned answers (no LLM required).
@@ -646,6 +654,19 @@ app.post('/api/config/reload', (req, res) => {
   }
   cache.clear();
   res.json({ success: true, currentContext });
+});
+
+// What this install can do without kubectl. Every read and simple mutation
+// uses the Kubernetes API; only the interactive pod terminal and service
+// port-forward need the kubectl binary. Cached 60 s; `?refresh=1` re-probes
+// (e.g. right after the user installs kubectl).
+app.get('/api/config/capabilities', async (req, res) => {
+  const kubectl = await hasKubectl({ refresh: req.query.refresh === '1' || req.query.refresh === 'true' });
+  res.json({
+    kubectl,
+    terminal: kubectl.available && !!pty,
+    portForward: kubectl.available,
+  });
 });
 
 // ------------------------------------------------------------------
@@ -1558,18 +1579,24 @@ app.post('/api/exec', mcpWriteGate, async (req, res) => {
       ['command', command, (v) => typeof v === 'string' && v.length <= 65536],
     ])) return;
 
-    // The pod name is validated above (a DNS subdomain can never start with
-    // '-'); kubectl exec needs it BEFORE the `--`. The command itself is passed
-    // as a single argument to `sh -c` (no local shell interpolation).
-    const args = ['exec', `--namespace=${namespace}`];
-    if (container) args.push(`--container=${container}`);
-    args.push(pod, '--', 'sh', '-c', command);
-
+    // With kubectl installed, exec through it (proven against every auth
+    // plugin). Without it, exec over the API's WebSocket (lib/k8s-ops.mjs) so
+    // a CLI-free machine can still run one-shot commands. The command is a
+    // single `sh -c` argument either way (no local shell interpolation).
     let result;
     try {
-      result = await execKubectl(args, { timeoutMs: 30000, maxBuffer: 10 * 1024 * 1024 });
+      if ((await hasKubectl()).available) {
+        // The pod name is validated above (a DNS subdomain can never start
+        // with '-'); kubectl exec needs it BEFORE the `--`.
+        const args = ['exec', `--namespace=${namespace}`];
+        if (container) args.push(`--container=${container}`);
+        args.push(pod, '--', 'sh', '-c', command);
+        result = await execKubectl(args, { timeoutMs: 30000, maxBuffer: 10 * 1024 * 1024 });
+      } else {
+        result = await execInPod(kubeConfig, { namespace, pod, container: container || undefined, command, timeoutMs: 30000 });
+      }
     } catch (error) {
-      return res.json({ output: error.message, code: -1 });
+      return res.json({ output: error.body?.message || error.message, code: -1 });
     }
     const output = (result.stdout || '') + (result.stderr || '');
     res.json({ output, code: result.code == null ? 0 : result.code });
@@ -1590,8 +1617,10 @@ const retireForward = (entry) => {
   setTimeout(() => { if (portForwards.get(entry.id) === entry && entry.status !== 'active') portForwards.delete(entry.id); }, PF_STOPPED_RETENTION_MS).unref();
 };
 
-app.post('/api/portforward', mcpWriteGate, (req, res) => {
+app.post('/api/portforward', mcpWriteGate, async (req, res) => {
   if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
+  // Port-forward is one of the two features that genuinely need kubectl.
+  if (!(await hasKubectl()).available) return fail(res, kubectlMissingError());
   const { namespace, name, remotePort } = req.body || {};
   if (!namespace || !name || !remotePort) {
     return res.status(400).json({ error: 'Missing namespace, name, or remotePort', code: 'invalid_param', field: !namespace ? 'namespace' : (!name ? 'name' : 'remotePort') });
@@ -1612,7 +1641,10 @@ app.post('/api/portforward', mcpWriteGate, (req, res) => {
   const portArg = localPort ? `${localPort}:${Number(remotePort)}` : `:${Number(remotePort)}`;
   let proc;
   try { proc = spawnKubectl(['port-forward', `--namespace=${namespace}`, '--address=127.0.0.1', ...positional(`svc/${name}`, portArg)]); }
-  catch (e) { return res.status(500).json({ error: `Failed to start kubectl: ${e.message}`, code: 'spawn_failed' }); }
+  catch (e) {
+    if (isSpawnMissing(e)) return fail(res, kubectlMissingError());
+    return res.status(500).json({ error: `Failed to start kubectl: ${e.message}`, code: 'spawn_failed' });
+  }
 
   const id = `pf-${++pfCounter}`;
   const entry = { id, namespace, name, remotePort: Number(remotePort), localPort, proc, status: 'starting', startedAt: Date.now(), error: '' };
@@ -1648,7 +1680,9 @@ app.post('/api/portforward', mcpWriteGate, (req, res) => {
     entry.status = 'error';
     clearTimeout(timer);
     retireForward(entry);
-    respond(() => res.status(502).json({ error: err.message, code: 'upstream_error' }));
+    respond(() => (isSpawnMissing(err)
+      ? fail(res, kubectlMissingError())
+      : res.status(502).json({ error: err.message, code: 'upstream_error' })));
   });
 });
 
@@ -1761,26 +1795,21 @@ const CLUSTER_SCOPED_KINDS = new Set([
   'node', 'namespace', 'customresourcedefinition',
 ]);
 
-// kubectl runs go through runKubectl (lib/kubectl.mjs): --context is always
-// pinned, a --request-timeout is set, flag values use --flag=value, and
-// user-supplied names sit behind `--` via positional().
-const nsArgs = (kind, namespace) =>
-  (!namespace || namespace === '-' || namespace === 'all' || CLUSTER_SCOPED_KINDS.has(kind)) ? [] : [`--namespace=${namespace}`];
-
-// Parse + validate an apply body: every YAML document must be a mapping
-// (empty documents from trailing `---` are ignored). Returns the documents.
-const parseApplyDocuments = (yamlText) => {
-  if (typeof yamlText !== 'string' || !yamlText.trim()) throw badRequest('Empty YAML', 'invalid_yaml');
-  if (yamlText.length > 3 * 1024 * 1024) throw badRequest('YAML too large', 'invalid_yaml');
-  let docs;
-  try { docs = yaml.loadAll(yamlText); } catch (e) { throw badRequest(`Invalid YAML: ${e.message}`, 'invalid_yaml'); }
-  docs = docs.filter((d) => d !== null && d !== undefined);
-  if (!docs.length) throw badRequest('YAML contains no documents', 'invalid_yaml');
-  for (const d of docs) {
-    if (typeof d !== 'object' || Array.isArray(d)) throw badRequest('Every YAML document must be an object (a Kubernetes manifest)', 'invalid_yaml');
-  }
-  return docs;
+// Writes go through the Kubernetes API (lib/k8s-ops.mjs) on the current
+// in-memory context: server-side apply, delete, /scale patches and the
+// rollout-restart annotation patch. Only a kind whose REST mapping cannot be
+// resolved (neither built-in nor a CRD on the cluster) falls back to kubectl.
+const effectiveNamespace = (kind, namespace) =>
+  (!namespace || namespace === '-' || namespace === 'all' || CLUSTER_SCOPED_KINDS.has(kind)) ? undefined : namespace;
+// Discovery cache scope: the cluster behind the current context.
+const discoveryScope = () => `${currentContext || ''}|${currentServerUrl() || ''}`;
+// Namespace a manifest without metadata.namespace lands in (kubectl: the
+// context's namespace, else "default").
+const contextNamespace = () => {
+  try { return kubeConfig.getContextObject(currentContext)?.namespace || 'default'; } catch { return 'default'; }
 };
+// Resolve a :kind segment: built-ins first, then the cluster's CRDs.
+const mappingForKind = async (kind) => restMappingFor(kind) || restMappingFor(kind, await crdIndex());
 
 // Apply edited YAML (create-or-update). Body: { yaml }. The body must describe
 // exactly the resource named in the path.
@@ -1798,9 +1827,9 @@ app.put('/api/yaml/:namespace/:kind/:name', mcpWriteGate, async (req, res) => {
     if (!CLUSTER_SCOPED_KINDS.has(k) && namespace !== '-') {
       if (doc.metadata?.namespace !== namespace) throw badRequest(`YAML metadata.namespace "${doc.metadata?.namespace || ''}" does not match the path (${namespace})`, 'yaml_mismatch');
     }
-    const out = await runKubectl(['apply', ...nsArgs(k, namespace), '-f', '-'], { input: yamlText });
+    const messages = await applyDocuments(kubeConfig, docs, { scope: discoveryScope(), defaultNamespace: effectiveNamespace(k, namespace) || contextNamespace() });
     cache.clear();
-    res.json({ success: true, message: out || 'Applied' });
+    res.json({ success: true, message: messages.join('\n') || 'Applied' });
   } catch (error) {
     fail(res, error);
   }
@@ -1812,10 +1841,11 @@ app.post('/api/apply', mcpWriteGate, async (req, res) => {
   try {
     if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
     const { yaml: yamlText } = req.body || {};
-    parseApplyDocuments(yamlText);
-    const out = await runKubectl(['apply', '-f', '-'], { input: yamlText });
+    const docs = parseApplyDocuments(yamlText);
+    // Server-side apply, one document at a time (== `kubectl apply -f -`).
+    const messages = await applyDocuments(kubeConfig, docs, { scope: discoveryScope(), defaultNamespace: contextNamespace() });
     cache.clear();
-    res.json({ success: true, message: out || 'Applied' });
+    res.json({ success: true, message: messages.join('\n') || 'Applied' });
   } catch (error) {
     fail(res, error);
   }
@@ -1827,9 +1857,24 @@ app.delete('/api/resource/:namespace/:kind/:name', mcpWriteGate, async (req, res
     if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
     const { namespace, kind, name } = req.params;
     const k = kind.toLowerCase();
-    const out = await runKubectl(['delete', ...nsArgs(k, namespace), ...positional(k, name)]);
+    const m = await mappingForKind(k);
+    let message;
+    if (m) {
+      ({ message } = await deleteResource(kubeConfig, m, { name, namespace: effectiveNamespace(k, namespace), scope: discoveryScope() }));
+    } else {
+      // Not a built-in kind and not a CRD on this cluster: let kubectl try its
+      // own resolution (aliases, categories) — if it is installed.
+      if (!(await hasKubectl()).available) {
+        return res.status(400).json({
+          error: `Unknown resource kind "${kind}": it is neither a built-in kind nor a CRD on this cluster, and kubectl is not installed to resolve it. Install kubectl from https://kubernetes.io/docs/tasks/tools/ or use the resource's full name (plural.group).`,
+          code: 'unknown_kind',
+        });
+      }
+      const ns = effectiveNamespace(k, namespace);
+      message = await runKubectl(['delete', ...(ns ? [`--namespace=${ns}`] : []), ...positional(k, name)]);
+    }
     cache.clear();
-    res.json({ success: true, message: out || `${name} deleted` });
+    res.json({ success: true, message: message || `${name} deleted` });
   } catch (error) {
     fail(res, error);
   }
@@ -1843,9 +1888,12 @@ app.post('/api/scale/:namespace/:kind/:name', mcpWriteGate, async (req, res) => 
     if (!isIntInRange(req.body?.replicas, 0, 10000)) return bad(res, 'replicas', 'replicas must be an integer between 0 and 10000');
     const replicas = Number(req.body.replicas);
     const k = kind.toLowerCase();
-    const out = await runKubectl(['scale', `--replicas=${replicas}`, ...nsArgs(k, namespace), ...positional(k, name)]);
+    // Merge-patch the /scale subresource (400 for DaemonSets and other unscalable kinds).
+    const { api, method } = scaleTarget(k);
+    if (!effectiveNamespace(k, namespace)) return bad(res, 'namespace');
+    await kubeConfig.makeApiClient(k8s[api])[method]({ name, namespace, body: scalePatch(replicas) }, patchOptions(PatchStrategy.MergePatch, 20000));
     cache.clear();
-    res.json({ success: true, message: out || `Scaled to ${replicas}` });
+    res.json({ success: true, message: `${resourceLabel(restMappingFor(k), name)} scaled` });
   } catch (error) {
     fail(res, error);
   }
@@ -1857,9 +1905,13 @@ app.post('/api/restart/:namespace/:kind/:name', mcpWriteGate, async (req, res) =
     if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
     const { namespace, kind, name } = req.params;
     const k = kind.toLowerCase();
-    const out = await runKubectl(['rollout', 'restart', ...nsArgs(k, namespace), ...positional(k, name)]);
+    // Strategic-merge patch of the pod template's restartedAt annotation —
+    // exactly what `kubectl rollout restart` sends.
+    const { api, method } = restartTarget(k);
+    if (!effectiveNamespace(k, namespace)) return bad(res, 'namespace');
+    await kubeConfig.makeApiClient(k8s[api])[method]({ name, namespace, body: restartPatch() }, patchOptions(PatchStrategy.StrategicMergePatch, 20000));
     cache.clear();
-    res.json({ success: true, message: out || 'Restart triggered' });
+    res.json({ success: true, message: `${resourceLabel(restMappingFor(k), name)} restarted` });
   } catch (error) {
     fail(res, error);
   }
@@ -1941,10 +1993,10 @@ app.get('/api/events/:namespace?', async (req, res) => {
   }
 });
 
-// Nodes via kubectl (context-pinned). Throws on failure — callers decide
-// whether a missing node list is fatal (/api/nodes) or partial (summary).
-const fetchNodesWithKubectl = async () => {
-  const data = await runKubectlJson(['get', 'nodes', '--output=json'], { timeoutMs: 15000 });
+// Nodes via the API (current in-memory context). Throws on failure — callers
+// decide whether a missing node list is fatal (/api/nodes) or partial (summary).
+const fetchNodes = async () => {
+  const data = await kubeConfig.makeApiClient(k8s.CoreV1Api).listNode({}, requestOptions(15000));
   return data.items || [];
 };
 
@@ -1996,8 +2048,7 @@ app.get('/api/nodes', async (req, res) => {
       return res.json(cachedData);
     }
 
-    const kubectlNodes = await fetchNodesWithKubectl();
-    const nodes = kubectlNodes.map(formatNode);
+    const nodes = (await fetchNodes()).map(formatNode);
     const result = { nodes };
 
     setCache(cacheKey, result, CACHE_TTL.resources);
@@ -2008,13 +2059,11 @@ app.get('/api/nodes', async (req, res) => {
   }
 });
 
-// Pods scheduled on one node (context-pinned; the node name is validated by
-// the :name param rule and passed as a flag value, never a positional).
-const fetchPodsForNodeWithKubectl = async (nodeName) => {
-  const data = await runKubectlJson(
-    ['get', 'pods', '--all-namespaces', `--field-selector=spec.nodeName=${nodeName}`, '--output=json'],
-    { timeoutMs: 15000, maxBuffer: 20 * 1024 * 1024 },
-  );
+// Pods scheduled on one node (the node name is validated by the :name param
+// rule and only ever used as a field-selector value).
+const fetchPodsForNode = async (nodeName) => {
+  const data = await kubeConfig.makeApiClient(k8s.CoreV1Api)
+    .listPodForAllNamespaces({ fieldSelector: `spec.nodeName=${nodeName}` }, requestOptions(15000));
   return data.items || [];
 };
 
@@ -2046,8 +2095,7 @@ app.get('/api/nodes/:name/pods', async (req, res) => {
       return res.json(cachedData);
     }
 
-    const kubectlPods = await fetchPodsForNodeWithKubectl(name);
-    const pods = kubectlPods.map(formatPodForNode);
+    const pods = (await fetchPodsForNode(name)).map(formatPodForNode);
     const result = { pods };
 
     setCache(cacheKey, result, CACHE_TTL.resources);
@@ -2217,17 +2265,30 @@ app.get('/api/helm/releases/:namespace/:name/manifest', async (req, res) => {
   }
 });
 
-const CRD_JSONPATH = '{range .items[*]}{.metadata.name}{"\\t"}{.spec.group}{"\\t"}{.spec.names.kind}{"\\t"}{.spec.names.plural}{"\\t"}{.spec.names.singular}{"\\t"}{.spec.scope}{"\\t"}{.metadata.creationTimestamp}{"\\t"}{.spec.versions[?(@.storage==true)].name}{"\\n"}{end}';
-
-const fetchCrdsWithKubectl = async () => {
-  const output = await runKubectl(['get', 'crds', `--output=jsonpath=${CRD_JSONPATH}`], { timeoutMs: 15000 });
-  return output
-    .split('\n')
-    .filter(Boolean)
-    .map(line => {
-      const [name, group, kind, plural, singular, scope, createdAt, version] = line.split('\t');
-      return { name, group, kind, plural, singular, scope, createdAt, version: version || '-' };
-    });
+// CRD index: { name, group, kind, plural, singular, scope, createdAt, version }
+// (version = the storage version). Also feeds the REST mapping used by
+// delete for custom kinds.
+const fetchCrds = async () => {
+  const { items } = await kubeConfig.makeApiClient(k8s.ApiextensionsV1Api).listCustomResourceDefinition({}, requestOptions(15000));
+  return (items || []).map((c) => ({
+    name: c.metadata?.name || '',
+    group: c.spec?.group || '',
+    kind: c.spec?.names?.kind || '',
+    plural: c.spec?.names?.plural || '',
+    singular: c.spec?.names?.singular || '',
+    scope: c.spec?.scope || '',
+    createdAt: c.metadata?.creationTimestamp,
+    version: (c.spec?.versions || []).find((v) => v.storage)?.name || '-',
+  }));
+};
+// Cached CRD index for REST-mapping lookups (same TTL/key as /api/customresources).
+const crdIndex = async () => {
+  const key = getCacheKey('crds');
+  const hit = getCache(key);
+  if (hit) return hit.crds;
+  const crds = await fetchCrds();
+  setCache(key, { crds }, CACHE_TTL.namespaces);
+  return crds;
 };
 
 app.get('/api/customresources', async (req, res) => {
@@ -2240,7 +2301,7 @@ app.get('/api/customresources', async (req, res) => {
       return res.json(cachedData);
     }
 
-    const crds = await fetchCrdsWithKubectl();
+    const crds = await fetchCrds();
     const result = { crds };
 
     setCache(cacheKey, result, CACHE_TTL.namespaces);
@@ -2263,10 +2324,10 @@ app.get('/api/customresources/:group/:version/:plural', async (req, res) => {
       return res.json(cachedData);
     }
 
-    const data = await runKubectlJson(
-      ['get', '--all-namespaces', '--output=json', ...positional(`${plural}.${version}.${group}`)],
-      { timeoutMs: 20000, maxBuffer: 20 * 1024 * 1024 },
-    );
+    // /apis/<group>/<version>/<plural> lists across all namespaces (and is the
+    // only form for cluster-scoped kinds).
+    const data = await kubeConfig.makeApiClient(k8s.CustomObjectsApi)
+      .listClusterCustomObject({ group, version, plural }, requestOptions(20000));
     const items = (data.items || []).map(item => ({
       name: item.metadata.name,
       namespace: item.metadata.namespace || '-',
@@ -2290,12 +2351,14 @@ app.get('/api/customresource/:group/:version/:plural/:name', async (req, res) =>
     const namespace = req.query.namespace !== undefined ? String(req.query.namespace) : undefined;
     if (namespace !== undefined && !isNamespace(namespace)) return bad(res, 'namespace');
 
-    const args = ['get', '--output=yaml'];
-    if (namespace && namespace !== '-' && namespace !== 'all') args.push(`--namespace=${namespace}`);
-    args.push(...positional(`${plural}.${version}.${group}`, name));
-
-    const stdout = await runKubectl(args, { timeoutMs: 15000 });
-    res.json({ yaml: stdout ? stdout + '\n' : '' });
+    const api = kubeConfig.makeApiClient(k8s.CustomObjectsApi);
+    const opts = requestOptions(15000);
+    const obj = namespace && namespace !== '-' && namespace !== 'all'
+      ? await api.getNamespacedCustomObject({ group, version, namespace, plural, name }, opts)
+      : await api.getClusterCustomObject({ group, version, plural, name }, opts);
+    // `kubectl get -o yaml` hides managedFields; do the same.
+    if (obj?.metadata?.managedFields) delete obj.metadata.managedFields;
+    res.json({ yaml: yaml.dump(obj, { indent: 2, noRefs: true, lineWidth: -1 }) });
   } catch (error) {
     fail(res, error, undefined, 'Failed to get resource');
   }
@@ -2306,6 +2369,18 @@ app.get('/api/customresource/:group/:version/:plural/:name', async (req, res) =>
 // UI shows an ArgoCD view. Applications are plain CRs, so we read them with
 // kubectl (context-aware) and parse the sync/health/source/destination fields.
 // ------------------------------------------------------------------
+// Argo CD objects are CRs in argoproj.io/v1alpha1 → CustomObjectsApi on the
+// current context. `argoList(plural)` lists across all namespaces.
+const ARGO_API = { group: 'argoproj.io', version: 'v1alpha1' };
+const argoApi = () => kubeConfig.makeApiClient(k8s.CustomObjectsApi);
+const argoList = async (plural, timeoutMs = 25000) =>
+  (await argoApi().listClusterCustomObject({ ...ARGO_API, plural }, requestOptions(timeoutMs))).items || [];
+const argoGet = (plural, namespace, name, timeoutMs = 15000) =>
+  argoApi().getNamespacedCustomObject({ ...ARGO_API, plural, namespace, name }, requestOptions(timeoutMs));
+const argoMergePatch = (plural, namespace, name, body) =>
+  argoApi().patchNamespacedCustomObject({ ...ARGO_API, plural, namespace, name, body }, patchOptions(PatchStrategy.MergePatch, 20000));
+const isNotFound = (e) => e?.code === 404 || e?.statusCode === 404;
+
 const argoSource = (spec) => spec.source || (Array.isArray(spec.sources) ? spec.sources[0] : {}) || {};
 const parseArgoApp = (a) => {
   const spec = a.spec || {}, st = a.status || {};
@@ -2612,15 +2687,17 @@ app.get('/api/argocd/status', async (req, res) => {
     if (cached) { res.set('X-Cache', 'HIT'); return res.json(cached); }
     let installed = false;
     try {
-      const stdout = await runKubectl(['get', 'crd', 'applications.argoproj.io', '--output=name'], { timeoutMs: 12000 });
-      installed = stdout.trim().length > 0;
+      await kubeConfig.makeApiClient(k8s.ApiextensionsV1Api)
+        .readCustomResourceDefinition({ name: 'applications.argoproj.io' }, requestOptions(12000));
+      installed = true;
     } catch { installed = false; }
     // Best-effort: the external Argo CD UI URL (from the argocd-cm configmap).
     let url = '';
     if (installed) {
       try {
-        const stdout = await runKubectl(['get', 'configmap', 'argocd-cm', '--namespace=argocd', '--output=jsonpath={.data.url}'], { timeoutMs: 8000 });
-        url = (stdout || '').trim();
+        const cm = await kubeConfig.makeApiClient(k8s.CoreV1Api)
+          .readNamespacedConfigMap({ name: 'argocd-cm', namespace: 'argocd' }, requestOptions(8000));
+        url = String(cm.data?.url || '').trim();
       } catch { /* no argocd-cm / different namespace — button just hidden */ }
     }
     const result = { installed, url };
@@ -2638,9 +2715,7 @@ app.get('/api/argocd/applications', async (req, res) => {
     const cacheKey = getCacheKey('argocd-apps', { ctx: currentContext });
     const cached = getCache(cacheKey);
     if (cached) { res.set('X-Cache', 'HIT'); return res.json(cached); }
-    const data = await runKubectlJson(['get', 'applications.argoproj.io', '--all-namespaces', '--output=json'],
-      { timeoutMs: 25000, maxBuffer: 100 * 1024 * 1024 });
-    const items = (data.items || []).map(parseArgoApp);
+    const items = (await argoList('applications')).map(parseArgoApp);
     items.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     const result = { applications: items };
     setCache(cacheKey, result, CACHE_TTL.resources);
@@ -2692,9 +2767,7 @@ app.get('/api/argocd/application/:namespace/:name', async (req, res) => {
     if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
     const { namespace, name } = req.params;
     if (!isDnsLabel(namespace)) return bad(res, 'namespace');
-    const a = await runKubectlJson(
-      ['get', `--namespace=${namespace}`, '--output=json', ...positional('applications.argoproj.io', name)],
-      { timeoutMs: 15000, maxBuffer: 40 * 1024 * 1024 });
+    const a = await argoGet('applications', namespace, name);
     const spec = a.spec || {}, st = a.status || {};
     const keyOf = (kind, ns, nm) => `${kind}|${ns || ''}|${nm}`;
     const resources = (st.resources || []).map(r => ({
@@ -2712,16 +2785,20 @@ app.get('/api/argocd/application/:namespace/:name', async (req, res) => {
       const nsSet = new Set(resources.map(r => r.namespace).filter(Boolean));
       if (spec.destination?.namespace) nsSet.add(spec.destination.namespace);
       const namespaces = [...nsSet].filter(isDnsLabel).slice(0, 12);
-      const LIVE_KINDS = new Set(['Pod', 'ReplicaSet', 'EndpointSlice', 'Job']);
+      const LIVE_LISTS = [
+        ['Pod', 'CoreV1Api', 'listNamespacedPod'], ['ReplicaSet', 'AppsV1Api', 'listNamespacedReplicaSet'],
+        ['EndpointSlice', 'DiscoveryV1Api', 'listNamespacedEndpointSlice'], ['Job', 'BatchV1Api', 'listNamespacedJob'],
+      ];
       const live = [];
-      // One mixed `get` per namespace (items carry their own `kind`), at most 4 in flight.
+      // Four typed lists per namespace, at most 4 namespaces in flight.
       await mapLimit(namespaces, 4, async (ns) => {
-        try {
-          const out = await runKubectlJson(
-            ['get', 'pods,replicasets,endpointslices,jobs', `--namespace=${ns}`, '--output=json'],
-            { timeoutMs: 15000, maxBuffer: 80 * 1024 * 1024 });
-          for (const it of (out.items || [])) if (LIVE_KINDS.has(it.kind)) live.push({ item: it, kind: it.kind, ns });
-        } catch { /* best-effort per namespace (RBAC etc.) */ }
+        const opts = requestOptions(15000);
+        await Promise.all(LIVE_LISTS.map(async ([kind, api, method]) => {
+          try {
+            const out = await kubeConfig.makeApiClient(k8s[api])[method]({ namespace: ns }, opts);
+            for (const it of (out.items || [])) live.push({ item: it, kind, ns });
+          } catch { /* best-effort per namespace/kind (RBAC etc.) */ }
+        }));
       });
 
       const nodeByKey = new Map();
@@ -2761,9 +2838,8 @@ app.get('/api/argocd/application/:namespace/:name', async (req, res) => {
     // events on the Application object (sync started/completed, health changes, …)
     let events = [];
     try {
-      const ev = await runKubectlJson(
-        ['get', 'events', `--namespace=${namespace}`, `--field-selector=involvedObject.name=${name},involvedObject.kind=Application`, '--output=json'],
-        { timeoutMs: 10000 });
+      const ev = await kubeConfig.makeApiClient(k8s.CoreV1Api).listNamespacedEvent(
+        { namespace, fieldSelector: `involvedObject.name=${name},involvedObject.kind=Application` }, requestOptions(10000));
       events = (ev.items || [])
         .map(e => ({ type: e.type, reason: e.reason, message: e.message, count: e.count, lastTimestamp: eventTime(e) }))
         .sort((x, y) => new Date(y.lastTimestamp) - new Date(x.lastTimestamp))
@@ -2795,22 +2871,13 @@ app.post('/api/argocd/application/:namespace/:name/sync', mcpWriteGate, async (r
     const { namespace, name } = req.params;
     if (!isDnsLabel(namespace)) return bad(res, 'namespace');
     const o = req.body || {};
-    const sync = {};
-    if (o.prune) sync.prune = true;
-    if (o.dryRun) sync.dryRun = true;
     if (o.revision != null && o.revision !== '') {
       if (typeof o.revision !== 'string' || o.revision.length > 256 || hasControlChars(o.revision)) return bad(res, 'revision');
-      sync.revision = o.revision;
     }
-    const syncOptions = [];
-    if (o.applyOnly) syncOptions.push('ApplyOutOfSyncOnly=true');
-    if (o.replace) syncOptions.push('Replace=true');
-    if (o.force) syncOptions.push('Force=true');
-    if (syncOptions.length) sync.syncOptions = syncOptions;
-    const patch = JSON.stringify({ operation: { initiatedBy: { username: 'kubepilot' }, sync } });
-    const out = await runKubectl(['patch', `--namespace=${namespace}`, '--type=merge', `--patch=${patch}`, ...positional('applications.argoproj.io', name)]);
+    // Merge-patch `.operation` on the Application (what `argocd app sync` does).
+    await argoMergePatch('applications', namespace, name, argoSyncPatch(o));
     cache.clear();
-    res.json({ success: true, message: out || 'Sync triggered' });
+    res.json({ success: true, message: `application.argoproj.io/${name} patched` });
   } catch (error) {
     fail(res, error);
   }
@@ -2826,11 +2893,12 @@ app.delete('/api/argocd/application/:namespace/:name', mcpWriteGate, async (req,
     const cascade = req.query.cascade !== 'false';
     if (!cascade) {
       // drop the finalizer so deletion doesn't cascade to the managed resources
-      await runKubectl(['patch', `--namespace=${namespace}`, '--type=merge', `--patch=${JSON.stringify({ metadata: { finalizers: null } })}`, ...positional('applications.argoproj.io', name)]);
+      await argoMergePatch('applications', namespace, name, dropFinalizersPatch());
     }
-    const out = await runKubectl(['delete', `--namespace=${namespace}`, ...positional('applications.argoproj.io', name)]);
+    await argoApi().deleteNamespacedCustomObject(
+      { ...ARGO_API, plural: 'applications', namespace, name, body: { propagationPolicy: 'Background' } }, requestOptions(30000));
     cache.clear();
-    res.json({ success: true, message: out || `${name} deleted` });
+    res.json({ success: true, message: `application.argoproj.io "${name}" deleted` });
   } catch (error) {
     fail(res, error);
   }
@@ -2843,9 +2911,7 @@ app.get('/api/argocd/projects', async (req, res) => {
     const cacheKey = getCacheKey('argocd-projects', { ctx: currentContext });
     const cached = getCache(cacheKey);
     if (cached) { res.set('X-Cache', 'HIT'); return res.json(cached); }
-    const data = await runKubectlJson(['get', 'appprojects.argoproj.io', '--all-namespaces', '--output=json'],
-      { timeoutMs: 20000, maxBuffer: 40 * 1024 * 1024 });
-    const projects = (data.items || []).map(p => {
+    const projects = (await argoList('appprojects', 20000)).map(p => {
       const s = p.spec || {};
       return {
         name: p.metadata?.name, namespace: p.metadata?.namespace,
@@ -2874,9 +2940,7 @@ app.get('/api/argocd/applicationsets', async (req, res) => {
     if (cached) { res.set('X-Cache', 'HIT'); return res.json(cached); }
     let available = true, appSets = [];
     try {
-      const data = await runKubectlJson(['get', 'applicationsets.argoproj.io', '--all-namespaces', '--output=json'],
-        { timeoutMs: 20000, maxBuffer: 40 * 1024 * 1024 });
-      appSets = (data.items || []).map(as => {
+      appSets = (await argoList('applicationsets', 20000)).map(as => {
         const s = as.spec || {}, st = as.status || {};
         return {
           name: as.metadata?.name, namespace: as.metadata?.namespace,
@@ -2888,7 +2952,7 @@ app.get('/api/argocd/applicationsets', async (req, res) => {
         };
       }).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     } catch (e) {
-      if (/NotFound|doesn't have a resource type|the server doesn't have/i.test(e.stderr || e.message || '')) available = false;
+      if (isNotFound(e)) available = false; // ApplicationSet CRD / controller not installed
       else throw e;
     }
     const result = { available, applicationSets: appSets };
@@ -2912,8 +2976,8 @@ app.get('/api/argocd/repositories', async (req, res) => {
     if (cached) { res.set('X-Cache', 'HIT'); return res.json(cached); }
     const byUrl = new Map();
     try {
-      const data = await runKubectlJson(['get', 'secrets', '--all-namespaces', '--selector=argocd.argoproj.io/secret-type=repository', '--output=json'],
-        { timeoutMs: 15000, maxBuffer: 40 * 1024 * 1024 });
+      const data = await kubeConfig.makeApiClient(k8s.CoreV1Api)
+        .listSecretForAllNamespaces({ labelSelector: 'argocd.argoproj.io/secret-type=repository' }, requestOptions(15000));
       for (const s of data.items || []) {
         const d = s.data || {};
         const url = b64(d.url);
@@ -2922,9 +2986,7 @@ app.get('/api/argocd/repositories', async (req, res) => {
     } catch { /* fall through to app-derived */ }
     // derive from applications
     try {
-      const data = await runKubectlJson(['get', 'applications.argoproj.io', '--all-namespaces', '--output=json'],
-        { timeoutMs: 25000, maxBuffer: 100 * 1024 * 1024 });
-      for (const a of data.items || []) {
+      for (const a of await argoList('applications')) {
         const spec = a.spec || {};
         const srcs = spec.sources || (spec.source ? [spec.source] : []);
         for (const s of srcs) {
@@ -2953,8 +3015,8 @@ app.get('/api/argocd/clusters', async (req, res) => {
     if (cached) { res.set('X-Cache', 'HIT'); return res.json(cached); }
     const clusters = [];
     try {
-      const data = await runKubectlJson(['get', 'secrets', '--all-namespaces', '--selector=argocd.argoproj.io/secret-type=cluster', '--output=json'],
-        { timeoutMs: 15000, maxBuffer: 40 * 1024 * 1024 });
+      const data = await kubeConfig.makeApiClient(k8s.CoreV1Api)
+        .listSecretForAllNamespaces({ labelSelector: 'argocd.argoproj.io/secret-type=cluster' }, requestOptions(15000));
       for (const s of data.items || []) {
         const d = s.data || {};
         clusters.push({ name: b64(d.name), server: b64(d.server) });
@@ -2975,11 +3037,10 @@ app.post('/api/argocd/application/:namespace/:name/refresh', mcpWriteGate, async
     if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
     const { namespace, name } = req.params;
     if (!isDnsLabel(namespace)) return bad(res, 'namespace');
-    const hard = req.body?.hard ? 'hard' : 'normal';
-    const out = await runKubectl(['annotate', `--namespace=${namespace}`, '--overwrite',
-      ...positional('applications.argoproj.io', name, `argocd.argoproj.io/refresh=${hard}`)]);
+    // Same as `kubectl annotate --overwrite … argocd.argoproj.io/refresh=hard|normal`.
+    await argoMergePatch('applications', namespace, name, argoRefreshPatch(!!req.body?.hard));
     cache.clear();
-    res.json({ success: true, message: out || 'Refresh requested' });
+    res.json({ success: true, message: `application.argoproj.io/${name} annotated` });
   } catch (error) {
     fail(res, error);
   }
@@ -3028,8 +3089,8 @@ app.get('/api/cluster/summary', async (req, res) => {
 
     // Nodes (reuse existing helpers)
     let nodes = [];
-    try { nodes = (await fetchNodesWithKubectl()).map(formatNode); }
-    catch (e) { errors.push({ kind: 'nodes', error: firstLine(e.message) }); }
+    try { nodes = (await fetchNodes()).map(formatNode); }
+    catch (e) { errors.push({ kind: 'nodes', error: firstLine(e.body?.message || e.message) }); }
     const nodeSummary = {
       total: nodes.length,
       ready: nodes.filter(n => n.status === 'Ready').length,
@@ -3056,25 +3117,28 @@ app.get('/api/cluster/summary', async (req, res) => {
     const podPhases = { Running: 0, Pending: 0, Succeeded: 0, Failed: 0, Unknown: 0 };
     let podTotal = 0;
     try {
-      const out = await runKubectl(
-        ['get', 'pods', '--all-namespaces', '--output=jsonpath={range .items[*]}{.status.phase}{"\\n"}{end}'],
-        { timeoutMs: 12000 },
-      );
-      out.split('\n').filter(Boolean).forEach(p => {
-        podPhases[p] = (podPhases[p] || 0) + 1;
-        podTotal++;
-      });
-    } catch (e) { errors.push({ kind: 'pods', error: firstLine(e.message) }); }
+      // Page through all pods (500 at a time) so a large cluster never needs
+      // one giant response just to count phases.
+      const core = kubeConfig.makeApiClient(k8s.CoreV1Api);
+      let _continue;
+      for (let page = 0; page < 200; page++) {
+        const resp = await core.listPodForAllNamespaces({ limit: 500, _continue }, requestOptions(12000));
+        for (const pod of resp.items || []) {
+          const p = pod.status?.phase || 'Unknown';
+          podPhases[p] = (podPhases[p] || 0) + 1;
+          podTotal++;
+        }
+        _continue = resp.metadata?._continue;
+        if (!_continue) break;
+      }
+    } catch (e) { errors.push({ kind: 'pods', error: firstLine(e.body?.message || e.message) }); }
 
     // Namespace count
     let namespaceCount = 0;
     try {
-      const out = await runKubectl(
-        ['get', 'ns', '--output=jsonpath={range .items[*]}{.metadata.name}{"\\n"}{end}'],
-        { timeoutMs: 8000, maxBuffer: 4 * 1024 * 1024 },
-      );
-      namespaceCount = out.split('\n').filter(Boolean).length;
-    } catch (e) { errors.push({ kind: 'namespaces', error: firstLine(e.message) }); }
+      const resp = await kubeConfig.makeApiClient(k8s.CoreV1Api).listNamespace({}, requestOptions(8000));
+      namespaceCount = (resp.items || []).length;
+    } catch (e) { errors.push({ kind: 'namespaces', error: firstLine(e.body?.message || e.message) }); }
 
     // Everything failed → the cluster is unreachable/unauthorized: report it.
     if (errors.length === 3) return res.status(502).json({ error: errors[0].error, code: 'upstream_error', errors });
@@ -3117,10 +3181,18 @@ const parseCpuMilli = (s) => {
   return parseFloat(s) * 1000;                        // cores
 };
 
-// metrics.k8s.io via `kubectl get --raw` (context-pinned, async). Callers build
-// the API path only from validated names.
-const fetchMetricsRaw = (apiPath) =>
-  runKubectlJson(['get', `--raw=${apiPath}`], { timeoutMs: 10000, maxBuffer: 30 * 1024 * 1024 });
+// metrics.k8s.io/v1beta1 (metrics-server) read as custom objects on the
+// current context. A 404 (API not installed) is handled by the callers as
+// `available: false`. Names are validated before they get here.
+const METRICS_API = { group: 'metrics.k8s.io', version: 'v1beta1' };
+const fetchMetrics = ({ plural, namespace, name }) => {
+  const api = kubeConfig.makeApiClient(k8s.CustomObjectsApi);
+  const opts = requestOptions(10000);
+  if (name && namespace) return api.getNamespacedCustomObject({ ...METRICS_API, namespace, plural, name }, opts);
+  if (name) return api.getClusterCustomObject({ ...METRICS_API, plural, name }, opts);
+  if (namespace) return api.listNamespacedCustomObject({ ...METRICS_API, namespace, plural }, opts);
+  return api.listClusterCustomObject({ ...METRICS_API, plural }, opts);
+};
 
 const summarizePodMetrics = (item) => {
   let cpuMilli = 0;
@@ -3154,13 +3226,11 @@ app.get('/api/metrics/pods/:namespace?', async (req, res) => {
       return res.json(cachedData);
     }
 
-    const apiPath = namespace && namespace !== 'all' && namespace !== '-'
-      ? `/apis/metrics.k8s.io/v1beta1/namespaces/${namespace}/pods`
-      : `/apis/metrics.k8s.io/v1beta1/pods`;
+    const scoped = namespace && namespace !== 'all' && namespace !== '-' ? namespace : undefined;
 
     let data;
     try {
-      data = await fetchMetricsRaw(apiPath);
+      data = await fetchMetrics({ plural: 'pods', namespace: scoped });
     } catch (err) {
       return res.json({ metrics: {}, available: false });
     }
@@ -3189,7 +3259,7 @@ app.get('/api/metrics/pod/:namespace/:pod', async (req, res) => {
 
     let item;
     try {
-      item = await fetchMetricsRaw(`/apis/metrics.k8s.io/v1beta1/namespaces/${namespace}/pods/${pod}`);
+      item = await fetchMetrics({ plural: 'pods', namespace, name: pod });
     } catch (err) {
       return res.json({ available: false });
     }
@@ -3209,7 +3279,7 @@ app.get('/api/metrics/node/:name', async (req, res) => {
 
     let usage;
     try {
-      const m = await fetchMetricsRaw(`/apis/metrics.k8s.io/v1beta1/nodes/${name}`);
+      const m = await fetchMetrics({ plural: 'nodes', name });
       usage = m.usage || {};
     } catch (err) {
       return res.json({ available: false });
@@ -3217,11 +3287,11 @@ app.get('/api/metrics/node/:name', async (req, res) => {
 
     let cpuCap = '0', memCap = '0', cpuAlloc = '0', memAlloc = '0';
     try {
-      const out = await runKubectl(
-        ['get', '--output=jsonpath={.status.capacity.cpu}|{.status.capacity.memory}|{.status.allocatable.cpu}|{.status.allocatable.memory}', ...positional('node', name)],
-        { timeoutMs: 8000, maxBuffer: 4 * 1024 * 1024 },
-      );
-      [cpuCap, memCap, cpuAlloc, memAlloc] = out.split('|');
+      const node = await kubeConfig.makeApiClient(k8s.CoreV1Api).readNode({ name }, requestOptions(8000));
+      cpuCap = node.status?.capacity?.cpu || '0';
+      memCap = node.status?.capacity?.memory || '0';
+      cpuAlloc = node.status?.allocatable?.cpu || '0';
+      memAlloc = node.status?.allocatable?.memory || '0';
     } catch (e) { /* capacity is best-effort */ }
 
     res.json({
@@ -3238,6 +3308,29 @@ app.get('/api/metrics/node/:name', async (req, res) => {
   }
 });
 
+// The typed list calls behind the topology view. List items come back without
+// `kind` (the API omits it on list items; kubectl used to fill it in), so each
+// item is tagged with the kind it was listed as.
+const TOPOLOGY_LISTS = [
+  ['Deployment', 'AppsV1Api', 'listNamespacedDeployment'], ['ReplicaSet', 'AppsV1Api', 'listNamespacedReplicaSet'],
+  ['StatefulSet', 'AppsV1Api', 'listNamespacedStatefulSet'], ['DaemonSet', 'AppsV1Api', 'listNamespacedDaemonSet'],
+  ['Job', 'BatchV1Api', 'listNamespacedJob'], ['CronJob', 'BatchV1Api', 'listNamespacedCronJob'],
+  ['Pod', 'CoreV1Api', 'listNamespacedPod'], ['Service', 'CoreV1Api', 'listNamespacedService'],
+  ['Ingress', 'NetworkingV1Api', 'listNamespacedIngress'], ['NetworkPolicy', 'NetworkingV1Api', 'listNamespacedNetworkPolicy'],
+  ['ConfigMap', 'CoreV1Api', 'listNamespacedConfigMap'], ['Secret', 'CoreV1Api', 'listNamespacedSecret'],
+  ['ServiceAccount', 'CoreV1Api', 'listNamespacedServiceAccount'], ['PersistentVolumeClaim', 'CoreV1Api', 'listNamespacedPersistentVolumeClaim'],
+  ['Role', 'RbacAuthorizationV1Api', 'listNamespacedRole'], ['RoleBinding', 'RbacAuthorizationV1Api', 'listNamespacedRoleBinding'],
+];
+const tagKind = (items, kind) => (items || []).map((it) => Object.assign(it, { kind }));
+const listTopologyItems = async (namespace) => {
+  const opts = requestOptions(25000);
+  const settled = await Promise.allSettled(TOPOLOGY_LISTS.map(([kind, api, method]) =>
+    kubeConfig.makeApiClient(k8s[api])[method]({ namespace }, opts).then((r) => tagKind(r.items, kind))));
+  const failures = settled.filter((s) => s.status === 'rejected');
+  if (failures.length === settled.length) throw failures[0].reason;
+  return settled.flatMap((s) => (s.status === 'fulfilled' ? s.value : []));
+};
+
 app.get('/api/topology/:namespace', async (req, res) => {
   try {
     if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
@@ -3252,21 +3345,15 @@ app.get('/api/topology/:namespace', async (req, res) => {
       return res.json(cachedData);
     }
 
-    // Namespaced resources across workloads / network / storage / config / rbac.
-    let data;
+    // Namespaced resources across workloads / network / storage / config / rbac
+    // — one typed list per kind, in parallel. A kind that fails (RBAC) is
+    // skipped; every kind failing is a real error.
+    let items;
     try {
-      data = await runKubectlJson([
-        'get',
-        'deployments,replicasets,statefulsets,daemonsets,jobs,cronjobs,pods,' +
-        'services,ingresses,networkpolicies,configmaps,secrets,serviceaccounts,' +
-        'persistentvolumeclaims,roles,rolebindings',
-        `--namespace=${namespace}`, '--output=json',
-      ], { timeoutMs: 25000, maxBuffer: 100 * 1024 * 1024 });
+      items = await listTopologyItems(namespace);
     } catch (err) {
       return fail(res, err, { nodes: [], edges: [] }, 'Failed to build topology');
     }
-
-    const items = data.items || [];
     const byKind = {};
     for (const it of items) {
       if (it.kind) (byKind[it.kind] = byKind[it.kind] || []).push(it);
@@ -3463,8 +3550,12 @@ app.get('/api/topology/:namespace', async (req, res) => {
     // ---- cluster-scoped storage (PVs + StorageClasses) bound to this namespace ----
     if (pvNames.size || scNames.size) {
       try {
-        const cluster = (await runKubectlJson(['get', 'pv,storageclass', '--output=json'],
-          { timeoutMs: 15000, maxBuffer: 40 * 1024 * 1024 })).items || [];
+        const opts = requestOptions(15000);
+        const [pvs, scs] = await Promise.all([
+          kubeConfig.makeApiClient(k8s.CoreV1Api).listPersistentVolume({}, opts),
+          kubeConfig.makeApiClient(k8s.StorageV1Api).listStorageClass({}, opts),
+        ]);
+        const cluster = [...tagKind(pvs.items, 'PersistentVolume'), ...tagKind(scs.items, 'StorageClass')];
         for (const it of cluster) {
           if (it.kind === 'PersistentVolume' && pvNames.has(it.metadata.name)) {
             rawByKind.set(idFor('PersistentVolume', it.metadata.name), it);
@@ -3741,7 +3832,7 @@ const rejectUpgrade = (socket, status, body) => {
   } catch { /* ignore */ }
   socket.destroy();
 };
-server.on('upgrade', (req, socket, head) => {
+server.on('upgrade', async (req, socket, head) => {
   let url;
   try { url = new URL(req.url, 'http://localhost'); } catch { return rejectUpgrade(socket, 400, { error: 'Bad request', code: 'bad_request' }); }
   if (url.pathname !== '/ws/exec') return rejectUpgrade(socket, 404, { error: 'Not found', code: 'not_found' });
@@ -3760,6 +3851,13 @@ server.on('upgrade', (req, socket, head) => {
       ['container', q('container'), (v) => v === null || v === '' || isContainer(v)],
     ]);
   if (invalid) return rejectUpgrade(socket, 400, { error: `Invalid ${invalid}`, code: 'invalid_param', field: invalid });
+  // The pod terminal is a real PTY around `kubectl exec -it`: without kubectl
+  // (and outside demo mode) answer with the actionable JSON error up front.
+  if (!q('agent') && !demoActive()) {
+    let kubectl;
+    try { kubectl = await hasKubectl(); } catch { kubectl = { available: false }; }
+    if (!kubectl.available) return rejectUpgrade(socket, 501, { error: KUBECTL_REQUIRED_MESSAGE, code: 'kubectl_required' });
+  }
   if (terminals.size >= MAX_TERMINALS) return rejectUpgrade(socket, 429, { error: `At most ${MAX_TERMINALS} terminals may be open at once`, code: 'too_many_terminals' });
   if (shuttingDown) return rejectUpgrade(socket, 503, { error: 'Server is shutting down', code: 'shutting_down' });
   wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
@@ -3861,10 +3959,9 @@ wss.on('connection', async (browserWs, req) => {
     try {
       term = pty.spawn(kubectlBin, args, { name: 'xterm-256color', cols: 80, rows: 24, cwd: process.env.HOME || os.homedir(), env: ptyEnv() });
     } catch (err) {
-      const hint = kubectlBin === 'kubectl'
-        ? ' (kubectl was not found — install it or add it to PATH)'
-        : '';
-      send(`\r\n\x1b[31mFailed to start shell: ${err.message}${hint}\x1b[0m\r\n`);
+      const missing = kubectlBin === 'kubectl' || isSpawnMissing(err) || /ENOENT/.test(String(err?.message || ''));
+      const text = missing ? KUBECTL_REQUIRED_MESSAGE : `Failed to start shell: ${err.message}`;
+      send(`\r\n\x1b[31m${text}\x1b[0m\r\n`);
       browserWs.close();
       return;
     }
