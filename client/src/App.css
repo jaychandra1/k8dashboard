@@ -1724,6 +1724,19 @@ span.xlink.resource-name-cell { color: var(--accent); }
 .logs-icon-btn.on { background: var(--accent-tint); color: var(--accent); }
 
 /* container / tail selects */
+/* Row Logs button (pods, deployments) — sits in its own column after Name. */
+.dt-td.dt-logs { padding-top: 0; padding-bottom: 0; }
+.row-logs-btn {
+  display: inline-grid; place-items: center;
+  width: 28px; height: 28px; border-radius: 7px;
+  background: transparent; border: 1px solid transparent; cursor: pointer;
+  color: var(--text-secondary); transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.row-logs-btn:hover { background: var(--bg-hover); color: var(--accent); border-color: var(--border-strong); }
+.row-logs-btn:active { transform: scale(0.94); }
+.row-logs-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.logs-unavailable { color: var(--yellow, #d29922); cursor: help; text-decoration: underline dotted; }
+.logs-select.pod select { max-width: 260px; }
 .logs-select { position: relative; display: flex; align-items: center; gap: 6px; background: var(--bg-elevated); border: 1px solid var(--border-strong); border-radius: 8px; padding: 0 8px; height: 30px; }
 .logs-select > svg:first-child { color: var(--text-muted); flex: none; }
 .logs-select select {
@@ -2974,46 +2987,38 @@ h5.md-h, h6.md-h { font-size: 0.7813rem; color: var(--text-secondary); }
 .assistant-forget:hover { color: var(--red); }
 
 /* ============================================================
-   Cluster switcher — the one place to change cluster. Default variant is a
-   compact toolbar-sized button; `.cluster-switcher--sidebar` (what App mounts)
-   fills the sidebar header row next to the history arrows.
+   Cluster switcher — the one place to change cluster. It sits at the left end
+   of the top bar; the button fills its container (name ellipsised, chevron
+   pinned right) and its tooltip carries the full context name.
    ============================================================ */
 .cluster-switcher { display: flex; align-items: center; min-width: 0; }
 .cluster-switcher-btn {
-  display: flex; align-items: center; gap: 7px;
-  height: 30px; padding: 0 8px 0 9px; max-width: 240px; box-sizing: border-box;
+  display: flex; align-items: center; justify-content: flex-start; gap: 7px;
+  width: 100%; height: 32px; padding: 0 7px 0 9px; box-sizing: border-box;
   border: 1px solid var(--border-strong); border-radius: 8px;
   background: var(--bg-elevated); color: var(--text); cursor: pointer;
-  font-family: var(--font); font-size: 0.7813rem; font-weight: 600;
+  font-family: var(--font); font-size: 0.7813rem; font-weight: 600; text-align: left;
   transition: background 0.12s, border-color 0.12s;
 }
 .cluster-switcher-btn:hover,
 .cluster-switcher-btn[aria-expanded='true'] { background: var(--bg-hover); border-color: var(--accent); }
 .cluster-switcher-btn .ctx-provider { flex: 0 0 auto; }
-.cluster-switcher-name { min-width: 0; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cluster-switcher-caret { color: var(--text-muted); flex: 0 0 auto; }
+.cluster-switcher-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cluster-switcher-caret { color: var(--text-muted); flex: 0 0 auto; margin-left: auto; }
 
-/* Sidebar header row, under the brand: [ switcher (flex 1) ] [ ◀ ] [ ▶ ].
-   The switcher is left-aligned with the chevron pinned right; the name
-   ellipsises (its tooltip carries the full context name). */
-.nav-cluster-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
-.cluster-switcher--sidebar { flex: 1 1 auto; min-width: 0; }
-.cluster-switcher--sidebar .cluster-switcher-btn {
-  width: 100%; max-width: none; height: 32px; padding: 0 7px 0 9px;
-  justify-content: flex-start; text-align: left;
+/* Top-bar lead: [ cluster switcher ] [ ◀ ] [ ▶ ]. On wide layouts the switcher
+   fills the column above the sidebar — its width plus the bar's left padding
+   and the 10px gap equals --sidebar-w — so the arrows start exactly where the
+   content column starts. When the sidebar is a drawer or collapsed, the
+   switcher sizes to the cluster name instead. */
+.topbar-lead { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 0 1 auto; }
+.topbar-lead .cluster-switcher {
+  flex: 0 0 auto;
+  width: calc(var(--sidebar-w) - var(--topbar-pad-l) - 10px);
+  min-width: 140px;
 }
-.cluster-switcher--sidebar .cluster-switcher-name { flex: 1 1 auto; max-width: none; }
-.cluster-switcher--sidebar .cluster-switcher-caret { margin-left: auto; }
-.nav-hist { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
-.nav-hist-btn {
-  display: grid; place-items: center;
-  width: 30px; height: 30px; border-radius: 8px;
-  background: transparent; border: none; cursor: pointer;
-  color: var(--text-secondary); transition: background 0.12s, color 0.12s;
-}
-.nav-hist-btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
-.nav-hist-btn:active:not(:disabled) { transform: scale(0.94); }
-.nav-hist-btn:disabled { opacity: 0.3; cursor: default; }
+.topbar-hist { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+.app-shell[data-nav='collapsed'] .topbar-lead .cluster-switcher { flex: 0 1 auto; width: auto; min-width: 0; max-width: 240px; }
 
 
 /* ============================================================
@@ -3223,32 +3228,27 @@ h5.md-h, h6.md-h { font-size: 0.7813rem; color: var(--text-secondary); }
 .argo-event-age { color: var(--text-muted); font-size: 0.6875rem; margin-left: auto; flex-shrink: 0; }
 
 /* ---- Global top toolbar (native macOS-style) ----
-   Full-width bar at the top of the window: nav toggle + page breadcrumb on the
-   left, ⌘K / AI / notifications / refresh on the right (cluster switcher and
-   back/forward live in the sidebar header). It doubles as the window drag
-   region; on macOS the traffic lights sit at its left (padding clears them).
-   Buttons opt out of dragging so they stay clickable. */
+   Full-width bar at the top of the window: nav toggle (narrow layouts), cluster
+   switcher and back/forward on the left, ⌘K / AI / notifications / refresh on
+   the right. It doubles as the window drag region; on macOS the traffic lights
+   sit at its left (`.is-mac` widens the left padding to clear them — Windows
+   and Linux keep the native title bar, so no offset there). Buttons opt out
+   of dragging so they stay clickable. */
 .topbar {
   flex: none;
   display: flex;
   align-items: center;
   gap: 8px;
   height: 44px;
-  padding: 0 10px;
+  --topbar-pad-l: 10px;
+  padding: 0 10px 0 var(--topbar-pad-l);
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border);
   -webkit-app-region: drag;
 }
-.is-electron .topbar { padding-left: 82px; } /* clear the macOS traffic lights */
+.is-mac .topbar { --topbar-pad-l: 82px; } /* clear the macOS traffic lights */
 .topbar button,
 .topbar .topbar-ai { -webkit-app-region: no-drag; }
-/* Current page, e.g. "Pods · all namespaces" — decorative (aria-hidden); the
-   view's <h1> is the heading. Shrinks and ellipsises before anything else. */
-.topbar-crumb {
-  flex: 0 1 auto; min-width: 0; padding: 0 2px;
-  font-size: 0.7813rem; font-weight: 600; color: var(--text-muted);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
 .topbar-spacer { flex: 1; }
 .topbar-actions { display: flex; align-items: center; gap: 8px; }
 .topbar-btn {
@@ -3759,6 +3759,7 @@ button.sec-tr.row.sel { background: var(--accent-tint); }
 
 @media (max-width: 1024px) {
   .nav-toggle { display: grid; }
+  .topbar-lead .cluster-switcher { flex: 0 1 auto; width: auto; min-width: 0; max-width: 240px; }
   .layout-main { position: relative; }
   .nav-sidebar {
     position: fixed;
@@ -3790,10 +3791,17 @@ button.sec-tr.row.sel { background: var(--accent-tint); }
   .prefs-inline, .prefs-toggle-row { flex-direction: column; align-items: flex-start; }
   .prefs-cards { grid-template-columns: 1fr; }
   .topbar-ai-main span { max-width: 90px; }
-  .topbar-crumb { max-width: 40vw; }
 }
-/* Phone widths: the toolbar's controls come first; drop the breadcrumb. */
-@media (max-width: 480px) { .topbar-crumb { display: none; } }
+/* Phone widths: keep the cluster switcher usable; browser/mouse history still
+   works when the arrows are dropped. */
+.topbar .nav-toggle, .topbar-actions { flex: none; }
+@media (max-width: 560px) {
+  .app-shell .topbar { gap: 6px; }
+  .topbar-lead .cluster-switcher { max-width: 150px; }
+  .topbar-hist { display: none; }
+  /* AI launcher keeps its icon and aria-label; the text label goes. */
+  .topbar-ai-main span { display: none; }
+}
 
 /* Tables scroll inside .dt-wrap, never the page. No overscroll-behavior here:
    'contain' on a container that happens not to overflow swallows wheel events
@@ -4456,8 +4464,9 @@ h3.sec-drawer-section:first-child { margin-top: 0; }
 .donut-wrap .ui-donut { gap: 18px; }
 .donut-wrap .ui-donut-legend { flex: 1 1 8rem; }
 
-/* Top bar: nav toggle · breadcrumb on the left, controls on the right, all on
-   a 30px height and 8–10px rhythm. */
+/* Top bar: nav toggle · cluster switcher · history on the left, controls on
+   the right, on a 30–32px height and 10px rhythm (the lead's width math above
+   relies on this gap). */
 .topbar { gap: 10px; }
 
 /* Branded loading screen (startup + context switch) */

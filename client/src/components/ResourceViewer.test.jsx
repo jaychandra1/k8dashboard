@@ -13,7 +13,7 @@ vi.mock('../lib/api', async (orig) => {
     del: vi.fn(async () => ({ success: true })),
   };
 });
-import { postJson, del } from '../lib/api';
+import { getJson, postJson, del } from '../lib/api';
 
 const resources = [
   { name: 'beta', namespace: 'ns-a', status: 'Running', replicas: 2, createdAt: '2024-01-01T00:00:00Z' },
@@ -119,6 +119,51 @@ describe('ResourceViewer', () => {
     dlg = await screen.findByRole('dialog', { name: 'Delete Deployment' });
     await user.click(within(dlg).getByRole('button', { name: 'Yes, delete' }));
     await waitFor(() => expect(del).toHaveBeenCalledWith('/api/resource/ns-a/deployment/gamma'));
+  });
+
+  it('deployments: a Logs button beside each name opens the deployment\'s logs (not the drawer)', async () => {
+    const user = userEvent.setup();
+    getJson.mockImplementation(async (url) => {
+      if (url === '/api/deployments/ns-b/alpha/pods') return { pods: [{ name: 'alpha-5d6e-q1', containerNames: ['app'], status: 'Running' }], total: 1 };
+      if (url === '/api/logs/ns-b/alpha-5d6e-q1') return { logs: '2024-01-01T00:00:00.000Z alpha says hi' };
+      return { metrics: {} };
+    });
+    const { onSelectResource } = renderViewer();
+    const header = screen.getAllByRole('columnheader').map((th) => th.textContent);
+    expect(header.indexOf('Logs')).toBe(header.findIndex((h) => /Name/.test(h)) + 1);
+    await user.click(screen.getByRole('button', { name: 'Logs for alpha' }));
+    expect(onSelectResource).not.toHaveBeenCalled();
+    await screen.findByText(/alpha says hi/);
+    expect(getJson).toHaveBeenCalledWith('/api/deployments/ns-b/alpha/pods', expect.anything());
+    expect(screen.getByRole('tab', { name: /alpha/ })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('combobox', { name: 'Pod' })).toBeInTheDocument();
+    // Also in the row menu.
+    await user.click(screen.getByRole('button', { name: 'Actions for gamma' }));
+    expect(await screen.findByRole('menuitem', { name: 'Logs' })).toBeInTheDocument();
+  });
+
+  it('deployments with no pods say so in the logs panel', async () => {
+    const user = userEvent.setup();
+    getJson.mockImplementation(async (url) => (url.startsWith('/api/deployments/') ? { pods: [], total: 0 } : { metrics: {} }));
+    renderViewer();
+    await user.click(screen.getByRole('button', { name: 'Logs for beta' }));
+    expect(await screen.findByText(/No pods are running for/)).toHaveTextContent('No pods are running for beta');
+  });
+
+  it('pods: the Logs button opens that pod\'s logs', async () => {
+    const user = userEvent.setup();
+    getJson.mockImplementation(async (url) => (url === '/api/logs/ns-a/beta' ? { logs: '2024-01-01T00:00:00.000Z beta pod line' } : { metrics: {} }));
+    renderViewer({ resourceType: 'pod', resources: resources.map((r) => ({ ...r, containerNames: ['app'] })) });
+    await user.click(screen.getByRole('button', { name: 'Logs for beta' }));
+    await screen.findByText(/beta pod line/);
+    expect(getJson).toHaveBeenCalledWith('/api/logs/ns-a/beta', expect.objectContaining({ params: expect.objectContaining({ container: 'app' }) }));
+    expect(screen.queryByRole('combobox', { name: 'Pod' })).toBeNull();
+  });
+
+  it('kinds without logs get no Logs column', () => {
+    renderViewer({ resourceType: 'configMap', resources: [{ name: 'cm', namespace: 'ns-a', dataKeys: 1 }] });
+    expect(screen.queryByRole('button', { name: /^Logs for/ })).toBeNull();
+    expect(screen.getAllByRole('columnheader').map((th) => th.textContent)).not.toContain('Logs');
   });
 
   it('validates the scale form', () => {

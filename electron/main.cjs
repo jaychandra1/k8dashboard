@@ -386,10 +386,11 @@ function createWindow() {
 
   const wc = mainWindow.webContents;
 
-  // Tag the document so the frontend can offset content below the traffic
-  // lights and expose a draggable region (CSS `.is-electron` rules).
+  // Tag the document so the frontend can expose a draggable region
+  // (`.is-electron`) and, on macOS only, clear the traffic lights (`.is-mac`).
+  const docClasses = process.platform === 'darwin' ? "'is-electron', 'is-mac'" : "'is-electron'";
   wc.on('did-finish-load', () => {
-    wc.executeJavaScript("document.documentElement.classList.add('is-electron')").catch(() => {});
+    wc.executeJavaScript(`document.documentElement.classList.add(${docClasses})`).catch(() => {});
     // First fill of the native Clusters menu once the UI (not loading.html) is up.
     if (isBackendUrl(wc.getURL())) refreshClustersMenu();
   });

@@ -35,12 +35,11 @@ const isPlainClick = (e) => e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shi
  * Primary sidebar. Every item is a real link (`<a href="#/…">`, so middle-click
  * / open-in-new-tab work) built from the resource registry; the active one has
  * `aria-current="page"`. Sections are `<button aria-expanded>` + `<ul>`.
- * Navigation knows nothing about clusters: App renders the cluster switcher +
- * history arrows row and passes it as `headerExtra`, shown under the brand row.
+ * Navigation knows nothing about clusters: the cluster switcher and the
+ * back/forward arrows live at the left of the top bar (TopBar `lead`).
  *
  * Props: { view, subView, linkQuery, onNavigate(view, params?),
- *          crSelection, onSelectCustomResource, argocdInstalled, onOpenPreferences,
- *          headerExtra?: ReactNode }
+ *          crSelection, onSelectCustomResource, argocdInstalled, onOpenPreferences }
  */
 const Navigation = forwardRef(function Navigation({
   view,
@@ -51,7 +50,6 @@ const Navigation = forwardRef(function Navigation({
   onSelectCustomResource,
   argocdInstalled,
   onOpenPreferences,
-  headerExtra = null,
 }, ref) {
   const [expanded, setExpanded] = useState(loadExpanded);
   useEffect(() => { try { localStorage.setItem(STORE_KEY, JSON.stringify(expanded)); } catch { /* ignore */ } }, [expanded]);
@@ -161,7 +159,6 @@ const Navigation = forwardRef(function Navigation({
             <Icon name="settings" size={16} />
           </button>
         </div>
-        {headerExtra}
       </div>
 
       <div className="nav-sections">

@@ -289,7 +289,7 @@ export default function ResourceDrawer({
           </div>
         </div>
         <div className="drawer-actions">
-          {isPod && doLogs && <Button variant="ghost" iconOnly icon="logs" ariaLabel={`Logs for ${name}`} className="drawer-action-btn" onClick={doLogs} />}
+          {(isPod || kind === 'Deployment') && doLogs && <Button variant="ghost" iconOnly icon="logs" ariaLabel={`Logs for ${name}`} className="drawer-action-btn" onClick={doLogs} />}
           {isPod && doTerminal && <Button variant="ghost" iconOnly icon="terminal" ariaLabel={`Open terminal in ${name}`} className="drawer-action-btn" onClick={doTerminal} />}
           {doYaml && <Button variant="ghost" iconOnly icon="configuration" ariaLabel={`Edit YAML of ${name}`} className="drawer-action-btn" onClick={doYaml} />}
           {doScale && <Button variant="ghost" iconOnly icon="scale" ariaLabel={`Scale ${name}`} className="drawer-action-btn" onClick={doScale} />}

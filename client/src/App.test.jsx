@@ -65,28 +65,23 @@ describe('App routing', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Cluster' })).toBeInTheDocument());
     expect(screen.queryByTestId('overview')).toBeNull();
     expect(document.title).toMatch(/^Cluster · test-cluster — KubePilot$/);
-    // The cluster switcher and the Back/Forward arrows sit in the sidebar header
-    // (one row under the brand); the top bar holds neither.
+    // The cluster switcher and, right beside it, the Back/Forward arrows open the
+    // top bar (its `lead` slot); the sidebar holds neither.
     const nav = screen.getByRole('navigation', { name: 'Primary' });
     const header = screen.getByRole('banner');
     const switcher = screen.getByRole('button', { name: /Switch cluster/ });
     expect(switcher).toHaveTextContent('test-cluster');
-    expect(nav.contains(switcher)).toBe(true);
-    expect(switcher.closest('.cluster-switcher')).toHaveClass('cluster-switcher--sidebar');
-    const row = nav.querySelector('.nav-header .nav-cluster-row');
-    expect(row).not.toBeNull();
-    expect(row.previousElementSibling).toHaveClass('nav-brand');
+    const lead = header.querySelector('.topbar-lead');
+    expect(lead).not.toBeNull();
     const backBtn = screen.getByRole('button', { name: 'Back' });
     const fwdBtn = screen.getByRole('button', { name: 'Forward' });
-    expect(row.contains(switcher) && row.contains(backBtn) && row.contains(fwdBtn)).toBe(true);
-    expect(within(header).queryByRole('button', { name: /Switch cluster/ })).toBeNull();
-    expect(within(header).queryByRole('button', { name: 'Back' })).toBeNull();
-    expect(within(header).queryByRole('button', { name: 'Forward' })).toBeNull();
+    expect(lead.contains(switcher) && lead.contains(backBtn) && lead.contains(fwdBtn)).toBe(true);
+    // Order: switcher first, then the history group.
+    expect(lead.firstElementChild).toBe(switcher.closest('.cluster-switcher'));
+    expect(lead.lastElementChild).toHaveClass('topbar-hist');
+    expect(nav.contains(switcher) || nav.contains(backBtn) || nav.contains(fwdBtn)).toBe(false);
     expect(backBtn).toBeDisabled();
-    // The top bar shows the current page as a decorative breadcrumb instead.
-    const crumb = header.querySelector('.topbar-crumb');
-    expect(crumb).toHaveAttribute('aria-hidden', 'true');
-    expect(crumb).toHaveTextContent(/^Cluster$/);
+    expect(header.querySelector('.topbar-crumb')).toBeNull();
 
     const user = userEvent.setup();
     await user.click(screen.getByRole('link', { name: 'Pods' }));
@@ -94,9 +89,8 @@ describe('App routing', () => {
     await waitFor(() => expect(screen.getByTestId('rv')).toHaveAttribute('data-type', 'pod'));
     expect(screen.getByRole('link', { name: 'Pods' })).toHaveAttribute('aria-current', 'page');
     expect(document.title).toMatch(/^Pods · all namespaces · test-cluster — KubePilot$/);
-    expect(header.querySelector('.topbar-crumb')).toHaveTextContent(/^Pods · all namespaces$/);
 
-    // Back arrow in the sidebar header → previous view.
+    // Back arrow in the top bar → previous view.
     await user.click(screen.getByRole('button', { name: 'Back' }));
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Cluster' })).toBeInTheDocument());
     // The first entry was the bare URL (no hash) — both spellings mean the landing view.
@@ -172,8 +166,6 @@ describe('App routing', () => {
     window.location.hash = '#/security/images';
     renderApp();
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Security images' })).toBeInTheDocument());
-    // Views with sub-views show "label · sub-view" in the top-bar breadcrumb.
-    expect(document.querySelector('.topbar-crumb')).toHaveTextContent(/^Security · Images$/);
     await act(async () => { window.location.hash = '#/customResources/cert-manager.io/v1/certificates/default/my-cert'; await new Promise((r) => setTimeout(r, 20)); });
     await waitFor(() => expect(screen.getByRole('heading', { name: 'CR certificates/my-cert' })).toBeInTheDocument());
     await act(async () => { window.location.hash = '#/nodes/node-a'; await new Promise((r) => setTimeout(r, 20)); });

@@ -7,6 +7,7 @@
 // the view context (metrics map, navigation) as a third argument.
 import Icon from '../Icons';
 import Badge from '../ui/Badge';
+import Tooltip from '../ui/Tooltip';
 import { formatAge, fmtCpu, fmtMem } from '../../lib/format';
 import { statusTone } from '../../lib/status';
 import { XLink, nsLink, nodeLink } from './links';
@@ -22,6 +23,19 @@ const nameCol = {
     </span>
   ),
   title: (r) => r.name,
+};
+
+// One-click logs, right after the name (pods and deployments). The button
+// opens the logs panel; the row itself still opens the details drawer.
+const logsCol = {
+  key: 'logs', header: <span className="sr-only">Logs</span>, width: 52, align: 'center', className: 'dt-logs',
+  render: (r, _i, ctx) => (ctx.onOpenLogs ? (
+    <Tooltip content="View logs">
+      <button type="button" className="row-logs-btn" aria-label={`Logs for ${r.name}`} onClick={(e) => { e.stopPropagation(); ctx.onOpenLogs(r); }}>
+        <Icon name="logs" size={16} />
+      </button>
+    </Tooltip>
+  ) : null),
 };
 
 const namespaceCol = {
@@ -80,7 +94,8 @@ const nodeCol = {
 };
 
 const COLUMNS = {
-  pod: [nameCol, namespaceCol, containersCol, cpuCol, memCol, num('restarts', 'Restarts', { width: 90 }), nodeCol, ageCol, statusCol('pod')],
+  pod: [nameCol, logsCol, namespaceCol, containersCol, cpuCol, memCol, num('restarts', 'Restarts', { width: 90 }), nodeCol, ageCol, statusCol('pod')],
+  deployment: [nameCol, logsCol, namespaceCol, statusCol()],
   configMap: [nameCol, namespaceCol, num('dataKeys', 'Keys', { width: 80 }), ageCol],
   secret: [nameCol, namespaceCol, { key: 'secretType', header: 'Type', sortable: true, accessor: (r) => r.secretType || 'Opaque', render: (r) => <span className="drawer-chip">{r.secretType || 'Opaque'}</span> }, num('dataKeys', 'Keys', { width: 80 }), ageCol],
   serviceAccount: [nameCol, namespaceCol, num('saSecrets', 'Secrets', { width: 90 }), ageCol],

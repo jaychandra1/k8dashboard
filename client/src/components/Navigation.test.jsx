@@ -25,7 +25,7 @@ describe('Navigation', () => {
     expect(within(nav).queryAllByRole('generic').filter((el) => el.className === 'nav-item')).toHaveLength(0);
   });
 
-  it('has no cluster logic of its own: without headerExtra the brand block is the whole header', () => {
+  it('has no cluster logic of its own: the brand block is the whole header', () => {
     render(<Navigation view="pod" onNavigate={() => {}} onOpenPreferences={() => {}} />);
     const nav = screen.getByRole('navigation', { name: 'Primary' });
     expect(within(nav).queryByRole('combobox')).toBeNull();
@@ -39,26 +39,6 @@ describe('Navigation', () => {
     // Only the brand block lives in the header.
     expect(header.children).toHaveLength(1);
     expect(header.firstElementChild).toHaveClass('nav-brand');
-  });
-
-  it('renders headerExtra in the header, directly under the brand row', () => {
-    render(
-      <Navigation
-        view="pod"
-        onNavigate={() => {}}
-        onOpenPreferences={() => {}}
-        headerExtra={<div data-testid="extra"><button type="button">Switch cluster</button></div>}
-      />,
-    );
-    const nav = screen.getByRole('navigation', { name: 'Primary' });
-    const header = nav.querySelector('.nav-header');
-    const extra = within(header).getByTestId('extra');
-    expect(header.children).toHaveLength(2);
-    expect(header.firstElementChild).toHaveClass('nav-brand');
-    expect(header.lastElementChild).toBe(extra);
-    expect(within(header).getByRole('button', { name: 'Switch cluster' })).toBeInTheDocument();
-    // The slot sits above the scrolling sections.
-    expect(header.compareDocumentPosition(nav.querySelector('.nav-sections')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('navigates via onNavigate on a plain click and toggles sections', async () => {

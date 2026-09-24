@@ -1212,6 +1212,19 @@ export function handle(req, res) {
       }
     }
 
+    // ---------- pods behind a deployment (deployment logs view) ----------
+    if (method === 'GET' && sl[1] === 'deployments' && seg.length === 5 && sl[4] === 'pods') {
+      const [, , nsp, name] = seg.map(decodeURIComponent);
+      const n = cluster.ns[nsp];
+      const dep = n?.deployments.find((d) => d.metadata.name === name);
+      if (!dep) return json({ error: `deployments.apps "${name}" not found`, code: 'not_found' }, 404);
+      const sel = dep.spec?.selector?.matchLabels || {};
+      const pods = Object.keys(sel).length
+        ? n.pods.filter((pod) => Object.entries(sel).every(([k, v]) => (pod.metadata.labels || {})[k] === v))
+        : [];
+      return json({ pods: pods.map((pod) => formatResource(pod, 'Pod')), total: pods.length, selector: Object.entries(sel).map(([k, v]) => `${k}=${v}`).join(',') });
+    }
+
     // ---------- logs ----------
     if (method === 'GET' && sl[1] === 'logs' && seg.length === 4) {
       const [, , nsp, pod] = seg.map(decodeURIComponent);

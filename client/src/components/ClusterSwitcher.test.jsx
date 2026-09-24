@@ -111,11 +111,10 @@ describe('ClusterSwitcher', () => {
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
-  it('variant="sidebar" renders the same button and menu as a full-width sidebar row', async () => {
-    const { user, onSwitch } = setup({ variant: 'sidebar' });
+  it('renders the provider icon, the ellipsisable name and a caret; picking a context switches', async () => {
+    const { user, onSwitch } = setup();
     const btn = trigger();
-    const root = btn.closest('.cluster-switcher');
-    expect(root).toHaveClass('cluster-switcher--sidebar');
+    expect(btn.closest('.cluster-switcher')).not.toBeNull();
     expect(btn).toHaveClass('cluster-switcher-btn');
     expect(btn).toHaveTextContent('prod-eks');
     expect(btn.querySelector('.cluster-switcher-name')).toHaveTextContent('prod-eks');
@@ -127,10 +126,6 @@ describe('ClusterSwitcher', () => {
     await user.click(within(menu).getByRole('menuitemcheckbox', { name: 'kind-local' }));
     expect(onSwitch).toHaveBeenCalledWith('kind-local');
     expect(screen.queryByRole('menu')).toBeNull();
-    // The default variant carries no sidebar modifier.
-    document.body.innerHTML = '';
-    setup();
-    expect(trigger().closest('.cluster-switcher')).not.toHaveClass('cluster-switcher--sidebar');
   });
 
   it('shows a placeholder when nothing is pinned (the all-contexts list still works)', async () => {

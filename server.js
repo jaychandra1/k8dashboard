@@ -41,7 +41,7 @@ import {
 import {
   restMappingFor, restartPatch, restartTarget, scaleTarget, scalePatch, argoSyncPatch, argoRefreshPatch,
   dropFinalizersPatch, parseApplyDocuments, requestOptions, patchOptions, PatchStrategy, applyDocuments,
-  deleteResource, execInPod, resourceLabel,
+  deleteResource, execInPod, resourceLabel, labelSelectorFor,
 } from './lib/k8s-ops.mjs';
 
 // node-pty powers the pod terminal (a real PTY bridged to `kubectl exec`). Load
@@ -198,6 +198,7 @@ const PATH_RULES = {
   scale: [seg('namespace', isNamespace), seg('kind', isKind), seg('name', isResourceName)],
   restart: [seg('namespace', isNamespace), seg('kind', isKind), seg('name', isResourceName)],
   logs: [seg('namespace', isDnsLabel), seg('pod', isDnsSubdomain)],
+  deployments: [seg('namespace', isDnsLabel), seg('name', isResourceName), lit('pods')],
   topology: [seg('namespace', isDnsLabel)],
   events: [seg('namespace', isNamespace)],
   nodes: [seg('name', isResourceName), lit('pods')],
@@ -1596,6 +1597,45 @@ app.get('/api/logs/:namespace/:pod', async (req, res) => {
   } catch (error) {
     log.warn('failed to get pod logs', { namespace, pod, err: error });
     fail(res, error, undefined, 'Failed to get logs');
+  }
+});
+
+// Pods behind a Deployment (found through its spec.selector, like
+// `kubectl logs deploy/<name>`), for the deployment logs view: the client
+// reads one replica or all of them merged. Running pods first, newest first.
+const DEPLOYMENT_PODS_MAX = 50;
+const podRank = (p) => (p.status === 'Running' ? 0 : p.status === 'Pending' ? 1 : 2);
+app.get('/api/deployments/:namespace/:name/pods', async (req, res) => {
+  const { namespace, name } = req.params;
+  try {
+    if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
+    if (!checkParams(res, [['namespace', namespace, isDnsLabel], ['name', name, isDnsSubdomain]])) return;
+    const cacheKey = getCacheKey('deployment-pods', { namespace, name });
+    const cachedData = getCache(cacheKey);
+    if (cachedData) {
+      res.set('X-Cache', 'HIT');
+      return res.json(cachedData);
+    }
+
+    const deployment = await kubeConfig.makeApiClient(k8s.AppsV1Api)
+      .readNamespacedDeployment({ name, namespace }, requestOptions(15000));
+    const labelSelector = labelSelectorFor(deployment.spec?.selector);
+    let pods = [];
+    if (labelSelector) {
+      const list = await kubeConfig.makeApiClient(k8s.CoreV1Api)
+        .listNamespacedPod({ namespace, labelSelector, limit: 500 }, requestOptions(15000));
+      pods = (list.items || [])
+        .map((item) => formatResource(item, 'Pod'))
+        .sort((a, b) => podRank(a) - podRank(b) || String(b.createdAt || '').localeCompare(String(a.createdAt || '')) || a.name.localeCompare(b.name));
+    }
+    const result = { pods: pods.slice(0, DEPLOYMENT_PODS_MAX), total: pods.length, selector: labelSelector };
+
+    setCache(cacheKey, result, CACHE_TTL.events);
+    res.set('X-Cache', 'MISS');
+    res.json(result);
+  } catch (error) {
+    log.warn('failed to list deployment pods', { namespace, name, err: error });
+    fail(res, error, undefined, 'Failed to list the deployment\'s pods');
   }
 });
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './App.css';
-import Navigation, { ARGO_ITEMS, ARGO_SETTINGS_ITEMS, SECURITY_ITEMS } from './components/Navigation';
+import Navigation from './components/Navigation';
 import TopBar from './components/TopBar';
 import ClusterSwitcher from './components/ClusterSwitcher';
 import Icon from './components/Icons';
@@ -303,32 +303,25 @@ function App() {
     return () => window.removeEventListener('kubepilot:host', onHost);
   }, []);
 
-  // ---- document title + top-bar breadcrumb --------------------------------
-  // Both come from the same facts: the view label, the namespace scope for
-  // namespaced views, and (title only) the current context. The breadcrumb
-  // shows the sub-view instead for views that have one (Argo CD, Security).
-  const { title, crumb } = useMemo(() => {
+  // ---- document title -------------------------------------------------------
+  // View label, the namespace scope for namespaced views, and the current context.
+  const title = useMemo(() => {
     const label = byKey[view]?.label || 'KubePilot';
     const nsLabel = selectedNamespaces.includes(ALL) ? 'all namespaces' : selectedNamespaces.join(', ');
     const scoped = isResourceView(view) || view === 'overview' || view === 'events';
-    const subItems = view === 'argocd' ? [...ARGO_ITEMS, ...ARGO_SETTINGS_ITEMS] : view === 'security' ? SECURITY_ITEMS : null;
-    const subLabel = subItems ? subItems.find((i) => i.key === subView)?.label : null;
-    const ctx = configStatus.currentContext;
-    return {
-      title: [label, scoped ? nsLabel : null, ctx].filter(Boolean).join(' · ') + ' — KubePilot',
-      crumb: [label, scoped ? nsLabel : subLabel].filter(Boolean).join(' · '),
-    };
-  }, [view, subView, selectedNamespaces, configStatus.currentContext]);
+    return [label, scoped ? nsLabel : null, configStatus.currentContext].filter(Boolean).join(' · ') + ' — KubePilot';
+  }, [view, selectedNamespaces, configStatus.currentContext]);
   useDocumentTitle(title, { suffix: false });
 
-  // ---- sidebar header row: [ cluster switcher ] [ ◀ ] [ ▶ ] -----------------
-  // Rendered here (not in Navigation) so the sidebar stays free of cluster and
-  // history logic; memoised so Navigation's React.memo still short-circuits.
+  // ---- top-bar lead: [ cluster switcher ] [ ◀ ] [ ▶ ] ----------------------
+  // Left end of the top bar: the switcher fills the column above the sidebar
+  // and the history arrows start where the content column starts. Built here
+  // so TopBar stays free of cluster/history logic; memoised so TopBar's
+  // React.memo still short-circuits.
   const { contexts: ctxList, contextsInfo, currentContext } = configStatus;
-  const navHeaderExtra = useMemo(() => (
-    <div className="nav-cluster-row">
+  const topbarLead = useMemo(() => (
+    <>
       <ClusterSwitcher
-        variant="sidebar"
         contexts={ctxList || []}
         contextsInfo={contextsInfo}
         currentContext={currentContext}
@@ -339,15 +332,15 @@ function App() {
         onAddAws={openAws}
         onAddAzure={openAzure}
       />
-      <div className="nav-hist" role="group" aria-label="History">
+      <div className="topbar-hist" role="group" aria-label="History">
         <Tooltip content="Back">
-          <button type="button" className="nav-hist-btn" disabled={!canBack} onClick={back} aria-label="Back"><Icon name="arrowLeft" size={16} /></button>
+          <button type="button" className="topbar-btn" disabled={!canBack} onClick={back} aria-label="Back"><Icon name="arrowLeft" size={16} /></button>
         </Tooltip>
         <Tooltip content="Forward">
-          <button type="button" className="nav-hist-btn" disabled={!canForward} onClick={forward} aria-label="Forward"><Icon name="arrowRight" size={16} /></button>
+          <button type="button" className="topbar-btn" disabled={!canForward} onClick={forward} aria-label="Forward"><Icon name="arrowRight" size={16} /></button>
         </Tooltip>
       </div>
-    </div>
+    </>
   ), [ctxList, contextsInfo, currentContext, pins, switchContext, togglePin, openContexts, openAws, openAzure, canBack, canForward, back, forward]);
 
   // ---- render -------------------------------------------------------------
@@ -366,7 +359,7 @@ function App() {
 
       {tokenOk && authOk && (
         <TopBar
-          crumb={crumb}
+          lead={topbarLead}
           onNotifications={goEvents}
           onConfigureAi={goAiSettings}
           onRefresh={handleRefresh}
@@ -431,7 +424,6 @@ function App() {
             onSelectCustomResource={onSelectCustomResource}
             argocdInstalled={argocdInstalled}
             onOpenPreferences={goPrefs}
-            headerExtra={navHeaderExtra}
           />
           <div className="nav-backdrop" onClick={drawer.close} aria-hidden="true" />
 

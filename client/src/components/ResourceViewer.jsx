@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import YamlViewer from './YamlViewer';
 import LogsViewer from './LogsViewer';
+import DeploymentLogs from './DeploymentLogs';
 import TerminalViewer from './TerminalViewer';
 import Events from './Events';
 import NamespaceMultiSelect from './NamespaceMultiSelect';
@@ -25,6 +26,8 @@ import { aiActionsFor, buildAiPrompt, askAssistant } from './resources/aiPrompts
 // workloads whose replica count can be scaled / rolled out
 export const SCALABLE = new Set(['deployment', 'statefulSet', 'replicaSet', 'replicationController']);
 export const RESTARTABLE = new Set(['deployment', 'statefulSet', 'daemonSet']);
+// kinds with a Logs action (pods directly; deployments across their pods)
+export const LOGGABLE = new Set(['pod', 'deployment']);
 // kinds whose deletion requires typing the name even for a single item
 const NAME_TYPED_KINDS = new Set(['namespaces', 'namespace', 'nodes', 'node']);
 
@@ -134,18 +137,18 @@ export default function ResourceViewer({
   // ---- bottom panel tabs (used when the shell doesn't own logs/terminal/yaml) ----
   const [tabs, setTabs] = useState([]);
   const [activeTabId, setActiveTabId] = useState(null);
-  const openTab = (type, res, container) => {
+  const openTab = useCallback((type, res, container) => {
     if (!res) return;
-    const id = `${type}:${res.namespace || ''}/${res.name}${container ? `:${container}` : ''}`;
+    const id = `${type}:${resourceType}:${res.namespace || ''}/${res.name}${container ? `:${container}` : ''}`;
     setTabs((prev) => (prev.some((t) => t.id === id) ? prev : [...prev, { id, type, resource: res, resourceType, container }]));
     setActiveTabId(id);
-  };
+  }, [resourceType]);
   const closeTab = (id) => {
     const remaining = tabs.filter((t) => t.id !== id);
     setTabs(remaining);
     if (activeTabId === id) setActiveTabId(remaining.length ? remaining[remaining.length - 1].id : null);
   };
-  const openLogs = (res, container) => (onOpenLogs ? onOpenLogs(container ? { ...res, container } : res) : openTab('logs', res, container));
+  const openLogs = useCallback((res, container) => (onOpenLogs ? onOpenLogs(container ? { ...res, container } : res) : openTab('logs', res, container)), [onOpenLogs, openTab]);
   const openTerminal = (res) => (onOpenTerminal ? onOpenTerminal(res) : openTab('terminal', res));
   const openYaml = (res) => (onOpenYaml ? onOpenYaml(res) : openTab('configuration', res));
 
@@ -159,7 +162,8 @@ export default function ResourceViewer({
   );
   const podMetrics = resourceType === 'pod' ? metricsData?.metrics : undefined;
 
-  const columns = useMemo(() => columnsFor(resourceType, { icon, onNavigate, podMetrics }), [resourceType, icon, onNavigate, podMetrics]);
+  const onRowLogs = LOGGABLE.has(resourceType) ? openLogs : undefined;
+  const columns = useMemo(() => columnsFor(resourceType, { icon, onNavigate, podMetrics, onOpenLogs: onRowLogs }), [resourceType, icon, onNavigate, podMetrics, onRowLogs]);
   const getRowTone = useMemo(() => rowToneFor(resourceType), [resourceType]);
 
   // ---- "Ask <AI tool>" ----
@@ -188,6 +192,8 @@ export default function ResourceViewer({
       if (cns.length > 1) items.push({ icon: 'logs', label: 'Logs', children: cns.map((c) => ({ icon: 'box', label: c, onSelect: () => openLogs(res, c) })) });
       else items.push({ icon: 'logs', label: 'Logs', onSelect: () => openLogs(res, cns[0]) });
       items.push({ icon: 'terminal', label: 'Terminal', onSelect: () => openTerminal(res) });
+    } else if (LOGGABLE.has(resourceType)) {
+      items.push({ icon: 'logs', label: 'Logs', onSelect: () => openLogs(res) });
     }
     items.push({ icon: 'configuration', label: 'Edit YAML', onSelect: () => openYaml(res) });
     if (SCALABLE.has(resourceType)) items.push({ icon: 'scale', label: 'Scale…', onSelect: () => openScale(res) });
@@ -408,7 +414,10 @@ export default function ResourceViewer({
           <div className="bottom-panel-content">
             {tabs.map((t) => (
               <div key={t.id} id={`${uid}-pane-${t.id}`} role="tabpanel" className="tab-pane" hidden={activeTabId !== t.id}>
-                {t.type === 'logs' && (
+                {t.type === 'logs' && t.resourceType === 'deployment' && (
+                  <DeploymentLogs namespace={t.resource.namespace} name={t.resource.name} onClose={() => closeTab(t.id)} />
+                )}
+                {t.type === 'logs' && t.resourceType !== 'deployment' && (
                   <LogsViewer
                     namespace={t.resource.namespace}
                     pod={t.resource.name}
