@@ -736,9 +736,7 @@ body {
 .refresh-menu-label { flex: 1; }
 .refresh-menu-hint { font-size: 0.6875rem; color: var(--text-muted); font-family: var(--mono); }
 
-/* Brand mark: the app icon itself (transparent PNG with its own rounded
-   square), so no tile background or shadow of our own — it must sit cleanly
-   on both the dark and the light sidebar. */
+/* Brand mark: transparent PNG (no baked-in plate) so it follows the sidebar theme. */
 .nav-brand-logo {
   width: 30px;
   height: 30px;
@@ -751,7 +749,7 @@ body {
   width: 30px;
   height: 30px;
   display: block;
-  border-radius: 7px;
+  border-radius: 0;
   object-fit: contain;
 }
 
@@ -4433,7 +4431,7 @@ h3.sec-drawer-section:first-child { margin-top: 0; }
   background: var(--bg-base); color: var(--text-secondary); text-align: center;
 }
 .loading-screen[data-overlay] { position: absolute; inset: 0; z-index: var(--z-dropdown); }
-.loading-screen-logo { width: 72px; height: 72px; border-radius: 18px; animation: loading-pulse 1.6s ease-in-out infinite; }
+.loading-screen-logo { width: 72px; height: 72px; border-radius: 0; animation: loading-pulse 1.6s ease-in-out infinite; }
 .loading-screen-text { margin: 0; font-size: 0.9375rem; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
 .loading-screen-hint { margin: -6px 0 0; font-size: 0.75rem; color: var(--text-muted); }
 .loading-screen-bar { width: 200px; max-width: 80%; height: 3px; border-radius: 999px; background: var(--bg-hover); overflow: hidden; }
