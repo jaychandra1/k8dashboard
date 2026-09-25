@@ -12,7 +12,9 @@
 import http from 'http';
 import crypto from 'crypto';
 import fs from 'fs';
-import { CONFIG_DIR, configFile, findConfigFile } from './lib/paths.mjs';
+import path from 'path';
+import { configFile, findConfigFile } from './lib/paths.mjs';
+import { seal, unseal, needsSealing, needsUnsealing, PURPOSE } from './lib/secret-store.mjs';
 
 // Where the CLI-free AKS token helper (azure-token.js) reads the refresh token.
 // Persisted so kubelogin/az are never needed for app-imported AAD clusters.
@@ -49,18 +51,47 @@ function setSession(tok, tenant) {
   persistAuth();
 }
 
+// Atomic, owner-only write of the auth store. The refresh token inside is
+// sealed by lib/secret-store.mjs (DPAPI-backed on the Windows desktop app,
+// where the 0600 mode below has no effect).
+function writeAuthFile(file, store) {
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(store), { mode: 0o600 });
+  fs.renameSync(tmp, file);
+  try { fs.chmodSync(file, 0o600); } catch { /* best effort */ }
+}
+
 // Keep the on-disk refresh token (read by azure-token.js) in sync with the
 // in-memory session, so CLI-free AKS clusters can mint their own tokens.
 function persistAuth() {
   try {
     if (!session?.refreshToken) return;
-    fs.mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
-    const tmp = `${AZURE_AUTH_FILE_WRITE}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify({ refreshToken: session.refreshToken, tenant: session.tenant, account: session.account }), { mode: 0o600 });
-    fs.renameSync(tmp, AZURE_AUTH_FILE_WRITE);
-    try { fs.chmodSync(AZURE_AUTH_FILE_WRITE, 0o600); } catch { /* best effort */ }
+    writeAuthFile(AZURE_AUTH_FILE_WRITE, {
+      refreshToken: seal(session.refreshToken, PURPOSE.azureRefreshToken),
+      tenant: session.tenant,
+      account: session.account,
+    });
   } catch { /* non-fatal */ }
 }
+
+// Bring the saved refresh token in line with the current protection, in the
+// same file: a plaintext token from an earlier version is sealed once sealing
+// is on (Windows desktop app, token helper verified); a sealed token is
+// re-saved in plaintext if sealing is off, so the token helper can still use it.
+(function syncStoredRefreshToken() {
+  try {
+    const store = JSON.parse(fs.readFileSync(AZURE_AUTH_FILE, 'utf-8'));
+    const token = store?.refreshToken;
+    const P = PURPOSE.azureRefreshToken;
+    if (needsSealing(token, P)) {
+      writeAuthFile(AZURE_AUTH_FILE, { ...store, refreshToken: seal(token, P) });
+    } else if (needsUnsealing(token, P)) {
+      const plain = unseal(token, P);
+      if (plain) writeAuthFile(AZURE_AUTH_FILE, { ...store, refreshToken: plain });
+    }
+  } catch { /* no store yet, or unreadable: nothing to migrate */ }
+})();
 export function getTenant() { return session?.tenant; }
 
 // The loopback listener never outlives a sign-in attempt by more than this.

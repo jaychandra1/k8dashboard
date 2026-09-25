@@ -28,9 +28,87 @@ const { pathToFileURL } = require('url');
 // else may write to stdout on this path (stderr is fine).
 const TOKEN_HELPER_FILES = { eks: 'eks-token.js', azure: 'azure-token.js' };
 
+// The data key lib/secret-store.mjs seals the app's own secrets with (Azure
+// refresh token, AI provider API key). Windows only: DPAPI through safeStorage,
+// with no prompts or keyring dependency. On macOS/Linux those files keep their
+// 0600 mode, as before. Only the GUI creates the key; the Azure token helper
+// just reads it.
+function readSecretKey(create) {
+  if (process.platform !== 'win32') return null;
+  const { safeStorage } = require('electron');
+  const { loadSecretKey } = require('./secret-key.cjs');
+  const file = path.join(require('os').homedir(), '.config', 'kubepilot', 'secret.key');
+  return loadSecretKey({ file, safeStorage, create, warn: (m) => console.warn(`[KubePilot] ${m}`) });
+}
+
+// The Azure helper can't share the GUI's Chromium profile: while the app is
+// running, Chromium holds that profile open and a second process using it
+// crashes. The helper therefore gets its own small profile beside it, which
+// mirrors only the GUI profile's os_crypt entry, so safeStorage here unwraps
+// the data key the GUI wrapped. (That entry lives in Chromium's Local State;
+// the GUI verifies this still works once per app version, see
+// helperCanOpenSecrets(), before any Azure token is sealed.)
+// Returns false (changing nothing) if the profile can't be set up: the caller
+// then runs without the key, and the GUI's self-test reports the same, so no
+// Azure token is ever sealed that this helper couldn't open.
+function useHelperProfile() {
+  const fs = require('fs');
+  let appData, name;
+  try {
+    // Electron's path service isn't ready this early in helper mode
+    // (app.getPath('userData') and ('appData') both throw), so resolve the GUI
+    // profile the way Electron does on Windows: %APPDATA%\<productName>.
+    appData = process.env.APPDATA || path.join(require('os').homedir(), 'AppData', 'Roaming');
+    const pkg = require(path.join(__dirname, '..', 'package.json'));
+    name = pkg.productName || pkg.name;
+    if (!name) return false;
+  } catch {
+    return false;
+  }
+  const guiProfile = path.join(appData, name);
+  const helperProfile = path.join(appData, `${name}-token-helper`);
+  try {
+    const osCrypt = JSON.parse(fs.readFileSync(path.join(guiProfile, 'Local State'), 'utf8')).os_crypt;
+    if (osCrypt) {
+      const target = path.join(helperProfile, 'Local State');
+      let current = null;
+      try { current = JSON.parse(fs.readFileSync(target, 'utf8')).os_crypt; } catch { /* first run */ }
+      if (JSON.stringify(current) !== JSON.stringify(osCrypt)) {
+        fs.mkdirSync(helperProfile, { recursive: true });
+        const tmp = `${target}.${process.pid}.tmp`;
+        fs.writeFileSync(tmp, JSON.stringify({ os_crypt: osCrypt }), { mode: 0o600 });
+        fs.renameSync(tmp, target);
+      }
+    }
+  } catch { /* no GUI profile yet: nothing can have been sealed either */ }
+  try {
+    app.setPath('userData', helperProfile);
+  } catch {
+    return false;
+  }
+  return true;
+}
+
+const keyFingerprint = (b64) => require('crypto').createHash('sha256').update(String(b64)).digest('hex').slice(0, 16);
+
 function runTokenHelper(argv) {
   const [helper, ...args] = argv;
   const fail = (message) => process.stderr.write(`kubepilot token-helper: ${message}\n`, () => app.exit(1));
+  // CLI mode: any error must end the process with a message on stderr, never
+  // Electron's "A JavaScript error occurred in the main process" dialog, which
+  // would block kubectl while it waits for a token.
+  const onFatal = (err) => fail((err && err.message) || String(err));
+  process.on('uncaughtException', onFatal);
+  process.on('unhandledRejection', onFatal);
+  // `--token-helper selftest`: print the fingerprint (never the key) of the data
+  // key as the Azure helper would see it. Run by the GUI once per app version.
+  if (helper === 'selftest') {
+    if (process.platform !== 'win32' || !useHelperProfile()) { process.stdout.write('none', () => app.exit(0)); return; }
+    app.whenReady()
+      .then(() => { const key = readSecretKey(false); process.stdout.write(key ? keyFingerprint(key) : 'none', () => app.exit(0)); })
+      .catch((err) => fail((err && err.message) || String(err)));
+    return;
+  }
   const file = TOKEN_HELPER_FILES[helper];
   if (!file) {
     fail(`unknown helper "${helper ?? ''}" (expected eks or azure)`);
@@ -38,7 +116,17 @@ function runTokenHelper(argv) {
   }
   // macOS: a sub-second CLI run should not bounce a Dock icon.
   try { app.dock?.hide(); } catch { /* not macOS / not available */ }
-  import(pathToFileURL(path.join(__dirname, '..', file)).href)
+  // The Azure helper opens the sealed refresh token, and safeStorage works only
+  // once the app is ready (Windows). The EKS helper needs no secret: no wait.
+  const withKey = helper === 'azure' && process.platform === 'win32' && useHelperProfile();
+  const prepare = withKey
+    ? app.whenReady().then(() => {
+      const key = readSecretKey(false);
+      if (key) process.env.KUBEPILOT_SECRET_KEY = key; // read and removed by lib/secret-store.mjs
+    })
+    : Promise.resolve();
+  prepare
+    .then(() => import(pathToFileURL(path.join(__dirname, '..', file)).href))
     .then((mod) => mod.run(args))
     .then((json) => process.stdout.write(json, () => app.exit(0)))
     .catch((err) => fail((err && err.message) || String(err)));
@@ -65,6 +153,9 @@ const READY_TIMEOUT_MS = 30000;
 let backendPort = null;
 let backendOrigin = null; // e.g. http://127.0.0.1:3001
 let authToken = null;
+let secretKey = null;        // base64 data key for lib/secret-store.mjs (Windows), or null
+let secretKeyLoaded = false;
+let azureSealing = false;    // the token helper was verified to open sealed secrets
 let serverProcess = null;
 let mainWindow = null;
 
@@ -185,10 +276,45 @@ function backendEnv({ fixedPath, port, token }) {
   env.HOST = '127.0.0.1';
   env.PORT = String(port);
   env.KUBEPILOT_TOKEN = token;
+  // Only the app's own DPAPI-wrapped key is forwarded (never an inherited one);
+  // lib/secret-store.mjs removes it from the backend's env as soon as it loads.
+  if (secretKey) env.KUBEPILOT_SECRET_KEY = secretKey;
+  else delete env.KUBEPILOT_SECRET_KEY;
+  // The AI key is only read here, so it is always sealed; the Azure refresh
+  // token also feeds the separate token helper, so only once that is verified.
+  env.KUBEPILOT_SECRET_SCOPE = azureSealing ? 'llm,azure' : 'llm';
   // The app binary the backend must write into kubeconfig exec entries
   // (`<exe> --token-helper …`); the utility process's own execPath may differ.
   env.KUBEPILOT_APP_EXEC = process.execPath;
   return env;
+}
+
+// Can the Azure token helper (its own process and Chromium profile) open
+// secrets sealed with `key`? Answered by `--token-helper selftest` once per
+// app version and key, and remembered in ~/.config/kubepilot/secret-check.json.
+// Until the answer is known, Azure tokens stay in plaintext (the check runs in
+// the background; sealing starts from the next launch).
+function helperCanOpenSecrets(key) {
+  const fs = require('fs');
+  const { execFile } = require('child_process');
+  const file = path.join(os.homedir(), '.config', 'kubepilot', 'secret-check.json');
+  const version = app.getVersion();
+  const fingerprint = keyFingerprint(key);
+  try {
+    const c = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (c.version === version && c.key === fingerprint) return c.helper === true;
+  } catch { /* not checked yet */ }
+  const args = app.isPackaged ? ['--token-helper', 'selftest'] : [app.getAppPath(), '--token-helper', 'selftest'];
+  execFile(process.execPath, args, { timeout: 30000, windowsHide: true }, (err, stdout) => {
+    const helper = !err && String(stdout).trim() === fingerprint;
+    try {
+      const tmp = `${file}.${process.pid}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify({ version, key: fingerprint, helper, checkedAt: new Date().toISOString() }), { mode: 0o600 });
+      fs.renameSync(tmp, file);
+    } catch { /* checked again next launch */ }
+    if (!helper) console.warn('[KubePilot] token helper cannot open sealed secrets; Azure sign-ins stay unencrypted');
+  });
+  return false;
 }
 
 // Pick a port we can bind *right now*. Prefer 3001 (documented MCP URL); fall
@@ -544,6 +670,13 @@ function clustersMenu() {
 
 async function boot() {
   createWindow();
+
+  // Unwrap (or, on first run, create) the secrets key before the backend starts.
+  if (!secretKeyLoaded) {
+    secretKeyLoaded = true;
+    try { secretKey = readSecretKey(true); } catch (err) { console.warn(`[KubePilot] secret key unavailable: ${err.message}`); }
+    if (secretKey) azureSealing = helperCanOpenSecrets(secretKey);
+  }
 
   // Fresh credentials and a port we own for every launch.
   authToken = crypto.randomBytes(32).toString('base64url');

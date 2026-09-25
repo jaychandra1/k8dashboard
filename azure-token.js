@@ -17,6 +17,7 @@
 import fs from 'fs';
 import { pathToFileURL } from 'url';
 import { CONFIG_DIR, configFile, findConfigFile } from './lib/paths.mjs';
+import { seal, unseal, isSealed, PURPOSE } from './lib/secret-store.mjs';
 
 const AAD = 'https://login.microsoftonline.com';
 // Azure CLI's well-known first-party public client — the same one the app's
@@ -28,16 +29,34 @@ const AUTH_FILE_WRITE = configFile('azure-auth.json');
 const argOf = (argv, name) => { const i = argv.indexOf(`--${name}`); return i >= 0 ? argv[i + 1] : undefined; };
 
 // Persist the rotated refresh token atomically (AAD returns a fresh one on each
-// redemption; keeping the store current avoids premature re-sign-in).
-function saveRefreshToken(store, refreshToken) {
+// redemption; keeping the store current avoids premature re-sign-in). Sealed by
+// lib/secret-store.mjs when a key is available (Windows desktop app).
+export function saveRefreshToken(store, refreshToken) {
   try {
-    const next = { ...store, refreshToken };
+    const next = { ...store, refreshToken: seal(refreshToken, PURPOSE.azureRefreshToken) };
     fs.mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
     const tmp = `${AUTH_FILE_WRITE}.${process.pid}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(next), { mode: 0o600 });
     fs.renameSync(tmp, AUTH_FILE_WRITE);
     try { fs.chmodSync(AUTH_FILE_WRITE, 0o600); } catch { /* best effort */ }
   } catch { /* non-fatal: the current token still authenticated this call */ }
+}
+
+/**
+ * The auth store and its refresh token in plaintext (sealed or legacy value).
+ * Throws the user-facing "sign in" errors when there is no usable session.
+ */
+export function readStoredRefreshToken() {
+  let store;
+  try { store = JSON.parse(fs.readFileSync(AUTH_FILE, 'utf-8')); }
+  catch { throw new Error('Not signed in to Azure — open KubePilot and sign in to Azure.'); }
+  const refreshToken = unseal(store?.refreshToken, PURPOSE.azureRefreshToken);
+  if (!refreshToken) {
+    throw new Error(isSealed(store?.refreshToken)
+      ? 'The saved Azure sign-in can\'t be opened on this machine or account — sign in to Azure in KubePilot again.'
+      : 'No Azure session — sign in to Azure in KubePilot.');
+  }
+  return { store, refreshToken };
 }
 
 /**
@@ -48,10 +67,7 @@ export async function run(argv = []) {
   const serverId = argOf(argv, 'server-id');
   if (!serverId) throw new Error('--server-id is required');
 
-  let store;
-  try { store = JSON.parse(fs.readFileSync(AUTH_FILE, 'utf-8')); }
-  catch { throw new Error('Not signed in to Azure — open KubePilot and sign in to Azure.'); }
-  if (!store.refreshToken) throw new Error('No Azure session — sign in to Azure in KubePilot.');
+  const { store, refreshToken } = readStoredRefreshToken();
 
   const tenant = argOf(argv, 'tenant') || store.tenant || 'organizations';
   const r = await fetch(`${AAD}/${tenant}/oauth2/v2.0/token`, {
@@ -60,7 +76,7 @@ export async function run(argv = []) {
     body: new URLSearchParams({
       grant_type: 'refresh_token',
       client_id: CLIENT_ID,
-      refresh_token: store.refreshToken,
+      refresh_token: refreshToken,
       scope: `${serverId}/.default openid profile offline_access`,
     }),
   });
@@ -68,7 +84,7 @@ export async function run(argv = []) {
   if (!r.ok || !t.access_token) {
     throw new Error((t.error_description || t.error || `token request failed (${r.status})`).split('\n')[0]);
   }
-  if (t.refresh_token && t.refresh_token !== store.refreshToken) saveRefreshToken(store, t.refresh_token);
+  if (t.refresh_token && t.refresh_token !== refreshToken) saveRefreshToken(store, t.refresh_token);
 
   // Report the token's real lifetime so clients refresh in time (60s margin).
   const expirationTimestamp = new Date(Date.now() + ((t.expires_in || 3600) - 60) * 1000).toISOString();

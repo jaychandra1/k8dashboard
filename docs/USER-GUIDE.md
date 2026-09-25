@@ -214,7 +214,7 @@ Imported contexts are merged into your kubeconfig. The existing file is **backed
 | `LOG_LEVEL` | `debug` `info` `warn` `error` | `info` |
 | `TRIVY_VERSION` | Pin or `latest` for on-demand Trivy download | `0.74.0` |
 
-App data lives in `~/.config/kubepilot` (token, assistant config, scan cache). Logs are JSON lines on stdout; the request log never contains query strings, headers or tokens.
+App data lives in `~/.config/kubepilot` (token, assistant config, scan cache). On Windows the desktop app encrypts the secrets it keeps there, the Azure sign-in (`azure-auth.json`) and the AI provider API key (`config.json`), with a per-user key protected by Windows DPAPI (`secret.key`); copied to another machine or account they cannot be opened, and you simply sign in again. AWS credentials stay in the standard `~/.aws` files, which the AWS CLI and SDK read directly. Logs are JSON lines on stdout; the request log never contains query strings, headers or tokens.
 
 ### 1.10 Troubleshooting
 

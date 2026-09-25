@@ -15,6 +15,7 @@ import dns from 'dns';
 import fs from 'fs';
 import { isIP, isIPv4, isIPv6 } from 'net';
 import { CONFIG_DIR, configFile, findConfigFile } from './lib/paths.mjs';
+import { seal, unseal, needsSealing, PURPOSE } from './lib/secret-store.mjs';
 
 const MAX_TOOL_ITERATIONS = 12;
 const MAX_TOOL_OUTPUT = 14000; // chars — keep tool results bounded
@@ -32,7 +33,24 @@ const writeConfig = (cfg) => {
   try { fs.chmodSync(dest, 0o600); } catch {}
 };
 
-let stored = readConfig().llm || null; // { baseUrl, apiKey, model }
+// The saved connection with its API key in plaintext (in memory only). On
+// disk the key is sealed by lib/secret-store.mjs when a key is available (the
+// Windows desktop app); a plaintext key saved by an earlier version is
+// re-saved sealed here. A sealed key that can't be opened (another machine or
+// account, or a dev run without the app's key) reads as "not configured".
+export function loadStoredLlm() {
+  const cfg = readConfig();
+  const llm = cfg.llm;
+  if (!llm || typeof llm !== 'object') return null;
+  const apiKey = unseal(llm.apiKey, PURPOSE.llmApiKey);
+  if (!apiKey) return null;
+  if (needsSealing(llm.apiKey, PURPOSE.llmApiKey)) {
+    try { writeConfig({ ...cfg, llm: { ...llm, apiKey: seal(apiKey, PURPOSE.llmApiKey) } }); } catch { /* retried next start */ }
+  }
+  return { ...llm, apiKey };
+}
+
+let stored = loadStoredLlm(); // { baseUrl, apiKey, model }
 
 const envConfig = () => {
   const baseUrl = process.env.LLM_BASE_URL;
@@ -523,7 +541,7 @@ ${ctx?.selected ? `- Selected resource: ${ctx.selected.type || ''} ${ctx.selecte
     try {
       stored = { baseUrl, apiKey, model };
       const cfg = readConfig();
-      cfg.llm = stored;
+      cfg.llm = { ...stored, apiKey: seal(apiKey, PURPOSE.llmApiKey) };
       writeConfig(cfg);
     } catch (err) {
       return res.status(500).json({ error: `Could not save the configuration: ${err.message}` });
