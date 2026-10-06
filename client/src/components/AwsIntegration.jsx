@@ -6,6 +6,12 @@ import Button from './ui/Button';
 import { getJson, postJson, errorMessage } from '../lib/api';
 
 const keyOf = (c) => `${c.region}/${c.name}`;
+// Already in the kubeconfig for the same cluster but signed in some other way:
+// selecting it switches its entry to the current sign-in ("Update").
+export const isUpdatable = (c) => !!c.imported && !c.conflict && c.current === false;
+// Already added and nothing to do (uses this sign-in), or a different cluster
+// that holds the same name (never overwritten).
+const isLocked = (c) => !!c.imported && !isUpdatable(c);
 
 export const ACCESS_KEY_RE = /^(AKIA|ASIA)[A-Z0-9]{16}$/;
 export const REGION_RE = /^[a-z]{2}-[a-z]+-\d$/;
@@ -61,6 +67,7 @@ export default function AwsIntegration({ onClose, onImported }) {
   const [error, setError] = useState(null);
   const [touched, setTouched] = useState({});
   const [result, setResult] = useState(null);
+  const [signedIn, setSignedIn] = useState(null); // { account, accountName, role } after an SSO sign-in
   const pollRef = useRef(null);
 
   const checkStatus = useCallback(async () => {
@@ -140,6 +147,7 @@ export default function AwsIntegration({ onClose, onImported }) {
   };
   const discoverSso = async (account, role) => {
     setActiveProfile(null);
+    setSignedIn({ account, role, accountName: ssoAccounts.find((a) => a.accountId === account)?.accountName || '' });
     setPhase('listing'); setError(null);
     try { applyClusters(await postJson('/api/aws/clusters', { account, role, regions: regionList() })); }
     catch (e) { setError(errorMessage(e)); setPhase('list'); }
@@ -147,6 +155,7 @@ export default function AwsIntegration({ onClose, onImported }) {
 
   const discover = async (profile) => {
     setActiveProfile(profile || null);
+    setSignedIn(null);
     setPhase('listing'); setError(null); setDevice(null);
     try { applyClusters(await postJson('/api/aws/clusters', { profile: profile || undefined, regions: regionList() })); }
     catch (e) { setError(errorMessage(e)); setPhase('list'); }
@@ -205,7 +214,17 @@ export default function AwsIntegration({ onClose, onImported }) {
 
   const q = filter.toLowerCase();
   const visible = clusters.filter((c) => !q || c.name.toLowerCase().includes(q) || c.region.toLowerCase().includes(q));
-  const selectable = visible.filter((c) => !c.imported);
+  const selectable = visible.filter((c) => !isLocked(c));
+  const chosen = clusters.filter((c) => sel.has(keyOf(c)));
+  const addCount = chosen.filter((c) => !c.imported).length;
+  const updateCount = chosen.length - addCount;
+  const actionLabel = addCount && updateCount
+    ? `Add ${addCount} · update ${updateCount}`
+    : updateCount
+      ? `Update ${updateCount} cluster${updateCount === 1 ? '' : 's'}`
+      : `Add ${addCount} cluster${addCount === 1 ? '' : 's'}`;
+  const currentCount = clusters.filter((c) => c.imported && c.current).length;
+  const allAdded = clusters.length > 0 && clusters.every((c) => c.imported);
   const allSelected = selectable.length > 0 && selectable.every((c) => sel.has(keyOf(c)));
   const toggle = (c) => setSel((s) => { const n = new Set(s); const k = keyOf(c); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   const toggleAll = () => setSel((s) => { const n = new Set(s); if (allSelected) selectable.forEach((c) => n.delete(keyOf(c))); else selectable.forEach((c) => n.add(keyOf(c))); return n; });
@@ -391,6 +410,21 @@ export default function AwsIntegration({ onClose, onImported }) {
 
       {phase === 'list' && (
         <>
+          {signedIn && (
+            <div className="azure-success" role="status">
+              <Icon name="check" size={14} strokeWidth={2.6} />
+              <span>
+                Signed in to AWS SSO as <b>{signedIn.role}</b> in <b>{signedIn.accountName || signedIn.account}</b>{signedIn.accountName ? ` (${signedIn.account})` : ''}.
+                {currentCount > 0 && <> {currentCount === 1 ? 'The cluster' : `The ${currentCount} clusters`} marked “uses this sign-in” {currentCount === 1 ? 'reconnects' : 'reconnect'} with it automatically — nothing else to do.</>}
+              </span>
+            </div>
+          )}
+          {allAdded && selectable.length === 0 && !signedIn && (
+            <div className="azure-success" role="status">
+              <Icon name="check" size={14} strokeWidth={2.6} />
+              <span>Every cluster found here is already in your kubeconfig.</span>
+            </div>
+          )}
           <div className="azure-toolbar">
             <label htmlFor={f('filter')} className="sr-only">Filter clusters</label>
             <input id={f('filter')} type="search" className="azure-search" placeholder="Filter by name or region…" value={filter} onChange={(e) => setFilter(e.target.value)} />
@@ -405,23 +439,38 @@ export default function AwsIntegration({ onClose, onImported }) {
                   <input type="checkbox" checked={allSelected} onChange={toggleAll} disabled={selectable.length === 0} />
                   <span className="azure-selall-label">Select all</span>
                 </label>
-                {visible.map((c) => (
-                  <label key={keyOf(c)} className={`azure-row ${c.imported ? 'imported' : ''}`}>
-                    <input type="checkbox" checked={c.imported || sel.has(keyOf(c))} disabled={c.imported} onChange={() => toggle(c)} />
-                    <span className="azure-cluster">
-                      <span className="azure-cname">{c.name}</span>
-                      <span className="azure-cmeta">{c.region}</span>
-                    </span>
-                    {c.imported && <span className="azure-badge added"><Icon name="check" size={12} strokeWidth={2.6} /> Added</span>}
-                  </label>
-                ))}
+                {visible.map((c) => {
+                  const updatable = isUpdatable(c);
+                  const locked = isLocked(c);
+                  const picked = sel.has(keyOf(c));
+                  let meta = c.region;
+                  if (updatable) meta = `${c.region} · already added with other credentials — select to switch it to this sign-in`;
+                  else if (c.conflict) meta = `${c.region} · your kubeconfig already has a different cluster named “${c.name}”; it is left unchanged`;
+                  return (
+                    <label key={keyOf(c)} className={`azure-row ${locked ? 'imported' : ''}`}>
+                      <input type="checkbox" checked={locked ? !c.conflict : picked} disabled={locked} onChange={() => toggle(c)} />
+                      <span className="azure-cluster">
+                        <span className="azure-cname">{c.name}</span>
+                        <span className="azure-cmeta" title={meta}>{meta}</span>
+                      </span>
+                      {c.imported && c.conflict && <span className="azure-badge conflict"><Icon name="warning" size={12} /> Name in use</span>}
+                      {c.imported && !c.conflict && c.current && <span className="azure-badge added"><Icon name="check" size={12} strokeWidth={2.6} /> Uses this sign-in</span>}
+                      {updatable && (picked
+                        ? <span className="azure-badge update"><Icon name="refresh" size={12} /> Will update</span>
+                        : <span className="azure-badge muted">Added</span>)}
+                      {c.imported && !c.conflict && c.current === undefined && <span className="azure-badge added"><Icon name="check" size={12} strokeWidth={2.6} /> Added</span>}
+                    </label>
+                  );
+                })}
               </>
             )}
           </div>
           <div className="action-modal-actions">
-            <Button variant="ghost" className="action-skip" onClick={skip} title="Continue without adding clusters">Skip</Button>
+            {chosen.length > 0 && <Button variant="ghost" className="action-skip" onClick={skip} title="Close without changing your kubeconfig">Skip</Button>}
             <Button variant="secondary" onClick={cancelAndClose}>Cancel</Button>
-            <Button variant="primary" disabled={sel.size === 0} onClick={doImport}>Add {sel.size} cluster{sel.size === 1 ? '' : 's'}</Button>
+            {chosen.length > 0
+              ? <Button variant="primary" onClick={doImport}>{actionLabel}</Button>
+              : <Button variant="primary" onClick={skip} title="Close and reconnect with this sign-in">Done</Button>}
           </div>
         </>
       )}
@@ -431,9 +480,18 @@ export default function AwsIntegration({ onClose, onImported }) {
       {phase === 'done' && (
         <div className="azure-center azure-msg" role="status">
           <div className="azure-done-icon"><Icon name="check" size={26} strokeWidth={2.6} /></div>
-          <p><b>{result?.imported?.length || 0}</b> cluster{(result?.imported?.length || 0) === 1 ? '' : 's'} added to your kubeconfig.</p>
+          {(() => {
+            const updatedN = result?.updated?.length || 0;
+            const addedN = Math.max(0, (result?.imported?.length || 0) - updatedN);
+            return (
+              <>
+                {(addedN > 0 || updatedN === 0) && <p><b>{addedN}</b> cluster{addedN === 1 ? '' : 's'} added to your kubeconfig.</p>}
+                {updatedN > 0 && <p><b>{updatedN}</b> cluster{updatedN === 1 ? '' : 's'} switched to this sign-in.</p>}
+              </>
+            );
+          })()}
           {result?.failed?.length > 0 && <div className="azure-failed">{result.failed.map((fl) => <div key={fl.name}><b>{fl.name}</b>: {fl.error}</div>)}</div>}
-          <p className="azure-dim">They're now available in the context selector.</p>
+          <p className="azure-dim">They're available in the cluster selector.</p>
           <Button variant="primary" onClick={onClose}>Done</Button>
         </div>
       )}

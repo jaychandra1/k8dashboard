@@ -40,9 +40,10 @@ import {
 } from './lib/kubectl.mjs';
 import {
   restMappingFor, restartPatch, restartTarget, scaleTarget, scalePatch, argoSyncPatch, argoRefreshPatch,
-  dropFinalizersPatch, parseApplyDocuments, requestOptions, patchOptions, PatchStrategy, applyDocuments,
+  dropFinalizersPatch, parseApplyDocuments, validateApplyDocument, requestOptions, patchOptions, PatchStrategy, applyDocuments, applyDocumentsEach,
   deleteResource, execInPod, resourceLabel, labelSelectorFor,
 } from './lib/k8s-ops.mjs';
+import { eksEntryFor as eksEntryForKc, sameEksCluster, eksClusterStatus as eksClusterStatusKc } from './lib/eks-kubeconfig.mjs';
 
 // node-pty powers the pod terminal (a real PTY bridged to `kubectl exec`). Load
 // it defensively so a missing/unbuildable native module never crashes the whole
@@ -1028,32 +1029,41 @@ const parseRegions = (raw) => {
   return out;
 };
 
+// Discovered cluster vs kubeconfig (lib/eks-kubeconfig.mjs): imported /
+// conflict (a different cluster holds the name) / current (uses this sign-in).
+const eksEntryFor = (name) => eksEntryForKc(kubeConfig, name);
+async function eksClusterStatus(clusters, auth) {
+  return eksClusterStatusKc(kubeConfig, clusters, auth, auth.sso ? await awsEks.listProfiles() : []);
+}
+
 app.post('/api/aws/clusters', async (req, res) => {
   const { profile, account, role } = req.body || {};
   const regions = parseRegions(req.body?.regions);
   if (regions === null) return bad(res, 'regions', 'regions must be AWS region codes like eu-west-1 (at most 30)');
   try {
-    const existing = new Set((kubeConfig?.contexts || []).map((c) => c.name));
     // Active SSO session with a chosen account + role → list that account's clusters.
     if (awsSession?.sso?.accessToken && account && role) {
       const credentials = await awsEks.ssoRoleCredentials(awsSession.sso, account, role);
       awsSession.ssoSelected = { account, role, credentials };
       const { clusters, regions: scannedCount, scanned } = await awsEks.discoverClusters({ credentials, account, regions });
       awsSession.ssoClusters = new Map(clusters.map((c) => [`${c.region}/${c.name}`, { ...c, account, role }]));
-      return res.json({ clusters: clusters.map((c) => ({ name: c.name, region: c.region, account, imported: existing.has(c.name) })), regions: scannedCount, scanned });
+      const status = await eksClusterStatus(clusters.map((c) => ({ ...c, account })), { sso: { startUrl: awsSession.sso.startUrl, account, role } });
+      return res.json({ clusters: status, regions: scannedCount, scanned });
     }
     // Otherwise use a profile's credentials (access-key / role / existing).
     const { fromNodeProviderChain } = await import('@aws-sdk/credential-providers');
     const credentials = await fromNodeProviderChain(profile ? { profile } : {})();
     const { clusters, regions: scannedCount, scanned } = await awsEks.discoverClusters({ credentials, regions });
-    res.json({ clusters: clusters.map((c) => ({ name: c.name, region: c.region, imported: existing.has(c.name) })), regions: scannedCount, scanned });
+    res.json({ clusters: await eksClusterStatus(clusters, { profile }), regions: scannedCount, scanned });
   } catch (e) { res.status(500).json({ error: firstLine(e.message) }); }
 });
 
 app.post('/api/aws/import', async (req, res) => {
   const { clusters = [], profile } = req.body || {};
   if (!Array.isArray(clusters) || clusters.length === 0) return res.status(400).json({ error: 'No clusters selected' });
-  const imported = [], failed = [];
+  // `imported` lists every cluster written (older clients count it); `updated` is
+  // the subset that replaced an existing entry for the same cluster.
+  const imported = [], updated = [], failed = [];
   let fromNodeProviderChain;
   try {
     ({ fromNodeProviderChain } = await import('@aws-sdk/credential-providers'));
@@ -1064,6 +1074,11 @@ app.post('/api/aws/import', async (req, res) => {
 
   for (const c of clusters) {
     if (!isResourceName(c?.name) || !/^[a-z]{2}(-[a-z]+)+-\d$/.test(String(c?.region || ''))) { failed.push({ name: typeof c?.name === 'string' ? c.name.slice(0, 100) : '?', error: 'Missing or invalid cluster name or region' }); continue; }
+    const existingEntry = eksEntryFor(c.name);
+    if (existingEntry && !sameEksCluster(existingEntry, c)) {
+      failed.push({ name: c.name, error: `The name "${c.name}" is already used by a different cluster in your kubeconfig, so it was left unchanged.` });
+      continue;
+    }
     try {
       let credentials, credProfile = profile || undefined;
       const ssoInfo = awsSession?.ssoClusters?.get(`${c.region}/${c.name}`);
@@ -1086,16 +1101,17 @@ app.post('/api/aws/import', async (req, res) => {
       }
       await awsEks.writeCluster({ credentials, region: c.region, name: c.name, alias: c.name, profile: credProfile });
       imported.push(c.name);
+      if (existingEntry) updated.push(c.name);
     } catch (e) {
       if (awsEks.KubeconfigParseError && e instanceof awsEks.KubeconfigParseError) {
-        return res.status(409).json({ error: firstLine(e.message), code: 'kubeconfig_unparseable', imported, failed });
+        return res.status(409).json({ error: firstLine(e.message), code: 'kubeconfig_unparseable', imported, updated, failed });
       }
       failed.push({ name: c.name, error: firstLine(e.message) });
     }
   }
   // Keep the user on the cluster they were already using.
   reloadPreservingContext();
-  res.json({ imported, failed, contexts: kubeConfig?.contexts.map((c) => c.name) || [], currentContext });
+  res.json({ imported, updated, failed, contexts: kubeConfig?.contexts.map((c) => c.name) || [], currentContext });
 });
 
 // ------------------------------------------------------------------
@@ -1913,15 +1929,36 @@ app.put('/api/yaml/:namespace/:kind/:name', mcpWriteGate, async (req, res) => {
 
 // Apply arbitrary YAML by content (no resource in the path). Used by the MCP
 // apply_yaml tool. Body: { yaml }
+// Apply manifests (== `kubectl apply --server-side -f -`), used by the "Apply
+// manifests" dialog and the MCP apply tool. Body: { yaml, dryRun?, namespace? }
+//   namespace  for documents without metadata.namespace (like `kubectl -n`);
+//              defaults to the context's namespace
+//   dryRun     server-side dry run: validated and admitted, nothing persisted
+// Every document is checked before any is sent, so a malformed file applies
+// nothing; then each is applied in order, continuing past failures like
+// kubectl. Reply: { success, message, results: [{ ok, kind, name, namespace,
+// label, message | error }], dryRun } — HTTP 422 `apply_failed` when any failed.
 app.post('/api/apply', mcpWriteGate, async (req, res) => {
   try {
     if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
-    const { yaml: yamlText } = req.body || {};
+    const { yaml: yamlText, namespace } = req.body || {};
+    const dryRun = req.body?.dryRun === true;
+    if (namespace !== undefined && namespace !== null && namespace !== '' && !isDnsLabel(namespace)) return bad(res, 'namespace');
     const docs = parseApplyDocuments(yamlText);
-    // Server-side apply, one document at a time (== `kubectl apply -f -`).
-    const messages = await applyDocuments(kubeConfig, docs, { scope: discoveryScope(), defaultNamespace: contextNamespace() });
-    cache.clear();
-    res.json({ success: true, message: messages.join('\n') || 'Applied' });
+    docs.forEach((doc, i) => {
+      try { validateApplyDocument(doc); } catch (e) { throw badRequest(docs.length > 1 ? `Document ${i + 1}: ${e.message}` : e.message, 'invalid_yaml'); }
+    });
+    const results = await applyDocumentsEach(kubeConfig, docs, { scope: discoveryScope(), defaultNamespace: namespace || contextNamespace(), dryRun });
+    if (!dryRun) cache.clear();
+    const message = results.map((r) => (r.ok ? r.message : `${r.label}: ${r.error}`)).join('\n');
+    const failedDocs = results.filter((r) => !r.ok);
+    if (failedDocs.length) {
+      const error = failedDocs.length === results.length && results.length === 1
+        ? failedDocs[0].error
+        : `${failedDocs.length} of ${results.length} manifests failed — ${failedDocs[0].label}: ${failedDocs[0].error}`;
+      return res.status(422).json({ error, code: 'apply_failed', message, results, dryRun });
+    }
+    res.json({ success: true, message: message || 'Applied', results, dryRun });
   } catch (error) {
     fail(res, error);
   }

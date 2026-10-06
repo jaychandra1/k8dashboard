@@ -166,6 +166,16 @@ describe('ResourceViewer', () => {
     expect(screen.getAllByRole('columnheader').map((th) => th.textContent)).not.toContain('Logs');
   });
 
+  it('Create opens the Apply manifests dialog with the selected namespace preselected', async () => {
+    const user = userEvent.setup();
+    renderViewer({ selectedNamespaces: ['ns-a'], context: 'dev-env-cluster' });
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+    const dlg = await screen.findByRole('dialog', { name: 'Apply manifests' }, { timeout: 5000 });
+    expect(within(dlg).getByRole('combobox', { name: 'Namespace for manifests without one' })).toHaveValue('ns-a');
+    await user.click(within(dlg).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog', { name: 'Apply manifests' })).toBeNull();
+  }, 15000);
+
   it('validates the scale form', () => {
     expect(validateReplicas('')).toMatch(/Enter/);
     expect(validateReplicas('1.5')).toMatch(/whole number/);

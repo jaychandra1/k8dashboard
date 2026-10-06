@@ -931,6 +931,14 @@ body {
 .azure-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 0.6875rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
 .azure-badge.added { background: var(--green-tint); color: var(--green); }
 .azure-badge.muted { background: var(--bg-base); color: var(--text-muted); border: 1px solid var(--border); }
+.azure-badge.update { background: var(--accent-tint-strong); color: var(--link); }
+.azure-badge.conflict { background: var(--yellow-tint); color: var(--yellow); }
+/* Confirmation after a cloud sign-in (e.g. a refreshed AWS SSO session). */
+.azure-success {
+  display: flex; align-items: flex-start; gap: 8px; margin-bottom: 12px; padding: 9px 12px;
+  background: var(--green-tint); color: var(--text); border-radius: 7px; font-size: 0.75rem; line-height: 1.5;
+}
+.azure-success > svg { color: var(--green); flex: none; margin-top: 2px; }
 .azure-admin { display: flex; align-items: center; gap: 8px; margin: 12px 2px 2px; font-size: 0.75rem; color: var(--text-secondary); cursor: pointer; }
 .dd-search input {
   flex: 1;
@@ -3879,6 +3887,42 @@ button.sec-tr.row.sel { background: var(--accent-tint); }
 .ui-modal-input[aria-invalid='true'] { border-color: var(--red); }
 .ui-modal-error { display: flex; align-items: center; gap: 6px; margin: 10px 0 0; padding: 8px 10px; background: var(--red-tint); border-radius: var(--radius-sm); color: var(--red); font-size: 0.78125rem; }
 .ui-modal-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; flex-wrap: wrap; }
+
+/* ---- Apply manifests dialog (create resources from YAML) ---- */
+.apply-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.apply-spacer { flex: 1; }
+.apply-ns-label { font-size: 0.7188rem; color: var(--text-muted); }
+.apply-select {
+  height: 30px; padding: 0 8px; border-radius: 7px; border: 1px solid var(--border-strong);
+  background: var(--bg-elevated); color: var(--text); font-size: 0.75rem; font-family: var(--font);
+}
+.apply-select:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+/* The editor reuses the YAML editor's overlay layers (.yaml-edit-*). */
+.apply-editor {
+  position: relative; height: min(46vh, 420px); min-height: 220px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--bg-base); overflow: hidden;
+}
+.apply-editor.dragging { border-color: var(--accent); }
+.apply-editor .yaml-textarea::placeholder { color: var(--text-muted); }
+.apply-drop {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 8px;
+  background: color-mix(in srgb, var(--bg-base) 82%, transparent); color: var(--text); font-weight: 600; pointer-events: none;
+}
+.apply-outcome { margin-top: 10px; padding: 9px 12px; border-radius: 8px; font-size: 0.75rem; }
+.apply-outcome.ok { background: var(--green-tint); }
+.apply-outcome.bad { background: var(--red-tint); }
+.apply-outcome-head { display: flex; align-items: flex-start; gap: 8px; color: var(--text); font-weight: 600; line-height: 1.45; }
+.apply-outcome-head > svg { flex: none; margin-top: 2px; }
+.apply-outcome.ok .apply-outcome-head > svg { color: var(--green); }
+.apply-outcome.bad .apply-outcome-head > svg { color: var(--red); }
+.apply-results { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 5px; max-height: 160px; overflow-y: auto; }
+.apply-results li { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-family: var(--mono); font-size: 0.7188rem; color: var(--text); }
+.apply-results li > svg { flex: none; align-self: center; }
+.apply-results li.ok > svg { color: var(--green); }
+.apply-results li.bad > svg { color: var(--red); }
+.apply-res-ns { color: var(--text-muted); }
+.apply-res-err { flex-basis: 100%; padding-left: 20px; font-family: var(--font); color: var(--red); overflow-wrap: anywhere; }
+.apply-docs { margin-right: auto; align-self: center; font-size: 0.7188rem; color: var(--text-muted); }
 
 /* ---- Button ---- */
 .ui-btn {

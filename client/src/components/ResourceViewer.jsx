@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import YamlViewer from './YamlViewer';
 import LogsViewer from './LogsViewer';
 import DeploymentLogs from './DeploymentLogs';
+import ApplyManifestModal from './ApplyManifestModal';
 import TerminalViewer from './TerminalViewer';
 import Events from './Events';
 import NamespaceMultiSelect from './NamespaceMultiSelect';
@@ -178,6 +179,7 @@ export default function ResourceViewer({
 
   // ---- actions (modals) ----
   const [actionModal, setActionModal] = useState(null); // { type, resource|targets, step, replicas, busy, error }
+  const [createOpen, setCreateOpen] = useState(false); // "Apply manifests" dialog
   const openDelete = (res) => setActionModal({ type: 'delete', resource: res, step: 1 });
   const openScale = (res) => setActionModal({ type: 'scale', resource: res, replicas: String(res.replicas ?? 1) });
   const openRestart = (res) => setActionModal({ type: 'restart', resource: res });
@@ -331,6 +333,7 @@ export default function ResourceViewer({
             placeholder={`Search ${label}…`}
             shortcut="/"
           />
+          <Button variant="primary" icon="plus" onClick={() => setCreateOpen(true)} title="Create resources from YAML manifests (kubectl apply)">Create</Button>
         </div>
       </div>
 
@@ -458,6 +461,17 @@ export default function ResourceViewer({
           onRestart={RESTARTABLE.has(resourceType) ? (r) => openRestart(r) : undefined}
           onNavigate={onNavigate}
           refreshSignal={refreshSignal}
+        />
+      )}
+
+      {createOpen && (
+        <ApplyManifestModal
+          open
+          onClose={() => setCreateOpen(false)}
+          namespaces={namespaces}
+          defaultNamespace={namespace !== 'all' ? namespace : ''}
+          context={context}
+          onApplied={() => requestRefresh({ type: 'apply', resourceType, ok: true })}
         />
       )}
 

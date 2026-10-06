@@ -59,7 +59,7 @@ export async function listProfiles() {
     return [...names].map((name) => {
       const c = { ...(configFile[name] || {}), ...(credentialsFile[name] || {}) };
       const type = c.sso_start_url || c.sso_session ? 'sso' : c.role_arn ? 'role' : c.aws_access_key_id ? 'access-key' : 'other';
-      return { name, type, ssoStartUrl: c.sso_start_url, ssoRegion: c.sso_region, region: c.region };
+      return { name, type, ssoStartUrl: c.sso_start_url, ssoRegion: c.sso_region, region: c.region, ssoAccountId: c.sso_account_id, ssoRoleName: c.sso_role_name };
     }).sort((a, b) => a.name.localeCompare(b.name));
   } catch { return []; }
 }

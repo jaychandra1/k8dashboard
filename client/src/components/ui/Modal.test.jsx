@@ -62,6 +62,44 @@ describe('Modal', () => {
   });
 });
 
+describe('nested dialogs', () => {
+  function Nested() {
+    const [confirm, setConfirm] = React.useState(false);
+    return (
+      <>
+        <Modal open onClose={() => {}} title="Outer">
+          <button type="button" onClick={() => setConfirm(true)}>Open confirm</button>
+          <input aria-label="Outer field" />
+        </Modal>
+        <ConfirmModal open={confirm} title="Sure?" message="Really?" confirmLabel="Yes" onConfirm={() => setConfirm(false)} onCancel={() => setConfirm(false)} />
+      </>
+    );
+  }
+  const settle = () => act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+
+  it('a confirm over a dialog owns focus (no ping-pong between the two traps) and hands it back on close', async () => {
+    const user = userEvent.setup();
+    render(<Nested />);
+    await settle();
+    await user.click(screen.getByRole('button', { name: 'Open confirm' }));
+    await settle();
+    const confirm = screen.getByRole('dialog', { name: 'Sure?' });
+    expect(confirm.contains(document.activeElement)).toBe(true);
+    await user.tab();
+    await user.tab();
+    await user.tab();
+    expect(confirm.contains(document.activeElement)).toBe(true);
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await settle();
+    expect(screen.queryByRole('dialog', { name: 'Sure?' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Open confirm' })).toHaveFocus();
+    // The outer dialog traps again once the confirm is gone.
+    await user.tab();
+    await user.tab();
+    expect(screen.getByRole('dialog', { name: 'Outer' }).contains(document.activeElement)).toBe(true);
+  });
+});
+
 describe('ConfirmModal', () => {
   it('requires the typed value before enabling confirm', async () => {
     const user = userEvent.setup();

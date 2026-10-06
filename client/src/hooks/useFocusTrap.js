@@ -1,10 +1,17 @@
 import { useEffect } from 'react';
 import { afterPaint, focusables } from '../lib/a11y';
 
+// Active traps, innermost last. Only the topmost one acts: a confirm dialog
+// opened over another dialog owns focus until it closes. (Two traps both
+// pulling focus back on `focusin` would bounce it between them forever.)
+const trapStack = [];
+const isTop = (root) => trapStack[trapStack.length - 1] === root;
+
 /**
  * Trap Tab/Shift+Tab inside `ref` while `active`. On activate, focuses
  * `[data-autofocus]` (or `initialFocusRef.current`, or the first focusable, or
  * the container). On deactivate, restores focus to the previously focused element.
+ * Nested traps (a dialog over a dialog) stack: only the innermost one traps.
  */
 export default function useFocusTrap(ref, active, { initialFocusRef, getInitialFocus, restoreFocus = true } = {}) {
   useEffect(() => {
@@ -12,6 +19,7 @@ export default function useFocusTrap(ref, active, { initialFocusRef, getInitialF
     const root = ref.current;
     if (!root) return undefined;
     const previouslyFocused = typeof document !== 'undefined' ? document.activeElement : null;
+    trapStack.push(root);
 
     const initial = initialFocusRef?.current
       || root.querySelector('[data-autofocus]')
@@ -23,7 +31,7 @@ export default function useFocusTrap(ref, active, { initialFocusRef, getInitialF
     const cancelFocus = afterPaint(() => { try { initial.focus({ preventScroll: true }); } catch { /* ignore */ } });
 
     const onKeyDown = (e) => {
-      if (e.key !== 'Tab') return;
+      if (e.key !== 'Tab' || !isTop(root)) return;
       const items = focusables(root);
       if (items.length === 0) { e.preventDefault(); root.focus(); return; }
       const first = items[0];
@@ -35,7 +43,7 @@ export default function useFocusTrap(ref, active, { initialFocusRef, getInitialF
     };
     // If focus escapes (e.g. programmatic), pull it back.
     const onFocusIn = (e) => {
-      if (!root.contains(e.target)) {
+      if (isTop(root) && !root.contains(e.target)) {
         const items = focusables(root);
         (items[0] || root).focus();
       }
@@ -43,6 +51,8 @@ export default function useFocusTrap(ref, active, { initialFocusRef, getInitialF
     document.addEventListener('keydown', onKeyDown, true);
     document.addEventListener('focusin', onFocusIn);
     return () => {
+      const at = trapStack.lastIndexOf(root);
+      if (at !== -1) trapStack.splice(at, 1);
       cancelFocus();
       document.removeEventListener('keydown', onKeyDown, true);
       document.removeEventListener('focusin', onFocusIn);
