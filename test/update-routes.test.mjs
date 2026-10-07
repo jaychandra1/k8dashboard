@@ -8,8 +8,12 @@ import { startServer } from './helpers/server.mjs';
 
 describe('app update routes', () => {
   let srv;
-  before(async () => { srv = await startServer({ env: { KUBEPILOT_INSTALL_KIND: '', KUBEPILOT_UPDATE_DIR: '' } }); });
-  after(async () => { await srv?.stop(); });
+  before(async () => {
+    srv = await startServer({ env: { KUBEPILOT_INSTALL_KIND: '', KUBEPILOT_UPDATE_DIR: '' } });
+  });
+  after(async () => {
+    await srv?.stop();
+  });
 
   test('state: idle, with the running version and no way to install from a dev server', async () => {
     const r = await srv.authed('/api/app/update');
@@ -23,7 +27,11 @@ describe('app update routes', () => {
 
   test('download / install / restart before a check are refused (409), nothing runs', async () => {
     for (const p of ['/api/app/update/download', '/api/app/update/install', '/api/app/update/restart']) {
-      const r = await srv.authed(p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const r = await srv.authed(p, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
       assert.equal(r.status, 409, p);
       assert.equal((await r.json()).code, 'invalid_state', p);
     }
@@ -34,7 +42,10 @@ describe('app update routes', () => {
   test('requires the bearer token; MCP clients are refused', async () => {
     const anon = await fetch(`${srv.base}/api/app/update`);
     assert.equal(anon.status, 401);
-    const mcp = await srv.authed('/api/app/update/check', { method: 'POST', headers: { 'X-KubePilot-Source': 'mcp' } });
+    const mcp = await srv.authed('/api/app/update/check', {
+      method: 'POST',
+      headers: { 'X-KubePilot-Source': 'mcp' },
+    });
     assert.equal(mcp.status, 403);
     const notes = await srv.authed('/api/app/release-notes', { headers: { 'X-KubePilot-Source': 'mcp' } });
     assert.equal(notes.status, 403);

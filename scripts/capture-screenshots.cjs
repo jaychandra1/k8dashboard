@@ -38,14 +38,23 @@ const log = (...a) => console.log('[shots]', ...a);
 function request(method, p, body) {
   return new Promise((resolve, reject) => {
     const data = body ? JSON.stringify(body) : undefined;
-    const req = http.request(`${BASE}${p}`, {
-      method,
-      headers: { Authorization: `Bearer ${TOKEN}`, ...(data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {}) },
-    }, (res) => {
-      let text = '';
-      res.on('data', (c) => { text += c; });
-      res.on('end', () => resolve({ status: res.statusCode, text }));
-    });
+    const req = http.request(
+      `${BASE}${p}`,
+      {
+        method,
+        headers: {
+          Authorization: `Bearer ${TOKEN}`,
+          ...(data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {}),
+        },
+      },
+      (res) => {
+        let text = '';
+        res.on('data', (c) => {
+          text += c;
+        });
+        res.on('end', () => resolve({ status: res.statusCode, text }));
+      }
+    );
     req.on('error', reject);
     if (data) req.write(data);
     req.end();
@@ -71,11 +80,17 @@ async function startBackend() {
     },
   });
   let stderr = '';
-  child.stderr.on('data', (d) => { stderr = (stderr + d).slice(-4000); });
+  child.stderr.on('data', (d) => {
+    stderr = (stderr + d).slice(-4000);
+  });
   const deadline = Date.now() + 30000;
   for (;;) {
     if (child.exitCode !== null) throw new Error(`backend exited (${child.exitCode}): ${stderr}`);
-    try { if ((await request('GET', '/healthz')).status === 200) break; } catch { /* not up yet */ }
+    try {
+      if ((await request('GET', '/healthz')).status === 200) break;
+    } catch {
+      /* not up yet */
+    }
     if (Date.now() > deadline) throw new Error(`backend did not start on ${BASE}: ${stderr}`);
     await sleep(250);
   }
@@ -91,10 +106,20 @@ const js = (code) => win.webContents.executeJavaScript(code, true);
 async function waitFor(expr, label, timeout = 20000) {
   const end = Date.now() + timeout;
   for (;;) {
-    try { if (await js(`!!(${expr})`)) return; } catch { /* page navigating */ }
+    try {
+      if (await js(`!!(${expr})`)) return;
+    } catch {
+      /* page navigating */
+    }
     if (Date.now() > end) {
       let seen = '';
-      try { seen = await js("location.href + ' :: ' + (document.body ? document.body.innerText : '').replace(/\\s+/g, ' ').slice(0, 300)"); } catch { /* ignore */ }
+      try {
+        seen = await js(
+          "location.href + ' :: ' + (document.body ? document.body.innerText : '').replace(/\\s+/g, ' ').slice(0, 300)"
+        );
+      } catch {
+        /* ignore */
+      }
       throw new Error(`timed out waiting for ${label} (page: ${seen})`);
     }
     await sleep(150);
@@ -128,7 +153,14 @@ async function open(hash, ready, label) {
 const cdp = (method, params = {}) => win.webContents.debugger.sendCommand(method, params);
 async function emulateViewport() {
   if (!win.webContents.debugger.isAttached()) win.webContents.debugger.attach('1.3');
-  await cdp('Emulation.setDeviceMetricsOverride', { width: WIDTH, height: HEIGHT, deviceScaleFactor: SCALE, mobile: false, screenWidth: WIDTH, screenHeight: HEIGHT });
+  await cdp('Emulation.setDeviceMetricsOverride', {
+    width: WIDTH,
+    height: HEIGHT,
+    deviceScaleFactor: SCALE,
+    mobile: false,
+    screenWidth: WIDTH,
+    screenHeight: HEIGHT,
+  });
 }
 
 const pngSize = (buf) => ({ width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) });
@@ -140,7 +172,8 @@ async function capture(name, theme) {
   const file = path.join(OUT_DIR, `screenshot-${name}-${theme}.png`);
   fs.writeFileSync(file, png);
   log(`${path.relative(ROOT, file)}  ${width}x${height}`);
-  if (width !== WIDTH * SCALE || height !== HEIGHT * SCALE) log(`  warning: expected ${WIDTH * SCALE}x${HEIGHT * SCALE}`);
+  if (width !== WIDTH * SCALE || height !== HEIGHT * SCALE)
+    log(`  warning: expected ${WIDTH * SCALE}x${HEIGHT * SCALE}`);
   return file;
 }
 
@@ -149,7 +182,8 @@ async function capture(name, theme) {
 // built-in assistant for the assistant shot.
 const AI_AGENT = { mode: 'agent', id: 'claude', name: 'Claude Code' };
 const AI_BUILTIN = { mode: 'builtin' };
-const setAiTool = (cfg) => js(`localStorage.setItem('aiAgentConfig', ${JSON.stringify(JSON.stringify(cfg))})`);
+const setAiTool = (cfg) =>
+  js(`localStorage.setItem('aiAgentConfig', ${JSON.stringify(JSON.stringify(cfg))})`);
 
 // The demo's `shop` namespace has the richest graph (default has one app).
 async function topologyOfShop() {
@@ -165,15 +199,24 @@ async function topologyOfShop() {
 
 const VIEWS = {
   async dashboard() {
-    await open('#/cluster', "document.querySelectorAll('.kpi-row > *').length >= 5 && document.querySelector('.cluster-info-card')", 'cluster dashboard');
+    await open(
+      '#/cluster',
+      "document.querySelectorAll('.kpi-row > *').length >= 5 && document.querySelector('.cluster-info-card')",
+      'cluster dashboard'
+    );
   },
   // "An AI assistant that actually reads your cluster": the built-in assistant
   // answering from the demo cluster (tool calls + streamed answer).
   async agent() {
     await setAiTool(AI_BUILTIN);
     await open('#/cluster', "document.querySelectorAll('.kpi-row > *').length >= 5", 'cluster dashboard');
-    await js("window.dispatchEvent(new CustomEvent('assistant:ask', { detail: { prompt: 'Why is the checkout pod in shop crash-looping?' } }))");
-    await waitFor("(document.querySelector('.assistant-log')?.textContent || '').includes('STRIPE_WEBHOOK_SECRET') && !document.querySelector('.assistant-send.stop') && !document.querySelector('.assistant-thinking')", 'assistant answer');
+    await js(
+      "window.dispatchEvent(new CustomEvent('assistant:ask', { detail: { prompt: 'Why is the checkout pod in shop crash-looping?' } }))"
+    );
+    await waitFor(
+      "(document.querySelector('.assistant-log')?.textContent || '').includes('STRIPE_WEBHOOK_SECRET') && !document.querySelector('.assistant-send.stop') && !document.querySelector('.assistant-thinking')",
+      'assistant answer'
+    );
     await settle(1200);
     await setAiTool(AI_AGENT);
   },
@@ -187,18 +230,32 @@ const VIEWS = {
     await settle(600);
   },
   async argocd() {
-    await open('#/argocd/dashboard', "document.querySelectorAll('.argo-card').length >= 3", 'Argo CD dashboard');
+    await open(
+      '#/argocd/dashboard',
+      "document.querySelectorAll('.argo-card').length >= 3",
+      'Argo CD dashboard'
+    );
   },
   async 'argocd-tree'() {
-    await open('#/argocd/applications', "Array.from(document.querySelectorAll('tbody tr')).some((r) => r.textContent.includes('frontend'))", 'Argo CD applications');
-    await js("Array.from(document.querySelectorAll('tbody tr')).find((r) => r.textContent.includes('frontend')).click()");
+    await open(
+      '#/argocd/applications',
+      "Array.from(document.querySelectorAll('tbody tr')).some((r) => r.textContent.includes('frontend'))",
+      'Argo CD applications'
+    );
+    await js(
+      "Array.from(document.querySelectorAll('tbody tr')).find((r) => r.textContent.includes('frontend')).click()"
+    );
     await sleep(300);
     await js("location.hash = '#/argocd/view'");
     await waitFor("document.querySelectorAll('.argo-gnode').length >= 3", 'Argo CD resource tree');
     await settle();
   },
   async security() {
-    await open('#/security/overview', "document.querySelectorAll('.ui-donut').length >= 3", 'Security Center');
+    await open(
+      '#/security/overview',
+      "document.querySelectorAll('.ui-donut').length >= 3",
+      'Security Center'
+    );
   },
 };
 
@@ -206,7 +263,8 @@ async function main() {
   const wanted = process.argv.slice(2).filter((a) => !a.startsWith('-') && !a.endsWith('.cjs') && a !== '.');
   const names = wanted.length ? wanted : Object.keys(VIEWS);
   const unknown = names.filter((n) => !VIEWS[n]);
-  if (unknown.length) throw new Error(`unknown view(s): ${unknown.join(', ')} (have: ${Object.keys(VIEWS).join(', ')})`);
+  if (unknown.length)
+    throw new Error(`unknown view(s): ${unknown.join(', ')} (have: ${Object.keys(VIEWS).join(', ')})`);
 
   log(`starting the demo backend on ${BASE}`);
   const { child, home } = await startBackend();
@@ -220,7 +278,13 @@ async function main() {
       backgroundColor: '#000000',
       // In-memory session: theme and AI settings set below never touch a real profile.
       // Offscreen rendering keeps producing frames although the window is never shown.
-      webPreferences: { partition: 'kubepilot-shots', sandbox: true, contextIsolation: true, backgroundThrottling: false, offscreen: true },
+      webPreferences: {
+        partition: 'kubepilot-shots',
+        sandbox: true,
+        contextIsolation: true,
+        backgroundThrottling: false,
+        offscreen: true,
+      },
     });
     for (const theme of THEMES) {
       await win.loadURL(BASE);
@@ -238,11 +302,19 @@ async function main() {
     }
   } finally {
     child.kill();
-    try { fs.rmSync(home, { recursive: true, force: true }); } catch { /* best effort */ }
+    try {
+      fs.rmSync(home, { recursive: true, force: true });
+    } catch {
+      /* best effort */
+    }
   }
 }
 
-app.whenReady()
+app
+  .whenReady()
   .then(main)
   .then(() => app.exit(0))
-  .catch((err) => { console.error('[shots] failed:', err.message); app.exit(1); });
+  .catch((err) => {
+    console.error('[shots] failed:', err.message);
+    app.exit(1);
+  });

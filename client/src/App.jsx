@@ -28,6 +28,7 @@ import useNamespaces from './components/shell/useNamespaces';
 import useResourceFanOut from './components/shell/useResourceFanOut';
 import useNavDrawer from './components/shell/useNavDrawer';
 import ShortcutsSheet from './components/shell/ShortcutsSheet';
+import UpdateDialogs from './components/UpdateDialogs';
 import ViewOutlet from './components/shell/ViewOutlet';
 import LoadingScreen from './components/shell/LoadingScreen';
 import ContextPickerModal, { OPEN_CONTEXTS_EVENT } from './components/ContextPickerModal';
@@ -288,6 +289,8 @@ function App() {
   //   window.dispatchEvent(new CustomEvent('kubepilot:host', { detail }))
   // with detail = { type: 'context-changed', context? } | { type: 'open-contexts' }
   //             | { type: 'add-cluster', provider: 'aws' | 'azure' }.
+  // The Help menu's events (show-release-notes, check-updates, update-result)
+  // are handled by <UpdateDialogs>.
   const hostRef = useRef(null);
   hostRef.current = { afterSwitch, openContexts, openAws, openAzure };
   useEffect(() => {
@@ -526,6 +529,8 @@ function App() {
         />
       )}
       <ShortcutsSheet open={shortcutsOpen} onClose={closeShortcuts} />
+      {/* Help → Show Release Notes / Check for Updates (desktop Help menu) */}
+      {tokenOk && <UpdateDialogs />}
     </div>
   );
 }

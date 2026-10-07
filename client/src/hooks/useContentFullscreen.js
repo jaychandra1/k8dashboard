@@ -17,20 +17,32 @@ export default function useContentFullscreen(areaId = 'main') {
   const [rect, setRect] = useState(null);
 
   useLayoutEffect(() => {
-    if (!on) { setRect(null); return undefined; }
+    if (!on) {
+      setRect(null);
+      return undefined;
+    }
     const area = document.getElementById(areaId);
     if (!area) return undefined; // no content area → the CSS fallback (whole window) applies
     const measure = () => {
       const r = area.getBoundingClientRect();
-      setRect((prev) => (prev && prev.top === r.top && prev.left === r.left && prev.width === r.width && prev.height === r.height
-        ? prev
-        : { top: r.top, left: r.left, width: r.width, height: r.height }));
+      setRect((prev) =>
+        prev &&
+        prev.top === r.top &&
+        prev.left === r.left &&
+        prev.width === r.width &&
+        prev.height === r.height
+          ? prev
+          : { top: r.top, left: r.left, width: r.width, height: r.height }
+      );
     };
     measure();
     const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null;
     ro?.observe(area);
     window.addEventListener('resize', measure);
-    return () => { ro?.disconnect(); window.removeEventListener('resize', measure); };
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener('resize', measure);
+    };
   }, [on, areaId]);
 
   useEffect(() => {
@@ -46,6 +58,7 @@ export default function useContentFullscreen(areaId = 'main') {
 
   const toggle = useCallback(() => setOn((v) => !v), []);
   const exit = useCallback(() => setOn(false), []);
-  const style = on && rect ? { top: rect.top, left: rect.left, width: rect.width, height: rect.height } : undefined;
+  const style =
+    on && rect ? { top: rect.top, left: rect.left, width: rect.width, height: rect.height } : undefined;
   return { on, toggle, exit, style };
 }
