@@ -147,4 +147,16 @@ describe('primitives', () => {
     expect(screen.getByText('Pod status: Running: 3, Failed: 1')).toBeInTheDocument();
     expect(screen.getByText('Running')).toBeInTheDocument();
   });
+  it('Donut centre: a percentage gets a separate unit, long values a smaller size, sized to the hole', () => {
+    const { container, rerender } = render(<Donut size={130} thickness={16} segments={[{ label: 'Running', value: 97, tone: 'ok' }]} centerValue="97%" centerLabel="healthy" />);
+    const num = container.querySelector('.ui-donut-num');
+    expect(num).toHaveTextContent('97%');
+    expect(num.querySelector('.ui-donut-unit')).toHaveTextContent('%');
+    expect(num).not.toHaveAttribute('data-long');
+    expect(container.querySelector('.ui-donut-lbl')).toHaveTextContent('healthy');
+    expect(container.querySelector('.ui-donut-ring').style.getPropertyValue('--donut-hole')).toBe('98px');
+    rerender(<Donut segments={[{ label: 'Low', value: 12345, tone: 'info' }]} centerValue="12,345" centerLabel="total" />);
+    expect(container.querySelector('.ui-donut-num')).toHaveAttribute('data-long');
+    expect(container.querySelector('.ui-donut-unit')).toBeNull();
+  });
 });

@@ -44,6 +44,7 @@ import {
   deleteResource, execInPod, resourceLabel, labelSelectorFor,
 } from './lib/k8s-ops.mjs';
 import { eksEntryFor as eksEntryForKc, sameEksCluster, eksClusterStatus as eksClusterStatusKc } from './lib/eks-kubeconfig.mjs';
+import { createUpdates, registerUpdateRoutes } from './lib/updater/routes.mjs';
 
 // node-pty powers the pod terminal (a real PTY bridged to `kubectl exec`). Load
 // it defensively so a missing/unbuildable native module never crashes the whole
@@ -260,8 +261,8 @@ app.use((req, res, next) => {
     return res.json({ enabled: true, source: 'demo', editable: false, baseUrl: '', model: 'kubepilot-demo (canned)' });
   }
   if (p === '/api/assistant/chat' && req.method === 'POST') return demoAssistantChat(req, res);
-  // Cloud sign-in, agent detection, MCP, version and non-API paths are unchanged.
-  if (p.startsWith('/api/azure') || p.startsWith('/api/aws') ||
+  // Cloud sign-in, agent detection, MCP, version, app updates and non-API paths are unchanged.
+  if (p.startsWith('/api/azure') || p.startsWith('/api/aws') || p.startsWith('/api/app/') ||
       p.startsWith('/api/ai-agents') || p === '/mcp' || p === '/api/version' ||
       !p.startsWith('/api/')) return next();
   // The MCP write gate applies to (pretend) mutations in demo mode too.
@@ -3905,6 +3906,12 @@ registerAssistant(app, {
   getCurrentContext: () => currentContext,
   helmReleases: async () => latestHelmReleases(await listHelmReleaseSecrets()),
 });
+
+// ============================================================
+// Help → Show Release Notes / Check for Updates (GitHub Releases; installs
+// go through the desktop host — see lib/updater/)
+// ============================================================
+registerUpdateRoutes(app, { service: createUpdates({ rootDir: __dirname, version: getAppVersion(), log }).service, isMcpSource });
 
 // Unknown /api or /mcp route → JSON 404 (after every router, incl. the assistant).
 app.use(['/api', '/mcp'], apiNotFound);

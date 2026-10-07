@@ -4,6 +4,7 @@ import Icon from './Icons';
 import Skeleton from './ui/Skeleton';
 import ErrorState from './ui/ErrorState';
 import useRequest from '../hooks/useRequest';
+import useContentFullscreen from '../hooks/useContentFullscreen';
 import { getJson, p, errorMessage } from '../lib/api';
 
 // Per-container accent tone (used for the [container] prefix) — colours come from App.css.
@@ -104,6 +105,9 @@ export default function LogsViewer({ namespace, pod, containers, initialContaine
   const [regex, setRegex] = useState(false);
   const [active, setActive] = useState(0);
   const bodyRef = useRef(null);
+  // Full screen covers the content area (not the sidebar or top bar); the same
+  // button (or Escape) minimizes back into the panel.
+  const fullscreen = useContentFullscreen();
 
   // Reset the container choice when the pod / requested container changes.
   useEffect(() => { setContainer(initialContainer || ''); }, [podName, initialContainer]);
@@ -250,7 +254,7 @@ export default function LogsViewer({ namespace, pod, containers, initialContaine
   const searchId = `${uid}-search`;
 
   return (
-    <div className="logs-viewer">
+    <div className={`logs-viewer${fullscreen.on ? ' is-fullscreen' : ''}`} style={fullscreen.style}>
       <div className="logs-toolbar" role="toolbar" aria-label="Log controls">
         <button type="button" className="logs-icon-btn" onClick={refetch} aria-label="Reload logs" aria-busy={refetching || undefined}><Icon name="refresh" size={15} /></button>
 
@@ -300,6 +304,15 @@ export default function LogsViewer({ namespace, pod, containers, initialContaine
 
         <div className="logs-spacer" />
 
+        <button
+          type="button"
+          className={`logs-icon-btn${fullscreen.on ? ' on' : ''}`}
+          onClick={fullscreen.toggle}
+          aria-label={fullscreen.on ? 'Minimize logs (exit full screen)' : 'Show logs full screen'}
+          title={fullscreen.on ? 'Minimize (Esc)' : 'Full screen'}
+        >
+          <Icon name={fullscreen.on ? 'minimize' : 'maximize'} size={15} />
+        </button>
         <button type="button" className={`logs-icon-btn${follow ? ' on' : ''}`} onClick={() => setFollow((v) => !v)} aria-pressed={follow} aria-label="Follow logs (refresh every few seconds)"><Icon name="activity" size={15} /></button>
         <button type="button" className={`logs-icon-btn${showTs ? ' on' : ''}`} onClick={() => setShowTs((v) => !v)} aria-pressed={showTs} aria-label="Show timestamps"><Icon name="timer" size={15} /></button>
         <button type="button" className={`logs-icon-btn${showNames ? ' on' : ''}`} onClick={() => setShowNames((v) => !v)} aria-pressed={showNames} aria-label="Show container names"><Icon name="tag" size={15} /></button>

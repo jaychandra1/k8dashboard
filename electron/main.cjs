@@ -146,6 +146,7 @@ const net = require('net');
 const http = require('http');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
+const { createUpdateHost } = require('./update-host.cjs');
 
 const PREFERRED_PORT = 3001; // used when free — keeps documented MCP URLs stable
 const READY_TIMEOUT_MS = 30000;
@@ -162,6 +163,12 @@ let mainWindow = null;
 // Native "Clusters" menu state (mirrors the in-app top-bar cluster switcher).
 let clusters = { current: null, contexts: [], pins: [] };
 let clustersKey = ''; // JSON of `clusters` as last rendered into the menu
+
+// Help → Check for Updates: the desktop half of the updater (electron/update-host.cjs),
+// created once before the first backend start. Host events for the UI that
+// arrive before it has loaded are delivered once it has.
+let updateHost = null;
+let pendingHostEvents = [];
 const debug = (...args) => {
   if (process.env.KUBEPILOT_DEBUG) console.debug('[KubePilot]', ...args);
 };
@@ -286,6 +293,14 @@ function backendEnv({ fixedPath, port, token }) {
   // The app binary the backend must write into kubeconfig exec entries
   // (`<exe> --token-helper …`); the utility process's own execPath may differ.
   env.KUBEPILOT_APP_EXEC = process.execPath;
+  // How this copy is installed (so the backend picks the matching release
+  // asset) and where updates download — only ever what the host detected.
+  for (const k of ['KUBEPILOT_INSTALL_KIND', 'KUBEPILOT_INSTALL_UNAVAILABLE', 'KUBEPILOT_UPDATE_DIR']) delete env[k];
+  if (updateHost) {
+    if (updateHost.install.kind) env.KUBEPILOT_INSTALL_KIND = updateHost.install.kind;
+    else env.KUBEPILOT_INSTALL_UNAVAILABLE = updateHost.install.message;
+    env.KUBEPILOT_UPDATE_DIR = updateHost.dir;
+  }
   return env;
 }
 
@@ -364,6 +379,12 @@ function startServer({ fixedPath, port, token }) {
     app.quit();
     return;
   }
+
+  // Install / restart requests from the backend's updater (lib/updater/host.mjs).
+  const child = serverProcess;
+  child.on('message', (msg) => {
+    if (updateHost) updateHost.onMessage(msg, (reply) => { if (serverProcess === child) child.postMessage(reply); });
+  });
 
   serverProcess.stdout?.on('data', (d) => process.stdout.write(`[server] ${d}`));
   serverProcess.stderr?.on('data', (d) => {
@@ -518,7 +539,12 @@ function createWindow() {
   wc.on('did-finish-load', () => {
     wc.executeJavaScript(`document.documentElement.classList.add(${docClasses})`).catch(() => {});
     // First fill of the native Clusters menu once the UI (not loading.html) is up.
-    if (isBackendUrl(wc.getURL())) refreshClustersMenu();
+    if (isBackendUrl(wc.getURL())) {
+      refreshClustersMenu();
+      const queued = pendingHostEvents;
+      pendingHostEvents = [];
+      queued.forEach(notifyRenderer);
+    }
   });
 
   // Keep the native Clusters menu in sync: refresh when the window gains focus,
@@ -563,6 +589,8 @@ function createWindow() {
 //   detail = { type: 'context-changed', context }
 //          | { type: 'open-contexts' }
 //          | { type: 'add-cluster', provider: 'aws' | 'azure' }
+//          | { type: 'show-release-notes' } | { type: 'check-updates' }      (Help menu)
+//          | { type: 'update-result', status: 'installed' | 'failed', version, from }
 // Nothing here blocks startup; failures are logged at debug and ignored.
 function backendJson(method, apiPath, body) {
   return new Promise((resolve, reject) => {
@@ -608,6 +636,15 @@ function notifyRenderer(detail) {
   const wc = mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null;
   if (!wc || !isBackendUrl(wc.getURL())) return;
   wc.executeJavaScript(`window.dispatchEvent(new CustomEvent('kubepilot:host', { detail: ${JSON.stringify(detail)} }))`).catch(() => {});
+}
+
+// Like notifyRenderer, but if the UI hasn't loaded yet (loading screen) the
+// event is delivered as soon as it has — used by the Help menu and the
+// post-update result.
+function notifyRendererWhenReady(detail) {
+  const wc = mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null;
+  if (wc && isBackendUrl(wc.getURL()) && !wc.isLoading()) notifyRenderer(detail);
+  else pendingHostEvents = [...pendingHostEvents.filter((d) => d.type !== detail.type), detail];
 }
 
 async function refreshClustersMenu({ force = false } = {}) {
@@ -686,6 +723,17 @@ async function boot() {
     console.warn(`[KubePilot] port ${PREFERRED_PORT} is busy; backend will use ${backendPort}`);
   }
 
+  if (!updateHost) {
+    try {
+      updateHost = await createUpdateHost({ app, rootDir: serverRoot() });
+      // A Windows update installs after KubePilot quits; report how it went.
+      const previous = updateHost.previousResult();
+      if (previous) notifyRendererWhenReady({ type: 'update-result', ...previous });
+    } catch (err) {
+      console.warn(`[KubePilot] updater unavailable: ${err.message}`);
+    }
+  }
+
   startServer({ fixedPath: resolveUserPath(), port: backendPort, token: authToken });
   if (!serverProcess) return;
 
@@ -752,6 +800,11 @@ app.on('before-quit', () => {
   stopServer();
 });
 
+// Help → Check for Updates → "Later" (Windows): the verified installer runs as KubePilot quits.
+app.on('will-quit', () => {
+  if (updateHost) updateHost.onWillQuit();
+});
+
 function buildMenu() {
   const isMac = process.platform === 'darwin';
   const template = [
@@ -791,6 +844,13 @@ function buildMenu() {
     {
       label: 'Window',
       submenu: [{ role: 'minimize' }, { role: 'zoom' }, { role: 'close' }],
+    },
+    {
+      label: 'Help',
+      submenu: [
+        { label: 'Show Release Notes', click: () => notifyRendererWhenReady({ type: 'show-release-notes' }) },
+        { label: 'Check for Updates', click: () => notifyRendererWhenReady({ type: 'check-updates' }) },
+      ],
     },
   ];
   return Menu.buildFromTemplate(template);

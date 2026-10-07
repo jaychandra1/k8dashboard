@@ -37,10 +37,13 @@ export default function Donut({
   const titleId = `${id}-title`;
   const descId = `${id}-desc`;
   const color = (s) => s.color || toneColor(s.tone || 'muted');
+  // "97%" → 97 + a lighter, smaller "%"; anything else is shown as given.
+  const valueParts = typeof centerValue === 'string' ? centerValue.match(/^(-?[\d.,]+)\s*(%)$/) : null;
 
   return (
     <div className={`ui-donut ${className}`.trim()} data-size={size}>
-      <div className="ui-donut-ring" style={{ width: size, height: size }}>
+      {/* --donut-hole lets the centre text scale with the space inside the ring. */}
+      <div className="ui-donut-ring" style={{ width: size, height: size, '--donut-hole': `${size - 2 * thickness}px`, '--donut-thickness': `${thickness}px` }}>
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-labelledby={titleId} aria-describedby={descId}>
           <title id={titleId}>{ariaLabel || 'Donut chart'}</title>
           <desc id={descId}>{total ? summary : 'No data'}</desc>
@@ -72,7 +75,11 @@ export default function Donut({
         </svg>
         {(centerValue != null || centerLabel) && (
           <div className="ui-donut-center" aria-hidden="true">
-            {centerValue != null && <div className="ui-donut-num">{centerValue}</div>}
+            {centerValue != null && (
+              <div className="ui-donut-num" data-long={!valueParts && String(centerValue).length > 4 ? '' : undefined}>
+                {valueParts ? <>{valueParts[1]}<span className="ui-donut-unit">{valueParts[2]}</span></> : centerValue}
+              </div>
+            )}
             {centerLabel && <div className="ui-donut-lbl">{centerLabel}</div>}
           </div>
         )}

@@ -288,6 +288,8 @@ const ICONS = {
     </>
   ),
   wrapText: <path d="M3 6h18M3 12h13a3 3 0 1 1 0 6h-4m0 0 2-2m-2 2 2 2M3 18h5" />,
+  maximize: <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />,
+  minimize: <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" />,
   timer: (
     <>
       <path d="M10 2h4M12 14l3-3" />

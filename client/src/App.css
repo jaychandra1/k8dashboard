@@ -1746,6 +1746,17 @@ span.xlink.resource-name-cell { color: var(--accent); }
    ============================================================ */
 /* ---------- Logs viewer ---------- */
 .logs-viewer { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg-base); }
+/* Full screen logs: pinned over the content area only — useContentFullscreen
+   sets top/left/width/height from <main>, so the sidebar and top bar stay
+   visible (inset: 0 is the fallback). Below drawers, dialogs and toasts. */
+.logs-viewer.is-fullscreen {
+  position: fixed; inset: 0; height: auto;
+  z-index: calc(var(--z-dropdown) - 10);
+  box-shadow: var(--shadow-3);
+  animation: logs-fullscreen-in 0.14s ease-out;
+}
+@keyframes logs-fullscreen-in { from { opacity: 0.6; transform: scale(0.995); } }
+@media (prefers-reduced-motion: reduce) { .logs-viewer.is-fullscreen { animation: none; } }
 .logs-toolbar {
   display: flex; align-items: center; gap: 6px;
   padding: 7px 10px; flex: none;
@@ -3578,8 +3589,9 @@ button:active:not(:disabled) { transform: scale(0.97); }
 
 /* Donuts */
 .sec-donuts { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px; margin-bottom: 26px; }
-.sec-donut { border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; background: var(--bg-surface); }
-.sec-donut-title { font-size: 0.8125rem; font-weight: 650; color: var(--text-secondary); text-align: center; margin-bottom: 8px; min-height: 16px; }
+/* Same frame and left-aligned heading as the dashboard chart cards. */
+.sec-donut { border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; background: var(--bg-surface); }
+.sec-donut-title { font-size: 0.8125rem; font-weight: 650; color: var(--text); text-align: left; margin-bottom: 14px; min-height: 16px; }
 .sec-donut-row { display: flex; align-items: center; gap: 14px; }
 .sec-donut-svg { flex: none; }
 .sec-donut-empty { fill: var(--text-muted); font-size: 0.6875rem; }
@@ -4005,9 +4017,23 @@ button.sec-tr.row.sel { background: var(--accent-tint); }
 .ui-donut { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .ui-donut-ring { position: relative; flex-shrink: 0; }
 .ui-donut-ring svg { display: block; }
-.ui-donut-center { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; }
-.ui-donut-num { font-size: 1.625rem; font-weight: 700; color: var(--text); font-family: var(--mono); line-height: 1; }
-.ui-donut-lbl { font-size: 0.6875rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+/* Value and label stack as one block in the middle of the hole (inset by the
+   ring), and the value scales with the hole so it never touches the ring. */
+.ui-donut-center {
+  position: absolute; inset: var(--donut-thickness, 16px);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+  text-align: center; pointer-events: none;
+}
+.ui-donut-num {
+  display: flex; align-items: baseline; justify-content: center;
+  font-size: clamp(1rem, calc(var(--donut-hole, 98px) * 0.26), 2.25rem);
+  font-weight: 700; color: var(--text); font-family: var(--mono); line-height: 1;
+  letter-spacing: -0.04em; font-variant-numeric: tabular-nums;
+}
+/* Five or more characters ("12,345"): smaller so it stays inside the hole. */
+.ui-donut-num[data-long] { font-size: clamp(0.875rem, calc(var(--donut-hole, 98px) * 0.19), 1.75rem); }
+.ui-donut-unit { font-size: 0.55em; font-weight: 600; color: var(--text-secondary); letter-spacing: 0; margin-left: 0.1em; }
+.ui-donut-lbl { font-size: 0.625rem; font-weight: 600; line-height: 1; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.09em; }
 .ui-donut-empty { fill: var(--text-muted); font-size: 0.6875rem; }
 .ui-donut-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; flex: 1 1 8rem; min-width: 8rem; }
 .ui-donut-legend-item { display: flex; }
@@ -4016,7 +4042,9 @@ button.sec-tr.row.sel { background: var(--accent-tint); }
   font-size: 0.78125rem; color: var(--text-secondary);
   width: 100%;
 }
-.ui-donut-legend-btn { background: none; border: none; padding: 2px 4px; margin: -2px -4px; border-radius: 4px; cursor: pointer; font: inherit; text-align: left; }
+/* The hover pad bleeds 4px each side (negative margin), so the button is 8px
+   wider than its row and its text lines up with non-clickable legends. */
+.ui-donut-legend-btn { background: none; border: none; padding: 2px 4px; margin: -2px -4px; width: calc(100% + 8px); border-radius: 4px; cursor: pointer; font: inherit; text-align: left; }
 .ui-donut-legend-btn:hover { background: var(--bg-surface-2); color: var(--text); }
 .ui-donut-legend-btn[aria-pressed='true'] { color: var(--text); font-weight: 600; }
 .ui-donut-swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
@@ -4523,10 +4551,21 @@ h3.sec-drawer-section:first-child { margin-top: 0; }
 @container (max-width: 559.98px) { .kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @container (max-width: 359.98px) { .kpi-row { grid-template-columns: minmax(0, 1fr); } }
 
-/* Donut + legend inside dashboard cards: keep them side by side with a small
-   gap; the legend wraps under the ring only when the card is really narrow. */
-.donut-wrap .ui-donut { gap: 18px; }
-.donut-wrap .ui-donut-legend { flex: 1 1 8rem; }
+/* Donut cards (Overview, Cluster, Security): the ring sits beside a legend
+   that fills the rest of the card, so the legend values line up with the
+   card's right edge (under the header's total). A card too narrow for both
+   centres the ring above a full-width legend instead of wrapping it. */
+.donut-wrap, .sec-donut { container-type: inline-size; }
+.donut-wrap > .ui-donut, .sec-donut > .ui-donut { flex: 1 1 auto; min-width: 0; flex-wrap: nowrap; gap: 18px; }
+.donut-wrap > .ui-donut > .ui-donut-legend, .sec-donut > .ui-donut > .ui-donut-legend { flex: 1 1 0; min-width: 0; }
+@container (max-width: 279.98px) {
+  .ui-donut { flex-direction: column; align-items: stretch; gap: 16px; }
+  .ui-donut-ring { align-self: center; }
+}
+
+/* The Cluster page's Node Roles / Cluster Info row lines up with the cards
+   above it (.dashboard-body already pads the page). */
+.dashboard-body > .cluster-info-container { padding: 0; }
 
 /* Top bar: nav toggle · cluster switcher · history on the left, controls on
    the right, on a 30–32px height and 10px rhythm (the lead's width math above

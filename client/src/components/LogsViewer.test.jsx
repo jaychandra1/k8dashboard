@@ -61,6 +61,36 @@ describe('LogsViewer', () => {
     await user.click(screen.getByRole('button', { name: /Follow logs/ }));
     expect(screen.getByRole('log')).toHaveAttribute('aria-live', 'polite');
   });
+
+  it('full screen pins the viewer over the content area (not the sidebar) and minimizes back', async () => {
+    const user = userEvent.setup();
+    const main = document.createElement('main');
+    main.id = 'main';
+    main.getBoundingClientRect = () => ({ top: 70, left: 232, width: 1200, height: 800, right: 1432, bottom: 870, x: 232, y: 70 });
+    document.body.appendChild(main);
+    try {
+      const { container } = render(<LogsViewer namespace="ns" pod="web-1" containers={['app']} />);
+      await screen.findByText(/hello world/);
+      const viewer = container.querySelector('.logs-viewer');
+      expect(viewer).not.toHaveClass('is-fullscreen');
+      await user.click(screen.getByRole('button', { name: 'Show logs full screen' }));
+      expect(viewer).toHaveClass('is-fullscreen');
+      expect(viewer.style.top).toBe('70px');
+      expect(viewer.style.left).toBe('232px');
+      expect(viewer.style.width).toBe('1200px');
+      expect(viewer.style.height).toBe('800px');
+      await user.click(screen.getByRole('button', { name: 'Minimize logs (exit full screen)' }));
+      expect(viewer).not.toHaveClass('is-fullscreen');
+      expect(viewer.style.top).toBe('');
+      // Escape minimizes too.
+      await user.click(screen.getByRole('button', { name: 'Show logs full screen' }));
+      expect(viewer).toHaveClass('is-fullscreen');
+      await user.keyboard('{Escape}');
+      expect(viewer).not.toHaveClass('is-fullscreen');
+    } finally {
+      main.remove();
+    }
+  });
 });
 
 describe('LogsViewer — workload mode (a Deployment\'s pods)', () => {

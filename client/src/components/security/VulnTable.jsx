@@ -6,12 +6,23 @@ import { formatAgeLong } from '../../lib/format';
 import useThemeTick from '../../hooks/useThemeTick';
 import { SEVERITIES, sevColor, sevLabel, sevTotal, SevMini } from './severity';
 
-/** Donut card with a heading and the legend list beside the ring. */
-export function DonutCard({ title, segments, size = 130 }) {
+const sumOf = (segments) => segments.reduce((n, s) => n + (s.value > 0 ? s.value : 0), 0);
+
+/**
+ * Donut card with a heading and the legend list beside the ring. The ring's
+ * centre shows `centerValue` (default: the sum of the segments) over
+ * `centerLabel`; an empty chart keeps its "no data" text instead.
+ */
+export function DonutCard({ title, segments, size = 130, centerLabel = 'total', centerValue }) {
+  const value = centerValue ?? sumOf(segments);
+  const empty = sumOf(segments) === 0;
   return (
     <section className="sec-donut" aria-label={title}>
       <h3 className="sec-donut-title">{title}</h3>
-      <Donut segments={segments} size={size} thickness={15} legend ariaLabel={title} />
+      <Donut
+        segments={segments} size={size} thickness={15} legend ariaLabel={title}
+        centerValue={empty ? undefined : value.toLocaleString()} centerLabel={empty ? undefined : centerLabel}
+      />
     </section>
   );
 }
@@ -72,10 +83,10 @@ export default function VulnTable({ vuln, ns, q = '', onSelect, selected, critic
   return (
     <>
       <div className="sec-donuts">
-        <DonutCard title="Status" segments={statusSeg} />
-        <DonutCard title="Results" segments={resultSeg} />
+        <DonutCard title="Status" segments={statusSeg} centerLabel="images" />
+        <DonutCard title="Results" segments={resultSeg} centerLabel="scanned" />
         <DonutCard title="Vulnerabilities" segments={vulnSeg} />
-        {!criticalOnly && <DonutCard title="Exposed Secrets" segments={secretSeg} />}
+        {!criticalOnly && <DonutCard title="Exposed Secrets" segments={secretSeg} centerValue={exposed} centerLabel="exposed" />}
       </div>
       {criticalOnly && <h2 className="sec-section-title">Latest critical vulnerabilities</h2>}
       <DataTable

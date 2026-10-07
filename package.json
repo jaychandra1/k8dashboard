@@ -10,6 +10,7 @@
   "desktopName": "kubepilot",
   "type": "module",
   "main": "electron/main.cjs",
+  "releaseRepository": "jaychandra1/KubePilot",
   "scripts": {
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "server": "node server.js",
