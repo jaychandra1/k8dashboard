@@ -28,19 +28,20 @@ function defaultUpdateDir(
   name = 'kubepilot',
   { platform = process.platform, env = process.env, home = os.homedir() } = {}
 ) {
+  // The target platform's path rules, not the host's (so this is right — and
+  // testable — whichever OS evaluates it).
+  const p = platform === 'win32' ? path.win32 : path.posix;
   let base;
   if (platform === 'win32')
     base =
-      env.LOCALAPPDATA && path.isAbsolute(env.LOCALAPPDATA)
+      env.LOCALAPPDATA && p.isAbsolute(env.LOCALAPPDATA)
         ? env.LOCALAPPDATA
-        : path.join(home, 'AppData', 'Local');
-  else if (platform === 'darwin') base = path.join(home, 'Library', 'Caches');
+        : p.join(home, 'AppData', 'Local');
+  else if (platform === 'darwin') base = p.join(home, 'Library', 'Caches');
   else
     base =
-      env.XDG_CACHE_HOME && path.isAbsolute(env.XDG_CACHE_HOME)
-        ? env.XDG_CACHE_HOME
-        : path.join(home, '.cache');
-  return path.join(base, `${name}-updater`);
+      env.XDG_CACHE_HOME && p.isAbsolute(env.XDG_CACHE_HOME) ? env.XDG_CACHE_HOME : p.join(home, '.cache');
+  return p.join(base, `${name}-updater`);
 }
 
 function sha256FileSync(file) {

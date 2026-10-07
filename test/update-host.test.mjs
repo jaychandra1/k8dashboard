@@ -185,26 +185,19 @@ describe('update host (main process)', () => {
     assert.deepEqual(linuxApp.calls.relaunch, [{ execPath: appImage, args: [] }]);
   });
 
-  test('downloads go to the OS cache directory', () => {
-    assert.equal(
-      defaultUpdateDir('kubepilot', {
-        platform: 'win32',
-        env: { LOCALAPPDATA: 'C:\\Users\\u\\AppData\\Local' },
-        home: 'C:\\Users\\u',
-      }),
-      path.join('C:\\Users\\u\\AppData\\Local', 'kubepilot-updater')
-    );
+  test('downloads go to the OS cache directory (path rules of the target OS, on any host)', () => {
+    const win = (env) => defaultUpdateDir('kubepilot', { platform: 'win32', env, home: 'C:\\Users\\u' });
+    const winDir = 'C:\\Users\\u\\AppData\\Local\\kubepilot-updater';
+    assert.equal(win({ LOCALAPPDATA: 'C:\\Users\\u\\AppData\\Local' }), winDir);
+    assert.equal(win({}), winDir);
+    assert.equal(win({ LOCALAPPDATA: 'relative' }), winDir);
     assert.equal(
       defaultUpdateDir('kubepilot', { platform: 'darwin', env: {}, home: '/Users/u' }),
-      path.join('/Users/u', 'Library', 'Caches', 'kubepilot-updater')
+      '/Users/u/Library/Caches/kubepilot-updater'
     );
-    assert.equal(
-      defaultUpdateDir('kubepilot', {
-        platform: 'linux',
-        env: { XDG_CACHE_HOME: '/home/u/.xdg' },
-        home: '/home/u',
-      }),
-      path.join('/home/u/.xdg', 'kubepilot-updater')
-    );
+    const linux = (env) => defaultUpdateDir('kubepilot', { platform: 'linux', env, home: '/home/u' });
+    assert.equal(linux({ XDG_CACHE_HOME: '/home/u/.xdg' }), '/home/u/.xdg/kubepilot-updater');
+    assert.equal(linux({}), '/home/u/.cache/kubepilot-updater');
+    assert.equal(linux({ XDG_CACHE_HOME: 'relative' }), '/home/u/.cache/kubepilot-updater');
   });
 });
