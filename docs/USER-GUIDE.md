@@ -126,6 +126,7 @@ Each row also has an always-visible **Actions** button (`⋯`). Actions availabl
 - **Details** — drawer with status, labels, annotations, containers, owner and cross-links (namespace → node → pod → owner are all links). Pods show live CPU/memory charts. ConfigMap data is shown; **Secret values are masked until you click Reveal** on a specific key, and can be copied.
 - **Logs** — per-container or merged streams, timestamps, regex/case-sensitive search with match navigation, tail size (200 / 1,000 / 5,000 / 20,000 lines), follow mode, download.
   Open them from the **logs icon** next to a pod's or deployment's name (or the row menu / details drawer). For a deployment, the **Pod** picker shows **All pods** — up to 10 replicas merged by time, each line prefixed with its pod — or one replica.
+  **Full screen** (the expand icon beside Follow) spreads the logs over the whole content area — the sidebar and top bar stay put; the same button (**Minimize**) or `Esc` puts them back in the panel.
 - **Terminal** — a real TTY into the container (`kubectl exec -it`). The container needs a shell (distroless images will not work).
 - **Edit YAML** — edit and apply. `⌘S` / `Ctrl+S` applies; you are asked to confirm because this writes to the cluster, and closing with unsaved changes asks first.
 - **Scale** — integer 0–10,000.
@@ -231,6 +232,26 @@ App data lives in `~/.config/kubepilot` (token, assistant config, scan cache). O
 | Helm view empty | The cluster has no Helm-managed releases (v3 Secrets storage). |
 | "All namespaces" slow the first time | One request per namespace; results are cached. Pick a namespace for faster loads. |
 | Port 3001 in use | Set `PORT=<other>` (the desktop app picks a free port automatically). |
+| Check for Updates: "Unable to check for updates" | KubePilot could not reach `api.github.com` (offline, a proxy, or GitHub's anonymous rate limit of 60 requests/hour per IP — the dialog says when to retry). |
+
+### 1.11 Release notes and updates (desktop app)
+
+The desktop app's **Help** menu (after *Window*) has two items:
+
+- **Show Release Notes** — the notes of the newest stable release on [jaychandra1/KubePilot](https://github.com/jaychandra1/KubePilot/releases), rendered in the app; **View on GitHub** opens the release in your browser.
+- **Check for Updates** — compares the running version (the `VERSION` file) with the newest stable GitHub release using semantic-version ordering. Drafts and prereleases (`-alpha`, `-beta`, `-rc`, …) are ignored. Nothing is downloaded until you choose **Download and Install**.
+
+When you do, KubePilot picks the one release file built for your OS, CPU and install type, downloads it to the OS cache folder (`%LOCALAPPDATA%\kubepilot-updater`, `~/Library/Caches/kubepilot-updater`, `~/.cache/kubepilot-updater`), and checks its **SHA-256** against both the digest GitHub reports for the file and the release's `SHA256SUMS.txt`. A file that doesn't match is deleted and never run. Then:
+
+| Installed as | How the update is installed |
+|---|---|
+| Windows installer (`KubePilot-windows.exe`) | **Install and Restart** closes KubePilot, runs the installer silently (per-user, no administrator prompt) and reopens KubePilot when it has finished; **Later** installs it the next time you quit. On the next start KubePilot tells you whether the update completed. |
+| macOS app in a writable folder | The new `KubePilot.app` is copied next to the old one and swapped in; the old one is restored if the swap fails. If the folder needs an administrator, macOS asks for one. Then **Restart Now** or **Later**. |
+| Linux AppImage | The AppImage file is replaced in place; then **Restart Now** or **Later**. |
+| Linux `.deb` | `pkexec dpkg -i` (polkit asks for an administrator password); then **Restart Now** or **Later**. |
+
+A development build (`npm run app`), an unpacked copy (`release/win-unpacked`), a macOS app still on its disk image, and other install types can check for updates but don't install them — the dialog links to the release page instead. Each step is logged on stdout (`update check started`, `update asset selected`, `update verified`, …) without tokens or headers.
+
 
 ---
 
@@ -356,7 +377,25 @@ The image is multi-stage: the client is built, production dependencies are insta
 - **npm packages and GitHub Actions** — Dependabot opens weekly PRs (root, `client/`, workflows). Actions are pinned to commit SHAs; merge the Dependabot PR rather than editing the SHA by hand.
 - After any bump: `npm ci --ignore-scripts && npm rebuild node-pty && npm test && npm run test:client && npm run lint`.
 
-### 3.5 Hotfix flow
+### 3.5 What the in-app updater needs from a release
+
+Help → Check for Updates (§1.11) reads the **latest stable** release of `releaseRepository` in `package.json` (`jaychandra1/KubePilot`). For it to offer an update:
+
+- **Tag** `v<semver>` (the workflow enforces `v$(cat VERSION)`). A release that is a draft, marked *pre-release*, or tagged `-alpha`/`-beta`/`-rc`… is skipped.
+- **Assets** named `KubePilot-<os>[-<arch>].<ext>` — exactly what `artifactName` in `package.json` produces: `KubePilot-windows.exe`, `KubePilot-macos.dmg`, `KubePilot-linux.AppImage`, `KubePilot-linux.deb`. Unsuffixed files are taken to be the one architecture the workflow builds per OS (Windows **x64**, macOS **arm64**, Linux **x64**). To ship another architecture, publish it with an `-x64` / `-arm64` suffix (e.g. `KubePilot-windows-arm64.exe`); a suffixed file always wins over the unsuffixed one. An optional version segment (`KubePilot-1.4.0-macos-arm64.dmg`) is accepted too.
+- **Checksums**: `SHA256SUMS.txt` (generated by the release job) listing every installer. GitHub's own per-asset SHA-256 digest is used as well; if both exist they must agree, and an installer with neither is refused.
+- Releases aren't code-signed today, so these checksums are the integrity check. Signing the Windows installer and notarizing the macOS app (§3.2) would add a publisher check on top; until then the SHA-256 protects against corrupted or swapped downloads, not against a compromised release repository.
+
+**Testing an update end to end without touching your own install:**
+
+1. Create a scratch public repo (e.g. `<you>/kubepilot-update-test`) and publish a release there with a **higher** version than the build you'll test, attaching the installer for your platform (named as above) and a matching `SHA256SUMS.txt` (`sha256sum KubePilot-*.* > SHA256SUMS.txt`).
+2. Install an older packaged build on a test machine or VM (not your daily install).
+3. Start it with `KUBEPILOT_UPDATE_REPO=<you>/kubepilot-update-test`. Add `KUBEPILOT_UPDATE_DRY_RUN=1` to go through check → download → verify → "install" while the main process only logs what it would run.
+4. Without the dry-run flag, the full flow installs the test release; check that the app restarts on the new version (Windows reports the result on the next start).
+
+Automated tests (`test/updater.test.mjs`, `test/update-host.test.mjs`, `client/src/components/UpdateDialogs.test.jsx`) mock GitHub, downloads and installers; they never install anything.
+
+### 3.6 Hotfix flow
 
 1. Branch from the release tag: `git checkout -b hotfix/1.2.1 v1.2.0`.
 2. Fix, add a test, update `CHANGELOG.md`.
