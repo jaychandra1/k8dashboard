@@ -6,6 +6,7 @@ import Skeleton from './ui/Skeleton';
 import ErrorState from './ui/ErrorState';
 import { ConfirmModal } from './ui/Modal';
 import useRequest from '../hooks/useRequest';
+import { usePanelFullscreen } from '../hooks/useContentFullscreen';
 import { getJson, putJson, p, errorMessage } from '../lib/api';
 
 const isMac = () => typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || '');
@@ -87,6 +88,8 @@ export default function YamlViewer({ namespace, kind, name, onClose, onApplied, 
     }
   };
   const requestApply = () => { if (dirty && !applying && !loading) setConfirm('apply'); };
+  // Full screen: the whole bottom panel when inside one, else this viewer.
+  const fullscreen = usePanelFullscreen();
   const requestClose = () => { if (dirty) setConfirm('discard'); else onClose?.(); };
 
   // Tab inserts two spaces instead of moving focus; ⌘S / Ctrl+S applies.
@@ -116,7 +119,7 @@ export default function YamlViewer({ namespace, kind, name, onClose, onApplied, 
   const errId = `${uid}-err`;
 
   return (
-    <div className="yaml-viewer">
+    <div className={`yaml-viewer${fullscreen.on && !fullscreen.inPanel ? ' is-fullscreen' : ''}`} style={fullscreen.inPanel ? undefined : fullscreen.style}>
       <div className="yaml-toolbar">
         <span className="yaml-title">
           <Icon name="configuration" size={14} /> {n}
@@ -128,6 +131,15 @@ export default function YamlViewer({ namespace, kind, name, onClose, onApplied, 
           </button>
           <button type="button" className="yaml-btn primary" onClick={requestApply} disabled={!dirty || applying || loading} aria-describedby={hintId} aria-busy={applying || undefined}>
             <Icon name="check" size={14} /> {applying ? 'Applying…' : 'Apply'}
+          </button>
+          <button
+            type="button"
+            className={`yaml-btn icon${fullscreen.on ? ' on' : ''}`}
+            onClick={fullscreen.toggle}
+            aria-label={fullscreen.on ? 'Minimize YAML (exit full screen)' : 'Show YAML full screen'}
+            title={fullscreen.on ? 'Minimize (Esc)' : 'Full screen'}
+          >
+            <Icon name={fullscreen.on ? 'minimize' : 'maximize'} size={14} />
           </button>
           {onClose && (
             <button type="button" className="yaml-btn" onClick={requestClose} aria-label={`Close YAML editor for ${n}`}>

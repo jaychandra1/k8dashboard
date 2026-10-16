@@ -6,17 +6,22 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.5.0] – 2026-10-16
+
+### Added
+- **Full screen for the whole bottom panel** (logs, YAML editor, terminal, node details, Helm release details, Access Control YAML): a maximize button at the right of the tab strip and in each logs / YAML / terminal toolbar expands the panel — its tab strip first, so the other open tabs stay a click away — over the content area while the sidebar and top bar stay visible. The same button (now Minimize) or `Esc` puts it back; `Esc` inside the YAML editor or the terminal is left to them.
+
+### Fixed
+- With a details drawer open, the bottom panel ends at the drawer's edge instead of running underneath it, so its tabs and buttons (Reload, Apply, Close, full screen) are no longer hidden — also when maximized. (At 1024 px and below the drawer is full width and still covers the page.)
+
+## [1.4.0] – 2026-10-07
+
 ### Added
 - **Help menu** in the desktop app (after Window) with **Show Release Notes** — the newest stable release from GitHub, rendered in-app (safe Markdown), with **View on GitHub** — and **Check for Updates**: compares the running version with the newest stable release (semantic versioning; drafts and alpha/beta/rc releases are ignored), and only on **Download and Install** downloads the release file for this OS, CPU and install type, verifies its SHA-256 against GitHub's asset digest and `SHA256SUMS.txt` (a mismatch is deleted, never run), and installs it: Windows silently via the NSIS installer once KubePilot closes (reopening it afterwards, or on the next quit with **Later**), macOS by swapping the app bundle with rollback, Linux by replacing the AppImage or `pkexec dpkg -i`; then **Restart Now** / **Later**. Progress, cancel, and clear messages for offline, rate-limited, missing-installer, verification and install failures. New `lib/updater/` (GitHub release service, version comparison, asset selection, download, verification, installers), `electron/update-host.cjs`, `/api/app/*` routes (refused for MCP clients) and `releaseRepository` in `package.json`; `KUBEPILOT_UPDATE_REPO` / `KUBEPILOT_UPDATE_DRY_RUN` support testing against a scratch release.
 - **Full-screen logs**: a Full screen button in every logs viewer (pod and deployment logs, beside Follow) expands the logs over the whole content area while the sidebar and top bar stay visible; the same button (now Minimize) or Esc puts them back in the panel.
 - **Apply manifests**: a **Create** button on every resource page opens an editor to create or update resources from YAML (`kubectl apply -f`): paste, open or drop `.yaml`/`.json` files, or start from an example; choose the namespace for manifests without one; **Validate** runs a server-side dry run; **Apply** confirms first and lists each document's result with the API server's reason for any rejection. `POST /api/apply` gained `dryRun`, `namespace` and per-document `results`, validates every document before sending any, and continues past a failed document like kubectl (HTTP 422 `apply_failed`).
-- Logs button beside every name in the Pods and Deployments tables (its own column, right after Name); it opens the logs panel without opening the details drawer. Deployment logs find the pods through the Deployment's selector (new `GET /api/deployments/:namespace/:name/pods`, like `kubectl logs deploy/<name>`) and offer **All pods** — up to 10 replicas merged chronologically, each line prefixed with its pod — or a single replica; a replica that can't be read is flagged instead of failing the whole view. Deployments also get **Logs** in the row menu and the details drawer.
 
 ### Changed
-- The Cluster page no longer lists the kubeconfig's Contexts and Clusters; it shows Node Roles and Cluster Info only (switch clusters from the top-bar selector).
-- The Cluster page shows the branded loading screen ("Getting the data from <cluster>…") until its summary arrives, instead of grey placeholder cards. The loading screen now uses the detailed KubePilot artwork (`client/public/logo-detailed.png`, shown at 120 px).
-- Sidebar is narrower (232 px). The cluster switcher now sits at the left end of the top bar, filling the column above the sidebar, with the Back/Forward arrows right beside it where the content column starts. The top bar no longer reserves the 82 px macOS traffic-light gap on Windows and Linux.
-- App icon now uses the official transparent KubePilot artwork (`build/source/icon-detailed.webp` for large sizes, `build/source/icon-simple.webp` for 64 px and below) with no tile behind it, so it sits cleanly on dark and light themes. Windows ships a multi-size `build/icon.ico` (16–256 px); favicon, sidebar, loading screen, splash, website and OG image are regenerated from the same masters, downscaled only.
 - README and website screenshots regenerated from the current build (dashboard, AI assistant, topology, command palette, Argo CD dashboard and resource tree, Security Center; dark and light, 2946×1760). They are produced by the new `scripts/capture-screenshots.cjs` (`npm run build && npx electron scripts/capture-screenshots.cjs [views…]`), which drives the built-in demo cluster on a throwaway profile, so no real cluster data appears in them.
 
 ### Fixed
@@ -25,6 +30,19 @@ All notable changes to this project are documented here. The format follows
 - Dialogs: a confirmation opened over another dialog (e.g. Apply manifests) no longer makes the two focus traps bounce focus between them; only the topmost dialog traps focus.
 - Secrets at rest (Windows desktop app): the Azure refresh token (`azure-auth.json`) and the AI provider API key (`config.json`) are now encrypted with AES-256-GCM under a per-user key wrapped by Windows DPAPI (`~/.config/kubepilot/secret.key`), instead of relying on `chmod 0600`, which has no effect on Windows. Existing plaintext values are re-encrypted on first launch; the key is removed from the backend environment as soon as it is read, so child processes never inherit it. The Azure token helper uses its own Chromium profile (`%APPDATA%KubePilot-token-helper`), and Azure tokens are only encrypted once the app has verified, once per version, that the helper can open them; otherwise they stay readable so AKS sign-ins never break. macOS/Linux, dev and Docker runs are unchanged, and AWS keys stay in the standard `~/.aws` files.
 - Token helper: an error in `--token-helper` mode now exits with a message on stderr instead of showing an Electron error dialog that would block `kubectl`.
+- Desktop app: the update download folder is built with the target OS's path rules (fixes the updater test that failed the macOS and Linux CI builds).
+
+## [1.3.0] – 2026-09-24
+
+### Added
+- Logs button beside every name in the Pods and Deployments tables (its own column, right after Name); it opens the logs panel without opening the details drawer. Deployment logs find the pods through the Deployment's selector (new `GET /api/deployments/:namespace/:name/pods`, like `kubectl logs deploy/<name>`) and offer **All pods** — up to 10 replicas merged chronologically, each line prefixed with its pod — or a single replica; a replica that can't be read is flagged instead of failing the whole view. Deployments also get **Logs** in the row menu and the details drawer.
+
+### Changed
+- The Cluster page no longer lists the kubeconfig's Contexts and Clusters; it shows Node Roles and Cluster Info only (switch clusters from the top-bar selector).
+- The Cluster page shows the branded loading screen ("Getting the data from <cluster>…") until its summary arrives, instead of grey placeholder cards. The loading screen now uses the detailed KubePilot artwork (`client/public/logo-detailed.png`, shown at 120 px).
+- Sidebar is narrower (232 px). The cluster switcher now sits at the left end of the top bar, filling the column above the sidebar, with the Back/Forward arrows right beside it where the content column starts. The top bar no longer reserves the 82 px macOS traffic-light gap on Windows and Linux.
+- App icon now uses the official transparent KubePilot artwork (`build/source/icon-detailed.webp` for large sizes, `build/source/icon-simple.webp` for 64 px and below) with no tile behind it, so it sits cleanly on dark and light themes. Windows ships a multi-size `build/icon.ico` (16–256 px); favicon, sidebar, loading screen, splash, website and OG image are regenerated from the same masters, downscaled only.
+
+### Fixed
 - YAML editor: the caret no longer drifts away from the text. The highlighted layer's `<code>` used the browser's generic monospace font while the editable layer used the app font (a 459-character line was off by about 200 px), and the two layers scrolled separately, so near the bottom the caret sat a line above the typed text. Both layers now share one scroll container and identical typography.
 - Dark theme: native dropdown lists (log tail size, pod and container pickers, and every other `<select>`) opened with a light background and the dark theme's pale text. Options now carry explicit theme colours in both themes.
-

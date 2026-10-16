@@ -6,6 +6,7 @@ import Icon from './Icons';
 import { StatusDot } from './ui/Badge';
 import { wsUrl } from '../lib/api';
 import { xtermTheme, onThemeChange } from '../lib/tokens';
+import { usePanelFullscreen } from '../hooks/useContentFullscreen';
 
 const STATUS_TONE = { connected: 'ok', connecting: 'warn', closed: 'bad' };
 
@@ -116,11 +117,13 @@ export default function TerminalViewer({ namespace, pod, container, onClose, onS
     };
   }, [connect]);
 
+  // Full screen: the whole bottom panel when inside one, else this viewer (xterm refits on resize).
+  const fullscreen = usePanelFullscreen();
   const statusText = status === 'connected' ? `pod/${podName}` : status === 'connecting' ? 'connecting…' : 'disconnected';
   const statusLabel = status === 'connected' ? 'Connected' : status === 'connecting' ? 'Connecting' : 'Disconnected';
 
   return (
-    <div className="terminal-viewer">
+    <div className={`terminal-viewer${fullscreen.on && !fullscreen.inPanel ? ' is-fullscreen' : ''}`} style={fullscreen.inPanel ? undefined : fullscreen.style}>
       <div className="terminal-toolbar">
         <span className="terminal-status" role="status" aria-live="polite">
           <StatusDot tone={STATUS_TONE[status] || 'muted'} label={statusLabel} />
@@ -132,6 +135,15 @@ export default function TerminalViewer({ namespace, pod, container, onClose, onS
           </button>
           <button type="button" className="terminal-btn" onClick={() => termRef.current?.clear()} aria-label="Clear terminal output">
             <Icon name="close" size={14} /> Clear
+          </button>
+          <button
+            type="button"
+            className="terminal-btn icon"
+            onClick={fullscreen.toggle}
+            aria-label={fullscreen.on ? 'Minimize terminal (exit full screen)' : 'Show terminal full screen'}
+            title={fullscreen.on ? 'Minimize' : 'Full screen'}
+          >
+            <Icon name={fullscreen.on ? 'minimize' : 'maximize'} size={14} />
           </button>
           {onClose && (
             <button type="button" className="terminal-btn" onClick={onClose} aria-label={`Close terminal for ${podName}`}>

@@ -5,6 +5,7 @@ import YamlViewer from './YamlViewer';
 import DataTable from './ui/DataTable';
 import SearchBox from './ui/SearchBox';
 import Button from './ui/Button';
+import BottomPanel, { PanelFullscreenToggle } from './ui/BottomPanel';
 import EmptyState from './ui/EmptyState';
 import ErrorState from './ui/ErrorState';
 import useRequest from '../hooks/useRequest';
@@ -146,15 +147,16 @@ export default function AccessControl({ refreshSignal = 0, onNavigate }) {
       </div>
 
       {yamlTarget && (
-        <div className="bottom-panel">
+        <BottomPanel besideDrawer={!!selected}>
           <div className="bottom-panel-tabs" role="tablist" aria-label="Open panels">
             <button type="button" role="tab" aria-selected="true" className="bottom-tab active"><Icon name="configuration" size={15} /> YAML · {yamlTarget.name}</button>
+            <PanelFullscreenToggle label="YAML" />
             <Button variant="ghost" size="sm" iconOnly icon="close" ariaLabel={`Close YAML for ${yamlTarget.name}`} className="bottom-panel-toggle" onClick={() => setYamlTarget(null)} />
           </div>
           <div className="bottom-panel-content" role="tabpanel">
             <YamlViewer namespace={yamlTarget.namespace} kind={yamlTarget.resourceType} name={yamlTarget.name} onClose={() => setYamlTarget(null)} onApplied={refetch} />
           </div>
-        </div>
+        </BottomPanel>
       )}
 
       {selected && (

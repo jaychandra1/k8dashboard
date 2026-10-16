@@ -4,7 +4,7 @@ import Icon from './Icons';
 import Skeleton from './ui/Skeleton';
 import ErrorState from './ui/ErrorState';
 import useRequest from '../hooks/useRequest';
-import useContentFullscreen from '../hooks/useContentFullscreen';
+import { usePanelFullscreen } from '../hooks/useContentFullscreen';
 import { getJson, p, errorMessage } from '../lib/api';
 
 // Per-container accent tone (used for the [container] prefix) — colours come from App.css.
@@ -105,9 +105,10 @@ export default function LogsViewer({ namespace, pod, containers, initialContaine
   const [regex, setRegex] = useState(false);
   const [active, setActive] = useState(0);
   const bodyRef = useRef(null);
-  // Full screen covers the content area (not the sidebar or top bar); the same
-  // button (or Escape) minimizes back into the panel.
-  const fullscreen = useContentFullscreen();
+  // Full screen covers the content area (not the sidebar or top bar): inside the
+  // bottom panel the whole panel goes, tab strip included, so other tabs stay a
+  // click away. The same button (or Escape) minimizes it again.
+  const fullscreen = usePanelFullscreen();
 
   // Reset the container choice when the pod / requested container changes.
   useEffect(() => { setContainer(initialContainer || ''); }, [podName, initialContainer]);
@@ -254,7 +255,7 @@ export default function LogsViewer({ namespace, pod, containers, initialContaine
   const searchId = `${uid}-search`;
 
   return (
-    <div className={`logs-viewer${fullscreen.on ? ' is-fullscreen' : ''}`} style={fullscreen.style}>
+    <div className={`logs-viewer${fullscreen.on && !fullscreen.inPanel ? ' is-fullscreen' : ''}`} style={fullscreen.inPanel ? undefined : fullscreen.style}>
       <div className="logs-toolbar" role="toolbar" aria-label="Log controls">
         <button type="button" className="logs-icon-btn" onClick={refetch} aria-label="Reload logs" aria-busy={refetching || undefined}><Icon name="refresh" size={15} /></button>
 

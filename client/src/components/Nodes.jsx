@@ -4,6 +4,7 @@ import MetricsChart from './MetricsChart';
 import DataTable from './ui/DataTable';
 import Badge from './ui/Badge';
 import Button from './ui/Button';
+import BottomPanel, { PanelFullscreenToggle } from './ui/BottomPanel';
 import EmptyState from './ui/EmptyState';
 import ErrorState from './ui/ErrorState';
 import useRequest from '../hooks/useRequest';
@@ -158,7 +159,7 @@ export default function Nodes({ onSelectPod, focusNode, onFocusHandled, refreshS
       </div>
 
       {selectedNode && (
-        <section className="bottom-panel" role="region" aria-label={`Node ${selectedNode.name} details`}>
+        <BottomPanel as="section" role="region" aria-label={`Node ${selectedNode.name} details`}>
           <div className="bottom-panel-tabs" role="tablist" aria-label={`${selectedNode.name} panels`}>
             {TABS.map((t, idx) => (
               <button
@@ -177,6 +178,7 @@ export default function Nodes({ onSelectPod, focusNode, onFocusHandled, refreshS
                 <Icon name={t.icon} size={15} /> {t.label}
               </button>
             ))}
+            <PanelFullscreenToggle label="node details" />
             <Button variant="ghost" size="sm" iconOnly icon="close" ariaLabel={`Close ${selectedNode.name} details`} className="bottom-panel-toggle" onClick={() => setSelectedName(null)} />
           </div>
           <div className="bottom-panel-content" id={`${uid}-panel`} role="tabpanel" aria-labelledby={`${uid}-tab-${activeTab}`}>
@@ -261,7 +263,7 @@ export default function Nodes({ onSelectPod, focusNode, onFocusHandled, refreshS
               </div>
             )}
           </div>
-        </section>
+        </BottomPanel>
       )}
     </div>
   );

@@ -1,16 +1,20 @@
-import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 
 /**
- * "Full screen" for a panel inside a page (e.g. the logs viewer): while on,
- * the panel is pinned (position: fixed) over the app's content area —
- * <main id="main">, everything right of the sidebar and below the top bar —
- * so the sidebar and top bar stay visible and usable. The pinned box follows
- * the area when the window, sidebar or top bar change size. Escape turns it
- * off unless a dialog or menu on top owns the key.
+ * "Full screen" for a panel inside a page: while on, the panel is pinned
+ * (position: fixed) over the app's content area — <main id="main">,
+ * everything right of the sidebar and below the top bar — so the sidebar and
+ * top bar stay visible and usable. The pinned box follows the area when the
+ * window, sidebar or top bar change size. Escape turns it off unless a dialog
+ * or menu on top owns the key, or focus is in a text editor / the terminal
+ * (where Escape means something else).
  *
  *   const fs = useContentFullscreen();
  *   <div className={fs.on ? 'panel is-fullscreen' : 'panel'} style={fs.style}>…</div>
- *   <button onClick={fs.toggle} aria-pressed={fs.on}>…</button>
+ *   <button onClick={fs.toggle}>…</button>
+ *
+ * `style` sets top / left / height and `--fs-width` (the area's width); the
+ * CSS sizes the box from it, so a panel can leave room for a drawer.
  */
 export default function useContentFullscreen(areaId = 'main') {
   const [on, setOn] = useState(false);
@@ -50,6 +54,8 @@ export default function useContentFullscreen(areaId = 'main') {
     const onKey = (e) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return;
       if (document.querySelector('.ui-modal-backdrop, [role="menu"], [role="tooltip"]')) return;
+      // The YAML editor and the pod terminal (xterm's input is a textarea) use Escape themselves.
+      if (e.target?.closest?.('textarea, [contenteditable="true"], .xterm')) return;
       setOn(false);
     };
     window.addEventListener('keydown', onKey);
@@ -58,7 +64,27 @@ export default function useContentFullscreen(areaId = 'main') {
 
   const toggle = useCallback(() => setOn((v) => !v), []);
   const exit = useCallback(() => setOn(false), []);
-  const style =
-    on && rect ? { top: rect.top, left: rect.left, width: rect.width, height: rect.height } : undefined;
-  return { on, toggle, exit, style };
+  const style = useMemo(
+    () =>
+      on && rect
+        ? { top: rect.top, left: rect.left, height: rect.height, '--fs-width': `${rect.width}px` }
+        : undefined,
+    [on, rect]
+  );
+  return useMemo(() => ({ on, toggle, exit, style }), [on, toggle, exit, style]);
+}
+
+/** Full-screen state shared by a bottom panel (ui/BottomPanel) with the viewers inside it. */
+export const FullscreenContext = createContext(null);
+
+/**
+ * Full screen for a viewer (logs, YAML, terminal). Inside a <BottomPanel> it
+ * is the panel's state — the whole panel, tab strip included, goes full
+ * screen (`inPanel: true`, the viewer styles nothing itself). Elsewhere the
+ * viewer gets its own state and applies `style` / an `is-fullscreen` class.
+ */
+export function usePanelFullscreen() {
+  const panel = useContext(FullscreenContext);
+  const own = useContentFullscreen();
+  return useMemo(() => (panel ? { ...panel, inPanel: true } : { ...own, inPanel: false }), [panel, own]);
 }

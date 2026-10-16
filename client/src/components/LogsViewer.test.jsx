@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import LogsViewer, { TAIL_OPTIONS, MAX_LOG_PODS } from './LogsViewer';
+import BottomPanel, { PanelFullscreenToggle } from './ui/BottomPanel';
 
 vi.mock('../lib/api', async (orig) => {
   const actual = await orig();
@@ -77,7 +78,7 @@ describe('LogsViewer', () => {
       expect(viewer).toHaveClass('is-fullscreen');
       expect(viewer.style.top).toBe('70px');
       expect(viewer.style.left).toBe('232px');
-      expect(viewer.style.width).toBe('1200px');
+      expect(viewer.style.getPropertyValue('--fs-width')).toBe('1200px');
       expect(viewer.style.height).toBe('800px');
       await user.click(screen.getByRole('button', { name: 'Minimize logs (exit full screen)' }));
       expect(viewer).not.toHaveClass('is-fullscreen');
@@ -87,6 +88,51 @@ describe('LogsViewer', () => {
       expect(viewer).toHaveClass('is-fullscreen');
       await user.keyboard('{Escape}');
       expect(viewer).not.toHaveClass('is-fullscreen');
+    } finally {
+      main.remove();
+    }
+  });
+
+  it('inside a bottom panel, full screen takes the whole panel so the other tabs stay reachable (beside an open drawer)', async () => {
+    const user = userEvent.setup();
+    const main = document.createElement('main');
+    main.id = 'main';
+    main.getBoundingClientRect = () => ({ top: 70, left: 232, width: 1200, height: 800, right: 1432, bottom: 870, x: 232, y: 70 });
+    document.body.appendChild(main);
+    try {
+      const { container } = render(
+        <BottomPanel besideDrawer>
+          <div className="bottom-panel-tabs" role="tablist" aria-label="Open panels">
+            <button type="button" role="tab" aria-selected="false">web-0</button>
+            <button type="button" role="tab" aria-selected="true">web-1</button>
+            <PanelFullscreenToggle />
+          </div>
+          <div className="bottom-panel-content">
+            <LogsViewer namespace="ns" pod="web-1" containers={['app']} />
+          </div>
+        </BottomPanel>
+      );
+      await screen.findByText(/hello world/);
+      const panel = container.querySelector('.bottom-panel');
+      const viewer = container.querySelector('.logs-viewer');
+      // A details drawer is open: the panel ends at its edge (CSS) instead of under it.
+      expect(panel).toHaveClass('beside-drawer');
+      // The logs toolbar button maximizes the panel, not just the viewer.
+      await user.click(screen.getByRole('button', { name: 'Show logs full screen' }));
+      expect(panel).toHaveClass('is-fullscreen');
+      expect(panel.style.top).toBe('70px');
+      expect(panel.style.left).toBe('232px');
+      expect(panel.style.getPropertyValue('--fs-width')).toBe('1200px');
+      expect(viewer).not.toHaveClass('is-fullscreen');
+      expect(viewer.getAttribute('style')).toBeNull();
+      // The tab strip (first) is still there, with both tabs.
+      expect(panel.firstElementChild).toHaveClass('bottom-panel-tabs');
+      expect(screen.getAllByRole('tab')).toHaveLength(2);
+      // Both buttons reflect the shared state; the strip's button minimizes.
+      expect(screen.getByRole('button', { name: 'Minimize logs (exit full screen)' })).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Minimize panel (exit full screen)' }));
+      expect(panel).not.toHaveClass('is-fullscreen');
+      expect(screen.getByRole('button', { name: 'Show panel full screen' })).toBeInTheDocument();
     } finally {
       main.remove();
     }

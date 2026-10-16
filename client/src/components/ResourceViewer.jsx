@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import YamlViewer from './YamlViewer';
 import LogsViewer from './LogsViewer';
+import BottomPanel, { PanelFullscreenToggle } from './ui/BottomPanel';
 import DeploymentLogs from './DeploymentLogs';
 import ApplyManifestModal from './ApplyManifestModal';
 import TerminalViewer from './TerminalViewer';
@@ -382,7 +383,7 @@ export default function ResourceViewer({
       </div>
 
       {tabs.length > 0 && (
-        <div className="bottom-panel">
+        <BottomPanel besideDrawer={!!selectedResource}>
           <div className="bottom-panel-tabs" role="tablist" aria-label="Open panels">
             {tabs.map((t) => {
               const meta = TAB_META[t.type];
@@ -411,6 +412,7 @@ export default function ResourceViewer({
                 </div>
               );
             })}
+            <PanelFullscreenToggle />
             <Button variant="ghost" size="sm" iconOnly icon="close" ariaLabel="Close all panels" className="bottom-panel-toggle" onClick={() => { setTabs([]); setActiveTabId(null); }} />
           </div>
 
@@ -444,7 +446,7 @@ export default function ResourceViewer({
               </div>
             ))}
           </div>
-        </div>
+        </BottomPanel>
       )}
 
       {selectedResource && (

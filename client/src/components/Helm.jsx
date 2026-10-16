@@ -3,6 +3,7 @@ import Icon from './Icons';
 import DataTable from './ui/DataTable';
 import Badge from './ui/Badge';
 import Button from './ui/Button';
+import BottomPanel, { PanelFullscreenToggle } from './ui/BottomPanel';
 import EmptyState from './ui/EmptyState';
 import ErrorState from './ui/ErrorState';
 import Skeleton from './ui/Skeleton';
@@ -104,7 +105,7 @@ export default function Helm({ refreshSignal = 0, onNavigate }) {
       </div>
 
       {selected && (
-        <div className="bottom-panel">
+        <BottomPanel>
           <div className="bottom-panel-tabs" role="tablist" aria-label={`${selected.name} details`}>
             {TABS.map((t, idx) => (
               <button
@@ -123,6 +124,7 @@ export default function Helm({ refreshSignal = 0, onNavigate }) {
                 <Icon name={t.icon} size={15} /> {t.label}
               </button>
             ))}
+            <PanelFullscreenToggle label="details" />
             <Button variant="ghost" size="sm" iconOnly icon="close" ariaLabel={`Close ${selected.name} details`} className="bottom-panel-toggle" onClick={() => setSelected(null)} />
           </div>
           <div className="bottom-panel-content" id={`${uid}-panel`} role="tabpanel" aria-labelledby={`${uid}-tab-${tab}`}>
@@ -138,7 +140,7 @@ export default function Helm({ refreshSignal = 0, onNavigate }) {
               </div>
             </div>
           </div>
-        </div>
+        </BottomPanel>
       )}
     </div>
   );

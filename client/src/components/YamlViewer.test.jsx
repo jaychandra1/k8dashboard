@@ -95,3 +95,33 @@ describe('YamlViewer', () => {
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('YamlViewer — full screen', () => {
+  beforeEach(() => { vi.clearAllMocks(); getJson.mockResolvedValue({ yaml: YAML }); });
+
+  it('maximizes over the content area; Escape while editing keeps it, Escape elsewhere minimizes', async () => {
+    const user = userEvent.setup();
+    const main = document.createElement('main');
+    main.id = 'main';
+    main.getBoundingClientRect = () => ({ top: 70, left: 232, width: 1200, height: 800, right: 1432, bottom: 870, x: 232, y: 70 });
+    document.body.appendChild(main);
+    try {
+      const { container } = renderYaml({ onClose: () => {} });
+      const ta = await screen.findByRole('textbox', { name: /YAML for pod web-1/ });
+      const viewer = container.querySelector('.yaml-viewer');
+      await user.click(screen.getByRole('button', { name: 'Show YAML full screen' }));
+      expect(viewer).toHaveClass('is-fullscreen');
+      expect(viewer.style.getPropertyValue('--fs-width')).toBe('1200px');
+      // Escape in the editor belongs to the editor.
+      ta.focus();
+      await user.keyboard('{Escape}');
+      expect(viewer).toHaveClass('is-fullscreen');
+      // Escape from the toolbar minimizes.
+      screen.getByRole('button', { name: 'Minimize YAML (exit full screen)' }).focus();
+      await user.keyboard('{Escape}');
+      expect(viewer).not.toHaveClass('is-fullscreen');
+    } finally {
+      main.remove();
+    }
+  });
+});
