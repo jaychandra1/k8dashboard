@@ -13,7 +13,10 @@ ARG TRIVY_VERSION=0.74.0
 # ============================================================
 # Stage 1 — build the React/Vite frontend
 # ============================================================
-FROM ${NODE_IMAGE} AS client-build
+# The output is static files, identical for every architecture, so this
+# stage always runs on the build machine's own platform — a multi-arch build
+# never runs npm/Vite under QEMU emulation, where Node can crash (SIGILL).
+FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS client-build
 WORKDIR /app/client
 COPY client/package*.json ./
 RUN npm ci --ignore-scripts

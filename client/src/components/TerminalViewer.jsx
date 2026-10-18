@@ -13,27 +13,35 @@ const STATUS_TONE = { connected: 'ok', connecting: 'warn', closed: 'bad' };
 /**
  * Interactive exec terminal for a pod container.
  * <TerminalViewer namespace pod container onClose onStatus />
+ * Another /ws/exec session (e.g. the Helm terminal): pass its query instead.
+ * <TerminalViewer wsParams={{ shell: 'helm' }} title="helm · dev" onCommand />
+ * onCommand fires when Enter is typed (callers use it to refresh their data).
  */
-export default function TerminalViewer({ namespace, pod, container, onClose, onStatus, resource }) {
+export default function TerminalViewer({ namespace, pod, container, onClose, onStatus, onCommand, resource, wsParams, title }) {
   const containerRef = useRef(null);
   const termRef = useRef(null);
   const fitRef = useRef(null);
   const wsRef = useRef(null);
   const [status, setStatus] = useState('connecting'); // connecting | connected | closed
   const onStatusRef = useRef(onStatus); onStatusRef.current = onStatus;
+  const onCommandRef = useRef(onCommand); onCommandRef.current = onCommand;
 
   const ns = namespace || resource?.namespace;
   const podName = pod || resource?.name;
   const cont = container || resource?.container;
+  const paramsKey = wsParams ? JSON.stringify(wsParams) : '';
+  const name = title || (podName ? `pod/${podName}` : 'terminal');
+  const who = title || podName; // in labels: "Reconnect terminal to <who>"
 
   const updateStatus = useCallback((s) => { setStatus(s); onStatusRef.current?.(s); }, []);
 
   const connect = useCallback(() => {
     const term = termRef.current;
-    if (!term || !podName) return;
+    if (!term || (!podName && !paramsKey)) return;
     updateStatus('connecting');
 
-    const ws = new WebSocket(wsUrl('/ws/exec', { namespace: ns, pod: podName, container: cont || undefined }));
+    const query = paramsKey ? JSON.parse(paramsKey) : { namespace: ns, pod: podName, container: cont || undefined };
+    const ws = new WebSocket(wsUrl('/ws/exec', query));
     wsRef.current = ws;
 
     ws.onopen = () => {
@@ -50,7 +58,7 @@ export default function TerminalViewer({ namespace, pod, container, onClose, onS
       term.write('\r\n\x1b[90m[session closed — press Reconnect]\x1b[0m\r\n');
     };
     ws.onerror = () => { if (wsRef.current === ws) updateStatus('closed'); };
-  }, [ns, podName, cont, updateStatus]);
+  }, [ns, podName, cont, paramsKey, updateStatus]);
 
   const reconnect = () => {
     const prev = wsRef.current;
@@ -85,6 +93,7 @@ export default function TerminalViewer({ namespace, pod, container, onClose, onS
     const dataSub = term.onData((data) => {
       const ws = wsRef.current;
       if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'data', data }));
+      if (data.includes('\r')) onCommandRef.current?.();
     });
 
     // container resize → refit + notify server
@@ -119,7 +128,7 @@ export default function TerminalViewer({ namespace, pod, container, onClose, onS
 
   // Full screen: the whole bottom panel when inside one, else this viewer (xterm refits on resize).
   const fullscreen = usePanelFullscreen();
-  const statusText = status === 'connected' ? `pod/${podName}` : status === 'connecting' ? 'connecting…' : 'disconnected';
+  const statusText = status === 'connected' ? name : status === 'connecting' ? 'connecting…' : 'disconnected';
   const statusLabel = status === 'connected' ? 'Connected' : status === 'connecting' ? 'Connecting' : 'Disconnected';
 
   return (
@@ -130,7 +139,7 @@ export default function TerminalViewer({ namespace, pod, container, onClose, onS
           {statusText}
         </span>
         <div className="terminal-toolbar-actions">
-          <button type="button" className="terminal-btn" onClick={reconnect} aria-label={`Reconnect terminal to ${podName}`}>
+          <button type="button" className="terminal-btn" onClick={reconnect} aria-label={`Reconnect terminal to ${who}`}>
             <Icon name="refresh" size={14} /> Reconnect
           </button>
           <button type="button" className="terminal-btn" onClick={() => termRef.current?.clear()} aria-label="Clear terminal output">
@@ -146,13 +155,13 @@ export default function TerminalViewer({ namespace, pod, container, onClose, onS
             <Icon name={fullscreen.on ? 'minimize' : 'maximize'} size={14} />
           </button>
           {onClose && (
-            <button type="button" className="terminal-btn" onClick={onClose} aria-label={`Close terminal for ${podName}`}>
+            <button type="button" className="terminal-btn" onClick={onClose} aria-label={`Close terminal for ${who}`}>
               <Icon name="close" size={14} /> Close
             </button>
           )}
         </div>
       </div>
-      <div className="xterm-host" ref={containerRef} role="region" aria-label={`Terminal for ${podName}`} />
+      <div className="xterm-host" ref={containerRef} role="region" aria-label={`Terminal for ${who}`} />
     </div>
   );
 }

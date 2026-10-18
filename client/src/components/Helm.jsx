@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import Icon from './Icons';
 import DataTable from './ui/DataTable';
 import Badge from './ui/Badge';
@@ -8,6 +8,7 @@ import EmptyState from './ui/EmptyState';
 import ErrorState from './ui/ErrorState';
 import Skeleton from './ui/Skeleton';
 import HighlightedCode from './ui/HighlightedCode';
+import TerminalViewer from './TerminalViewer';
 import useRequest from '../hooks/useRequest';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import { getJson, p } from '../lib/api';
@@ -20,13 +21,19 @@ const TABS = [
   { key: 'manifest', label: 'Manifest', icon: 'manifest' },
 ];
 
+const TERMINAL_TAB = { key: 'terminal', label: 'Helm terminal', icon: 'terminal' };
+
 const releaseKey = (r) => `${r.namespace}/${r.name}`;
+const clusterLabel = (ctx) => String(ctx || '').split('/').pop();
 
 export default function Helm({ refreshSignal = 0, onNavigate }) {
   useDocumentTitle('Helm');
   const uid = useId();
   const [selected, setSelected] = useState(null); // release
   const [tab, setTab] = useState('values');
+  // "+ Helm terminal": a shell where helm/kubectl reach only the current
+  // cluster (server: lib/helm-shell.mjs). { key } while open; a new key = a new session.
+  const [terminal, setTerminal] = useState(null);
 
   const { data, error, loading, refetching, refetch } = useRequest(
     ({ signal }) => getJson(p('api', 'helm', 'releases'), { signal }),
@@ -34,11 +41,36 @@ export default function Helm({ refreshSignal = 0, onNavigate }) {
   );
   const releases = data?.releases || [];
 
+  // Desktop app only (a shell on the user's own machine); hidden elsewhere.
+  const termInfo = useRequest(
+    ({ signal }) => getJson(p('api', 'helm-terminal'), { signal }),
+    { deps: [refreshSignal], dedupeKey: 'helm:terminal' },
+  );
+  const canTerminal = !!termInfo.data?.available;
+  const cluster = clusterLabel(termInfo.data?.context);
+
+  // Tabs in the bottom panel: the selected release's, then the terminal's.
+  const tabs = useMemo(() => [...(selected ? TABS : []), ...(terminal ? [TERMINAL_TAB] : [])], [selected, terminal]);
+  const activeTab = tabs.some((t) => t.key === tab) ? tab : tabs[0]?.key;
+
+  const openTerminal = () => { setTerminal((cur) => cur || { key: Date.now() }); setTab('terminal'); };
+  const closeTerminal = () => { setTerminal(null); setTab('values'); };
+  const closePanel = () => { setSelected(null); setTerminal(null); };
+
+  // A command typed in the terminal (helm install / upgrade / uninstall) shows
+  // up in the table: refresh shortly after Enter, and again for slower installs.
+  const refreshTimers = useRef([]);
+  const onTerminalCommand = useCallback(() => {
+    refreshTimers.current.forEach(clearTimeout);
+    refreshTimers.current = [setTimeout(refetch, 3000), setTimeout(refetch, 15000)];
+  }, [refetch]);
+  useEffect(() => () => refreshTimers.current.forEach(clearTimeout), []);
+
   // Values / manifest keyed by (release, tab): a stale response can never land
   // on the wrong tab because useRequest aborts + ignores superseded runs.
   const detail = useRequest(
     ({ signal }) => getJson(p('api', 'helm', 'releases', selected.namespace, selected.name, tab), { signal }),
-    { deps: [selected?.namespace, selected?.name, tab, refreshSignal], enabled: !!selected, keepPreviousData: false, dedupeKey: selected ? `helm:${selected.namespace}/${selected.name}/${tab}` : undefined },
+    { deps: [selected?.namespace, selected?.name, tab, refreshSignal], enabled: !!selected && tab !== 'terminal', keepPreviousData: false, dedupeKey: selected ? `helm:${selected.namespace}/${selected.name}/${tab}` : undefined },
   );
 
   const columns = useMemo(() => [
@@ -54,14 +86,14 @@ export default function Helm({ refreshSignal = 0, onNavigate }) {
   const select = (r) => { setSelected(r); setTab('values'); };
   const onTabKey = (e, idx) => {
     let next = null;
-    if (e.key === 'ArrowRight') next = (idx + 1) % TABS.length;
-    else if (e.key === 'ArrowLeft') next = (idx - 1 + TABS.length) % TABS.length;
+    if (e.key === 'ArrowRight') next = (idx + 1) % tabs.length;
+    else if (e.key === 'ArrowLeft') next = (idx - 1 + tabs.length) % tabs.length;
     else if (e.key === 'Home') next = 0;
-    else if (e.key === 'End') next = TABS.length - 1;
+    else if (e.key === 'End') next = tabs.length - 1;
     if (next == null) return;
     e.preventDefault();
-    setTab(TABS[next].key);
-    e.currentTarget.parentElement?.querySelector(`[data-tab="${TABS[next].key}"]`)?.focus();
+    setTab(tabs[next].key);
+    e.currentTarget.closest('[role="tablist"]')?.querySelector(`[data-tab="${tabs[next].key}"]`)?.focus();
   };
 
   return (
@@ -75,7 +107,18 @@ export default function Helm({ refreshSignal = 0, onNavigate }) {
           <span className="resource-count">{releases.length} {pluralize(releases.length, 'item')}</span>
           <span className="resource-refreshing" aria-live="polite" role="status">{refetching ? 'Refreshing…' : ''}</span>
         </div>
-        <div className="resource-controls" />
+        <div className="resource-controls">
+          {canTerminal && (
+            <Button
+              variant="primary"
+              icon="plus"
+              onClick={openTerminal}
+              title={`Open a terminal where helm and kubectl run against ${cluster || 'the current cluster'} only`}
+            >
+              Helm terminal
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="resource-table-wrapper">
@@ -104,41 +147,67 @@ export default function Helm({ refreshSignal = 0, onNavigate }) {
         )}
       </div>
 
-      {selected && (
+      {(selected || terminal) && (
         <BottomPanel>
-          <div className="bottom-panel-tabs" role="tablist" aria-label={`${selected.name} details`}>
-            {TABS.map((t, idx) => (
-              <button
-                key={t.key}
-                type="button"
-                role="tab"
-                id={`${uid}-tab-${t.key}`}
-                data-tab={t.key}
-                aria-selected={tab === t.key}
-                aria-controls={`${uid}-panel`}
-                tabIndex={tab === t.key ? 0 : -1}
-                className={`bottom-tab${tab === t.key ? ' active' : ''}`}
-                onClick={() => setTab(t.key)}
-                onKeyDown={(e) => onTabKey(e, idx)}
-              >
-                <Icon name={t.icon} size={15} /> {t.label}
-              </button>
-            ))}
-            <PanelFullscreenToggle label="details" />
-            <Button variant="ghost" size="sm" iconOnly icon="close" ariaLabel={`Close ${selected.name} details`} className="bottom-panel-toggle" onClick={() => setSelected(null)} />
-          </div>
-          <div className="bottom-panel-content" id={`${uid}-panel`} role="tabpanel" aria-labelledby={`${uid}-tab-${tab}`}>
-            <div className="yaml-viewer">
-              <div className="yaml-content" aria-busy={detail.loading || undefined}>
-                {detail.loading ? (
-                  <div className="yaml-loading"><Skeleton rows={10} cols={2} label={`Loading ${tab}`} /></div>
-                ) : detail.error ? (
-                  <ErrorState error={detail.error} title={`Couldn't load ${tab}`} onRetry={detail.refetch} />
-                ) : (
-                  <HighlightedCode code={detail.data?.yaml || ''} lang="yaml" className="yaml-code" />
+          <div className="bottom-panel-tabs" role="tablist" aria-label={selected ? `${selected.name} details` : 'Helm terminal'}>
+            {tabs.map((t, idx) => (
+              <span key={t.key} className="bottom-tab-group">
+                <button
+                  type="button"
+                  role="tab"
+                  id={`${uid}-tab-${t.key}`}
+                  data-tab={t.key}
+                  aria-selected={activeTab === t.key}
+                  aria-controls={`${uid}-panel`}
+                  tabIndex={activeTab === t.key ? 0 : -1}
+                  className={`bottom-tab${activeTab === t.key ? ' active' : ''}`}
+                  onClick={() => setTab(t.key)}
+                  onKeyDown={(e) => onTabKey(e, idx)}
+                >
+                  <Icon name={t.icon} size={15} /> {t.key === 'terminal' && cluster ? `${t.label} · ${cluster}` : t.label}
+                </button>
+                {t.key === 'terminal' && (
+                  <button type="button" className="tab-chip-close" aria-label="Close Helm terminal" onClick={closeTerminal}>
+                    <Icon name="close" size={12} />
+                  </button>
                 )}
+              </span>
+            ))}
+            <PanelFullscreenToggle label={activeTab === 'terminal' ? 'Helm terminal' : 'details'} />
+            <Button
+              variant="ghost" size="sm" iconOnly icon="close"
+              ariaLabel={selected && terminal ? 'Close panel' : selected ? `Close ${selected.name} details` : 'Close Helm terminal panel'}
+              className="bottom-panel-toggle"
+              onClick={closePanel}
+            />
+          </div>
+          <div className="bottom-panel-content" id={`${uid}-panel`} role="tabpanel" aria-labelledby={`${uid}-tab-${activeTab}`}>
+            {selected && activeTab !== 'terminal' && (
+              <div className="yaml-viewer">
+                <div className="yaml-content" aria-busy={detail.loading || undefined}>
+                  {detail.loading ? (
+                    <div className="yaml-loading"><Skeleton rows={10} cols={2} label={`Loading ${activeTab}`} /></div>
+                  ) : detail.error ? (
+                    <ErrorState error={detail.error} title={`Couldn't load ${activeTab}`} onRetry={detail.refetch} />
+                  ) : (
+                    <HighlightedCode code={detail.data?.yaml || ''} lang="yaml" className="yaml-code" />
+                  )}
+                </div>
               </div>
-            </div>
+            )}
+            {/* Kept mounted while open so switching tabs doesn't end the session. */}
+            {terminal && (
+              <div className="tab-pane" hidden={activeTab !== 'terminal'}>
+                <TerminalViewer
+                  key={terminal.key}
+                  wsParams={{ shell: 'helm' }}
+                  title={`helm · ${cluster || 'cluster'}`}
+                  onClose={closeTerminal}
+                  onCommand={onTerminalCommand}
+                  onStatus={(s) => { if (s === 'closed') refetch(); }}
+                />
+              </div>
+            )}
           </div>
         </BottomPanel>
       )}

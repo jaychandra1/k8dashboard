@@ -45,6 +45,7 @@ import {
 } from './lib/k8s-ops.mjs';
 import { eksEntryFor as eksEntryForKc, sameEksCluster, eksClusterStatus as eksClusterStatusKc } from './lib/eks-kubeconfig.mjs';
 import { createUpdates, registerUpdateRoutes } from './lib/updater/routes.mjs';
+import { localShellAllowed, pinnedKubeconfig, helmShellEnv, helmShellCommand, helmShellBanner, helmDirOf } from './lib/helm-shell.mjs';
 
 // node-pty powers the pod terminal (a real PTY bridged to `kubectl exec`). Load
 // it defensively so a missing/unbuildable native module never crashes the whole
@@ -2309,6 +2310,22 @@ const getLatestHelmRelease = async (namespace, name) => {
   return releases[0] || null;
 };
 
+// Helm terminal (Helm page → "+ Helm terminal"): can this server open a shell
+// pinned to the current cluster, and is helm installed? See lib/helm-shell.mjs.
+app.get('/api/helm-terminal', async (req, res) => {
+  const allowed = localShellAllowed();
+  let installed = false;
+  if (allowed) {
+    try { installed = await commandExists('helm'); } catch { installed = false; }
+  }
+  res.json({
+    available: allowed && !!pty && !!kubeConfig && !!currentContext,
+    reason: !allowed ? 'desktop_only' : !pty ? 'no_pty' : !kubeConfig || !currentContext ? 'no_cluster' : null,
+    context: currentContext || null,
+    helm: { installed },
+  });
+});
+
 app.get('/api/helm/releases', async (req, res) => {
   try {
     if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
@@ -3960,7 +3977,12 @@ server.on('upgrade', async (req, socket, head) => {
   if (!isAllowedOrigin(req.headers.origin, req.headers.host)) return rejectUpgrade(socket, 403, { error: 'Cross-origin request rejected', code: 'origin_rejected' });
   if (!verifyWsAuth(req)) return rejectUpgrade(socket, 401, { error: 'Unauthorized', code: 'auth_required' });
   const q = (k) => url.searchParams.get(k);
-  const invalid = q('agent')
+  const invalid = q('shell') !== null
+    ? firstInvalid([
+      ['shell', q('shell'), (v) => v === 'helm'],
+      ['namespace', q('namespace'), (v) => v === null || v === '' || isDnsLabel(v)],
+    ])
+    : q('agent')
     ? firstInvalid([
       ['agent', q('agent'), (v) => AI_AGENTS.some((a) => a.id === v)],
       ['prompt', q('prompt'), (v) => v === null || v.length <= 16384],
@@ -3971,9 +3993,14 @@ server.on('upgrade', async (req, socket, head) => {
       ['container', q('container'), (v) => v === null || v === '' || isContainer(v)],
     ]);
   if (invalid) return rejectUpgrade(socket, 400, { error: `Invalid ${invalid}`, code: 'invalid_param', field: invalid });
+  // The Helm terminal is a shell on this server's host: the user's own machine
+  // in the desktop app, never a shared server unless explicitly enabled.
+  if (q('shell') !== null && !localShellAllowed() && !demoActive()) {
+    return rejectUpgrade(socket, 403, { error: 'The Helm terminal is only available in the KubePilot desktop app', code: 'local_shell_disabled' });
+  }
   // The pod terminal is a real PTY around `kubectl exec -it`: without kubectl
   // (and outside demo mode) answer with the actionable JSON error up front.
-  if (!q('agent') && !demoActive()) {
+  if (!q('agent') && q('shell') === null && !demoActive()) {
     let kubectl;
     try { kubectl = await hasKubectl(); } catch { kubectl = { available: false }; }
     if (!kubectl.available) return rejectUpgrade(socket, 501, { error: KUBECTL_REQUIRED_MESSAGE, code: 'kubectl_required' });
@@ -4001,6 +4028,7 @@ wss.on('connection', async (browserWs, req) => {
   // Demo mode (KUBEPILOT_DEMO=1 only): a scripted pseudo-terminal instead of a real pod exec.
   if (demoActive()) {
     demo.shellSession(browserWs, {
+      shell: url.searchParams.get('shell'),
       agent: url.searchParams.get('agent'),
       namespace: url.searchParams.get('namespace'),
       pod: url.searchParams.get('pod'),
@@ -4022,9 +4050,43 @@ wss.on('connection', async (browserWs, req) => {
   }
 
   const agentId = url.searchParams.get('agent');
+  const shellKind = url.searchParams.get('shell');
   let term, cleanup = () => {};
 
-  if (agentId) {
+  if (shellKind === 'helm') {
+    // ---- Helm terminal: a clean local shell whose kubeconfig holds ONLY the
+    // current context (lib/helm-shell.mjs). Validated and gated at upgrade. ----
+    const namespace = url.searchParams.get('namespace') || '';
+    const context = currentContext;
+    let kubeconfigPath;
+    try {
+      kubeconfigPath = path.join(os.tmpdir(), `kp-helm-${randomUUID()}.json`);
+      fs.writeFileSync(kubeconfigPath, pinnedKubeconfig(kubeConfig, context, k8s.KubeConfig, namespace), { mode: 0o600 });
+      scheduleTempUnlink(kubeconfigPath);
+      cleanup = () => { try { fs.unlinkSync(kubeconfigPath); } catch { /* already gone */ } };
+    } catch (err) {
+      send(`
+[31mCould not prepare a kubeconfig for ${context || 'the current cluster'}: ${err.message}[0m
+`);
+      browserWs.close();
+      return;
+    }
+    const helmDir = helmDirOf(resolveBinSync('helm'));
+    const shell = helmShellCommand({ exists: (f) => fs.existsSync(f) });
+    const env = { ...helmShellEnv(process.env, { kubeconfigPath, context, namespace, helmDir }), ...shell.env };
+    send(helmShellBanner({ context, namespace, helmFound: !!helmDir }));
+    try {
+      term = pty.spawn(shell.file, shell.args, { name: 'xterm-256color', cols: 80, rows: 24, cwd: process.env.HOME || os.homedir(), env });
+    } catch (err) {
+      cleanup();
+      send(`
+[31mFailed to start the Helm terminal: ${err.message}[0m
+`);
+      browserWs.close();
+      return;
+    }
+    log.info('helm terminal opened', { context });
+  } else if (agentId) {
     // ---- AI agent terminal: a login shell with the app's current cluster
     // context pinned via a temp kubeconfig, then launch the chosen agent CLI.
     // Only a known agent id is accepted (validated at upgrade). ----

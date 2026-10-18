@@ -308,15 +308,36 @@ jobs:
             dist/*.cdx.json
 
   # ---------------------------------------------------------------------------
+  # Docker image: each architecture is built on a NATIVE runner (no QEMU) and
+  # pushed by digest; docker-manifest then tags one multi-arch image.
+  #
+  # Emulating arm64 with QEMU on an x64 runner made Node crash with SIGILL
+  # ("qemu: uncaught target signal 4 (Illegal instruction)") during npm ci —
+  # an intermittent fault of the QEMU that setup-qemu-action installs, not of
+  # the app. Native arm64 runners (ubuntu-24.04-arm; private repos: billed per
+  # minute after the free minutes) also build several times faster.
   docker:
-    name: Publish Docker image (GHCR)
+    name: Docker image (${{ matrix.arch }})
     needs: [verify, build]
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    # Same approval gate as before: both legs wait for the `release`
+    # environment together with the GitHub Release job (one approval).
+    # They only push untagged digests; nothing is tagged until docker-manifest.
     environment: release
     permissions:
       contents: read
       packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -335,9 +356,6 @@ jobs:
           OWNER: ${{ github.repository_owner }}
         run: echo "name=ghcr.io/${OWNER,,}/kubepilot" >> "$GITHUB_OUTPUT"
 
-      - name: Set up QEMU (arm64 emulation)
-        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
@@ -348,15 +366,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Image metadata (tags & labels)
+      - name: Image labels
         id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
           images: ${{ steps.img.outputs.name }}
-          tags: |
-            type=semver,pattern=v{{version}},value=${{ needs.verify.outputs.tag }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ needs.verify.outputs.tag }}
-            type=raw,value=latest
           # metadata-action defaults source/url/documentation to the workflow's
           # own (private) repo; point them at the public KubePilot repo instead.
           labels: |
@@ -368,19 +382,107 @@ jobs:
             org.opencontainers.image.version=${{ needs.verify.outputs.version }}
             org.opencontainers.image.licenses=MIT
 
-      - name: Build and push (amd64 + arm64)
+      - name: Build and push by digest (${{ matrix.platform }})
         id: push
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           target: runtime
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          platforms: ${{ matrix.platform }}
+          tags: ${{ steps.img.outputs.name }}
           labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,push-by-digest=true,name-canonical=true,push=true
           build-args: |
             APP_VERSION=${{ needs.verify.outputs.version }}
           provenance: true
           sbom: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=docker-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=docker-${{ matrix.arch }}
+
+      - name: Export digest
+        shell: bash
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+          DIR: ${{ runner.temp }}/digests
+        run: |
+          set -euo pipefail
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::unexpected digest '$DIGEST'"; exit 1; }
+          mkdir -p "$DIR"
+          touch "$DIR/${DIGEST#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: docker-digest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  docker-manifest:
+    name: Publish Docker image (GHCR)
+    # Runs only after both approved, successful architecture builds.
+    needs: [verify, docker]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Image name
+        id: img
+        shell: bash
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: echo "name=ghcr.io/${OWNER,,}/kubepilot" >> "$GITHUB_OUTPUT"
+
+      - name: Download digests
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: docker-digest-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image tags
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+        with:
+          images: ${{ steps.img.outputs.name }}
+          tags: |
+            type=semver,pattern=v{{version}},value=${{ needs.verify.outputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.verify.outputs.tag }}
+            type=raw,value=latest
+
+      - name: Create the multi-arch image and push its tags
+        shell: bash
+        working-directory: ${{ runner.temp }}/digests
+        env:
+          IMAGE: ${{ steps.img.outputs.name }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          digests=(*)
+          [ ${#digests[@]} -eq 2 ] || { echo "::error::expected 2 platform digests, got ${#digests[@]}"; exit 1; }
+          mapfile -t tags < <(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          args=()
+          for t in "${tags[@]}"; do args+=(-t "$t"); done
+          sources=()
+          for d in "${digests[@]}"; do sources+=("${IMAGE}@sha256:${d}"); done
+          docker buildx imagetools create "${args[@]}" "${sources[@]}"
+
+      - name: Inspect the published image
+        shell: bash
+        env:
+          IMAGE: ${{ steps.img.outputs.name }}
+          TAG: ${{ needs.verify.outputs.tag }}
+        run: docker buildx imagetools inspect "${IMAGE}:${TAG}"

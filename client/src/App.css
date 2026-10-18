@@ -4660,3 +4660,7 @@ h3.sec-drawer-section:first-child { margin-top: 0; }
 .release-notes-body { max-height: min(56vh, 520px); overflow: auto; padding-right: 6px; font-size: 0.8125rem; line-height: 1.6; color: var(--text-secondary); }
 /* The release body opens with "# KubePilot x.y.z" (rendered as h3), which the header above already shows. */
 .release-notes-body .md > h3.md-h:first-child { display: none; }
+
+/* Helm page: a bottom-panel tab with its own close button (the Helm terminal). */
+.bottom-tab-group { display: inline-flex; align-items: center; }
+.bottom-tab-group .tab-chip-close { margin-left: -8px; margin-right: 4px; }

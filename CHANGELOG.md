@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.5.1] – 2026-10-16
+
+### Fixed
+- Docker image: the arm64 image is built on a native arm64 runner instead of under QEMU emulation on an x64 runner, where Node crashed during `npm ci` ("Illegal instruction", exit 132) and the 1.5.0 image could not be published. Both architectures now build natively, are pushed by digest and are combined into one multi-arch tag; the frontend build stage always runs on the build machine's own platform.
+
 ## [1.5.0] – 2026-10-16
 
 ### Added

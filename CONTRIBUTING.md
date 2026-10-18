@@ -81,7 +81,8 @@ Trivy scan of the image (fails on CRITICAL).
    builds all installers, pauses for approval on the `release` environment, then publishes the
    GitHub Release on [jaychandra1/KubePilot](https://github.com/jaychandra1/KubePilot)
    (installers, `SHA256SUMS.txt`, CycloneDX SBOM) and pushes
-   `ghcr.io/jaychandra1/kubepilot:{v1.2.0,1.2,latest}` for amd64 + arm64.
+   `ghcr.io/jaychandra1/kubepilot:{v1.2.0,1.2,latest}` for amd64 + arm64 (each built on a native
+   runner, `ubuntu-24.04` / `ubuntu-24.04-arm`; no QEMU emulation).
    The `release` job needs a `RELEASE_TOKEN` secret (fine-grained PAT on
    jaychandra1/KubePilot with Contents: read & write) and fails early with a clear error if it is
    missing. The container image is pushed with this repo's `GITHUB_TOKEN`; after the first push,

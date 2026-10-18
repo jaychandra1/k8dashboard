@@ -1267,6 +1267,9 @@ export function handle(req, res) {
     }
 
     // ---------- helm ----------
+    if (method === 'GET' && p === '/api/helm-terminal') {
+      return json({ available: true, reason: null, context: DEMO_CONTEXT, helm: { installed: true } });
+    }
     if (method === 'GET' && p === '/api/helm/releases') {
       return json({ releases: cluster.helm.map((r) => ({ name: r.name, namespace: r.namespace, revision: String(r.version ?? ''), updated: r.info?.last_deployed || '', status: r.info?.status || '', chart: r.chart?.metadata ? `${r.chart.metadata.name}-${r.chart.metadata.version}` : '', appVersion: r.chart?.metadata?.appVersion || '' })) });
     }
@@ -1603,10 +1606,18 @@ function pfStart(body) {
 // ----------------------------------------------------------------------------
 export function shellSession(ws, meta = {}) {
   const send = (s) => { try { if (ws.readyState === 1) ws.send(s); } catch { /* ignore */ } };
-  const PROMPT = '\x1b[1;32mdemo@' + (meta.pod || 'pod') + '\x1b[0m:\x1b[1;34m/app\x1b[0m$ ';
+  // meta.shell === 'helm': the Helm page's terminal (pinned to the demo cluster).
+  const helm = meta.shell === 'helm';
+  const PROMPT = helm
+    ? `[helm:${DEMO_CONTEXT}] ~ $ `
+    : '\x1b[1;32mdemo@' + (meta.pod || 'pod') + '\x1b[0m:\x1b[1;34m/app\x1b[0m$ ';
   let line = '';
 
-  const banner = [
+  const banner = helm ? [
+    `\r\n\x1b[1;36mHelm terminal\x1b[0m \x1b[90m·\x1b[0m cluster \x1b[1;36m${DEMO_CONTEXT}\x1b[0m`,
+    `\r\n\x1b[90mhelm and kubectl here can only reach ${DEMO_CONTEXT}. This is the demo cluster — nothing is actually installed.\x1b[0m`,
+    '\r\n\x1b[90mTry: helm list -A, helm version, helm repo add, helm install, kubectl config current-context\x1b[0m\r\n\r\n',
+  ].join('') : [
     '\r\n\x1b[1;36m╭──────────────────────────────────────────────╮\x1b[0m',
     '\r\n\x1b[1;36m│\x1b[0m  KubePilot demo shell (synthetic pod)           \x1b[1;36m│\x1b[0m',
     '\r\n\x1b[1;36m╰──────────────────────────────────────────────╯\x1b[0m',
@@ -1622,8 +1633,36 @@ export function shellSession(ws, meta = {}) {
     'readme.txt': 'This is a synthetic demo pod filesystem.\n',
   };
 
+  // Canned helm / kubectl answers for the Helm terminal.
+  const runHelm = (name, args) => {
+    if (name === 'kubectl' && args.join(' ') === 'config current-context') return `${DEMO_CONTEXT}\r\n`;
+    if (name !== 'helm') return undefined;
+    const [sub, ...rest] = args;
+    if (sub === 'version') return 'v3.16.2+g13654a5\r\n';
+    if (sub === 'list' || sub === 'ls') {
+      const head = ['NAME', 'NAMESPACE', 'REVISION', 'STATUS', 'CHART', 'APP VERSION'];
+      const rows = cluster.helm.map((r) => [r.name, r.namespace, String(r.version ?? ''), r.info?.status || 'deployed',
+        `${r.chart?.metadata?.name}-${r.chart?.metadata?.version}`, r.chart?.metadata?.appVersion || '']);
+      const widths = head.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i].length)) + 2);
+      const fmt = (r) => r.map((c, i) => c.padEnd(widths[i])).join('').trimEnd();
+      return [fmt(head), ...rows.map(fmt)].join('\r\n') + '\r\n';
+    }
+    if (sub === 'repo' && rest[0] === 'add' && rest[1]) return `"${rest[1]}" has been added to your repositories\r\n`;
+    if (sub === 'repo' && rest[0] === 'update') return 'Update Complete. ⎈Happy Helming!⎈\r\n';
+    if (sub === 'install' && rest[0] && rest[1]) {
+      const nsAt = rest.findIndex((a) => a === '-n' || a === '--namespace');
+      const ns = nsAt >= 0 && rest[nsAt + 1] ? rest[nsAt + 1] : 'default';
+      return `NAME: ${rest[0]}\r\nNAMESPACE: ${ns}\r\nSTATUS: deployed\r\nREVISION: 1\r\n\x1b[90m(demo — nothing was installed)\x1b[0m\r\n`;
+    }
+    return 'Usage: helm [command] — try helm list -A, helm version, helm repo add, helm install\r\n';
+  };
+
   const run = (cmd) => {
     const [name, ...args] = cmd.trim().split(/\s+/);
+    if (helm) {
+      const out = runHelm(name, args);
+      if (out !== undefined) return out;
+    }
     switch (name) {
       case '': return '';
       case 'help': return 'Available: ls, pwd, whoami, cat <file>, echo, env, hostname, date, uname, ps, clear, exit\r\n';
