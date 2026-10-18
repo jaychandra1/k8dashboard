@@ -6,6 +6,9 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Security
+- Dependencies: every vulnerable version reported by Dependabot / `npm audit` is patched — `npm audit` now finds 0 vulnerabilities in both lockfiles. Shipped in the app: `proxy-addr` 2.0.8 (critical, IP spoofing; via Express), `compression` 1.8.2, `@modelcontextprotocol/sdk` 1.32.1, `undici`, `http-cache-semantics` 4.3, `js-yaml` 5.5, `ip-address`, `fast-uri`; in the UI bundle `axios` 1.20.0. Build/dev tooling: `shell-quote` 1.12 (critical; via concurrently), `brace-expansion`, `source-map-js` 1.2.2, electron-builder 26.17.0, and an npm override to `global-agent` 4.x, which drops the unmaintained `roarr` → `sprintf-js` chain that has no patched release.
+
 ### Added
 - **AWS sign-ins renew themselves.** Signing in to IAM Identity Center now asks AWS for a refresh token and stores the login the way `aws configure sso` does — an `[sso-session]` in `~/.aws/config` and its token in `~/.aws/sso/cache` — so the AWS SDK (KubePilot's EKS token helper, the AWS CLI, kubectl) renews the access token without a browser until the Identity Center session ends. KubePilot also renews the sessions behind your EKS contexts ahead of expiry (at launch and every 5 minutes), so the "AWS session expired" dialog only appears when the session itself has ended. Existing SSO profiles are moved to the session format the next time you sign in to them; `~/.aws/config` is backed up once (`config.kubepilot-backup-<time>`) before KubePilot first changes it.
 - **Sign in to AWS in one click.** The desktop app opens your AWS access portal in the browser and returns to KubePilot automatically (OAuth 2.0 authorization code + PKCE through a one-time `127.0.0.1` redirect — the AWS CLI's default flow); nothing to type. "Use a sign-in code instead" switches to the device-code flow, which is also what a KubePilot server uses.
