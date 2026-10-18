@@ -327,38 +327,6 @@ body {
 /* Danger variant of the modal icon (auth / connectivity failures) */
 .modal-icon.danger { background: var(--red-tint); color: var(--red); }
 
-/* Auth failure detail (context / API server) */
-.auth-detail {
-  margin-top: 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-base);
-  overflow: hidden;
-}
-.auth-detail-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 9px 12px;
-  font-size: 0.75rem;
-}
-.auth-detail-row + .auth-detail-row { border-top: 1px solid var(--border-subtle); }
-.auth-detail-key {
-  flex-shrink: 0;
-  width: 84px;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-  font-size: 0.6875rem;
-  font-weight: 600;
-}
-.auth-detail-row code {
-  font-family: var(--mono);
-  font-size: 0.7188rem;
-  color: var(--cyan);
-  word-break: break-all;
-}
-
 /* switch-cluster control on the auth-error screen */
 .auth-switch { margin-top: 16px; }
 .auth-switch-label {
@@ -375,7 +343,7 @@ body {
 .auth-switch .dd-list { max-height: 200px; }
 
 /* Auth-error modal: parsed summary + one-click fix + collapsible raw error */
-.auth-modal { max-width: 500px; }
+.auth-modal { max-width: 560px; }
 .auth-summary { margin-bottom: 16px; }
 
 .auth-fix {
@@ -4664,3 +4632,171 @@ h3.sec-drawer-section:first-child { margin-top: 0; }
 /* Helm page: a bottom-panel tab with its own close button (the Helm terminal). */
 .bottom-tab-group { display: inline-flex; align-items: center; }
 .bottom-tab-group .tab-chip-close { margin-left: -8px; margin-right: 4px; }
+
+
+/* ============================================================
+   Startup connection dialog (AuthErrorModal) — the cluster card, the AWS
+   sign-in panel (AwsSsoSignIn) and the way out to any other cluster.
+   ============================================================ */
+.auth-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-1);
+  overflow: hidden;
+}
+.auth-card-head { display: flex; align-items: center; gap: 12px; padding: 14px 16px; }
+.auth-provider {
+  width: 36px; height: 36px; flex: none;
+  display: grid; place-items: center;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface-2);
+  color: var(--text-secondary);
+}
+.auth-provider-aws { color: #ffb84d; background: rgba(255, 153, 0, 0.12); border-color: rgba(255, 153, 0, 0.32); }
+.auth-provider-azure { color: #4da3ff; background: rgba(0, 120, 212, 0.14); border-color: rgba(0, 120, 212, 0.34); }
+.auth-provider-gcp { color: #8ab4f8; background: rgba(66, 133, 244, 0.12); border-color: rgba(66, 133, 244, 0.32); }
+.auth-provider-kubeconfig, .auth-provider-local { color: var(--accent); background: var(--accent-tint); }
+:root[data-theme='light'] .auth-provider-aws { color: #c45500; }
+:root[data-theme='light'] .auth-provider-azure { color: #0067b8; }
+:root[data-theme='light'] .auth-provider-gcp { color: #1a73e8; }
+.auth-card-id { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.auth-card-name {
+  font-family: var(--mono); font-size: 0.9063rem; font-weight: 650; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.auth-card-meta { font-size: 0.75rem; line-height: 1.4; color: var(--text-muted); overflow-wrap: anywhere; }
+.auth-card-head { align-items: flex-start; }
+.auth-card-head .auth-provider, .auth-card-head .auth-pill { margin-top: 2px; }
+.auth-pill {
+  flex: none; padding: 3px 9px; border-radius: 999px;
+  font-size: 0.6875rem; font-weight: 650; font-variant-numeric: tabular-nums;
+  color: var(--red); background: var(--red-tint);
+}
+.auth-card-server {
+  display: flex; align-items: baseline; gap: 10px; min-width: 0;
+  padding: 8px 16px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-base);
+}
+.auth-card-server-key { flex: none; font-size: 0.6563rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
+.auth-card-server code { min-width: 0; font-family: var(--mono); font-size: 0.7188rem; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.auth-card-body { padding: 18px 16px 16px; border-top: 1px solid var(--border-subtle); }
+.auth-card[data-provider='aws'] .auth-card-body { background: linear-gradient(180deg, rgba(255, 153, 0, 0.06), transparent 75%); }
+.auth-card[data-provider='azure'] .auth-card-body { background: linear-gradient(180deg, rgba(0, 120, 212, 0.06), transparent 75%); }
+.auth-card .auth-fix { margin: 0; border: 0; border-radius: 0; background: transparent; }
+.auth-card .auth-fix-btn.ui-btn { min-height: 42px; font-weight: 650; }
+
+/* footer: Add cluster on the left, Retry on the right */
+.auth-modal .auth-actions { align-items: center; }
+.auth-actions-spacer { flex: 1; }
+
+/* the way out: switch to (or connect) another cluster */
+.auth-switch { margin-top: 20px; }
+.auth-divider {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 10px;
+  font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text-muted);
+}
+.auth-divider::before, .auth-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+.auth-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+.auth-tile {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--bg-surface); color: var(--text);
+  font: inherit; text-align: left; cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.12s;
+}
+.auth-tile:hover:not(:disabled) { border-color: var(--border-strong); box-shadow: var(--shadow-2); transform: translateY(-1px); }
+.auth-tile:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.auth-tile:disabled { opacity: 0.55; cursor: not-allowed; }
+.auth-tile .auth-provider { width: 30px; height: 30px; border-radius: 8px; }
+.auth-tile-text { display: flex; flex-direction: column; min-width: 0; }
+.auth-tile-text strong { font-size: 0.8125rem; font-weight: 650; }
+.auth-tile-text { gap: 2px; }
+.auth-tile-text span { font-size: 0.7188rem; line-height: 1.35; color: var(--text-muted); }
+
+/* ---- AWS sign-in panel (AwsSsoSignIn) ---- */
+.sso-panel { display: flex; flex-direction: column; gap: 12px; }
+.sso-primary.ui-btn {
+  width: 100%; justify-content: center;
+  min-height: 42px; font-size: 0.9063rem; font-weight: 650;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+.sso-hint { margin: 0; text-align: center; font-size: 0.7813rem; line-height: 1.5; color: var(--text-secondary); }
+.sso-hint b, .sso-wait-text b, .sso-waiting-line b { color: var(--text); font-weight: 600; }
+.sso-alt { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 6px 8px; font-size: 0.75rem; color: var(--text-muted); }
+.sso-link { padding: 0; border: 0; background: none; color: var(--link); font: inherit; cursor: pointer; }
+.sso-link:hover:not(:disabled) { text-decoration: underline; }
+.sso-link:disabled { opacity: 0.5; cursor: default; }
+.sso-cli { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.sso-cli code {
+  max-width: 230px; padding: 2px 7px;
+  border: 1px solid var(--border); border-radius: var(--radius-xs);
+  background: var(--bg-base); color: var(--text-secondary);
+  font-family: var(--mono); font-size: 0.7031rem;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sso-sep { opacity: 0.6; }
+.sso-copy.ui-btn { min-height: 24px; padding: 0 7px; font-size: 0.7031rem; }
+
+/* waiting for the browser */
+.sso-waiting, .sso-done { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px 14px; align-items: center; }
+.sso-orb {
+  position: relative; width: 44px; height: 44px;
+  display: grid; place-items: center;
+  border-radius: 50%; color: var(--accent); background: var(--accent-tint);
+}
+.sso-orb-ring { position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--accent); opacity: 0; animation: sso-ping 1.6s cubic-bezier(0, 0, 0.2, 1) infinite; }
+@keyframes sso-ping { 0% { transform: scale(0.85); opacity: 0.55; } 80%, 100% { transform: scale(1.35); opacity: 0; } }
+.sso-wait-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; font-size: 0.7813rem; line-height: 1.45; color: var(--text-secondary); }
+.sso-wait-text strong { font-size: 0.875rem; font-weight: 650; color: var(--text); }
+.sso-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+.sso-countdown { font-size: 0.7031rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* sign-in code */
+.sso-eyebrow { font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
+.sso-code-row { display: flex; align-items: center; gap: 10px; }
+.sso-code {
+  flex: 1; padding: 12px 14px; text-align: center;
+  border: 1px dashed var(--border-strong); border-radius: var(--radius-sm);
+  background: var(--bg-base); color: var(--text);
+  font-family: var(--mono); font-size: 1.5rem; font-weight: 700; letter-spacing: 0.18em;
+}
+.sso-waiting-line { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 0.75rem; color: var(--text-secondary); }
+.sso-pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: sso-blink 1.2s ease-in-out infinite; }
+@keyframes sso-blink { 50% { opacity: 0.25; transform: scale(0.8); } }
+
+/* signed in */
+.sso-check {
+  width: 44px; height: 44px; display: grid; place-items: center;
+  border-radius: 50%; color: var(--green); background: var(--green-tint);
+  animation: sso-pop 0.32s ease-out;
+}
+.sso-check svg { fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 24; stroke-dashoffset: 24; animation: sso-draw 0.45s 0.12s ease-out forwards; }
+@keyframes sso-pop { from { transform: scale(0.6); opacity: 0; } }
+@keyframes sso-draw { to { stroke-dashoffset: 0; } }
+.sso-note { font-size: 0.7188rem; color: var(--text-muted); }
+.sso-note-warn { color: var(--yellow); }
+
+/* failed */
+.sso-error-msg {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 10px 12px; border-radius: var(--radius-sm);
+  background: var(--red-tint); color: var(--red);
+  font-size: 0.7813rem; line-height: 1.45;
+}
+.sso-error-msg svg { flex: none; margin-top: 2px; }
+.sso-error-msg span { color: var(--text); }
+
+@media (prefers-reduced-motion: reduce) {
+  .sso-orb-ring, .sso-pulse, .sso-check, .sso-check svg { animation: none; }
+  .sso-check svg { stroke-dashoffset: 0; }
+}
+
+/* the AWS add-cluster wizard's sign-in step uses the same panel */
+.aws-signin { display: flex; flex-direction: column; gap: 14px; width: min(440px, 100%); margin: 6px auto 0; }
+.aws-signin-back { display: flex; justify-content: center; }

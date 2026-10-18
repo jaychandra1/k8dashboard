@@ -194,7 +194,7 @@ Stdio bridge (for agents that launch a command):
 
 **Cloud onboarding.** Preferences → Cloud Integrations (or **Add cluster** on the connect screen):
 
-- **AWS EKS** — sign in with IAM Identity Center (SSO), access keys or an assumed role; discover clusters across accounts and regions; import them. An SSO profile is written to `~/.aws/config` so credentials refresh automatically.
+- **AWS EKS** — sign in with IAM Identity Center (SSO), access keys or an assumed role; discover clusters across accounts and regions; import them. SSO sign-ins are saved as a refreshable `sso-session` in `~/.aws/config`, so they renew on their own until your Identity Center session ends (see §1.12).
 - **Azure AKS** — sign in through your system browser (works with Conditional Access) or the `az` CLI; discover across subscriptions; import.
 
 Imported contexts are merged into your kubeconfig. The existing file is **backed up** (`config.kubepilot-backup-<timestamp>`) before the first write of a session, written atomically with mode `0600`, and never overwritten if it cannot be parsed. Imported clusters authenticate at runtime through bundled token helpers, so `aws`, `az` and `kubelogin` are not needed afterwards. The kubeconfig `exec` entry runs `KubePilot --token-helper eks|azure …` (the desktop app re-enters its own binary in a CLI mode) or `node eks-token.js …` / `node azure-token.js …` when running from source or Docker; `kubectl` works with the same entry. Entries written by an older build, or pointing at an app binary that has since moved or been renamed, are **repaired automatically** the next time the kubeconfig is loaded (a backup is taken first, one log line per repaired user). If your AWS SSO session has expired, the connect screen says so and offers **Sign in with AWS SSO**, which reopens the AWS flow. After you sign in, the cluster list confirms the account and role you signed in as and marks each cluster: **Uses this sign-in** (already added — it reconnects with the refreshed session, nothing to do), **Added** with a checkbox (added with other credentials — select it to switch it to this sign-in), or **Name in use** (a different cluster already has that name; it is never overwritten). With nothing selected the button is **Done**, which reconnects and closes.
@@ -252,6 +252,19 @@ When you do, KubePilot picks the one release file built for your OS, CPU and ins
 
 A development build (`npm run app`), an unpacked copy (`release/win-unpacked`), a macOS app still on its disk image, and other install types can check for updates but don't install them — the dialog links to the release page instead. Each step is logged on stdout (`update check started`, `update asset selected`, `update verified`, …) without tokens or headers.
 
+
+
+### 1.12 AWS sign-in and expired sessions
+
+**Sessions renew on their own.** When you sign in to IAM Identity Center (from *Add cluster → AWS EKS* or the "AWS session expired" dialog), KubePilot stores the login exactly like `aws configure sso`: an `[sso-session]` block in `~/.aws/config`, its token in `~/.aws/sso/cache/`, and a refresh token. The AWS SDK — and therefore KubePilot's EKS token helper, the AWS CLI and kubectl — renews the short-lived access token from it without a browser. KubePilot also renews the sessions behind your EKS contexts before they run out (at launch and every 5 minutes). You only sign in again when the Identity Center session itself ends; how long that lasts is set by your AWS administrator (IAM Identity Center → Settings → Authentication → session duration; 8 hours by default).
+
+**When a session has ended**, the startup dialog shows the cluster (provider, account, role, when it ended) with **Sign in with AWS**:
+
+- In the desktop app this opens your AWS access portal in your browser; approve the request and KubePilot reconnects by itself — nothing to type. (It uses a one-time `http://127.0.0.1:<port>/oauth/callback` redirect, the AWS CLI's default flow.)
+- **Use a sign-in code instead** shows a code to confirm on the AWS page — the right choice if the browser can't reach this machine, and what a KubePilot *server* always uses.
+- Nothing starts on its own: you can instead pick any other cluster from the list (grouped by provider — AWS, Azure, GKE, on-prem…), or use **Add cluster** for AWS EKS, Azure AKS or a kubeconfig file (GKE, on-prem, kind…).
+
+**Your existing profiles.** An SSO profile written in the older format (`sso_start_url` / `sso_region` inside the profile) is moved to the session format the next time you sign in to its start URL: those two lines become `sso_session = <name>`; account, role, region, comments and other settings are kept. Before KubePilot first changes `~/.aws/config` it saves a copy next to it (`config.kubepilot-backup-<time>`). A session you created with `aws configure sso` is reused as is. Tools from before late 2022 (AWS CLI v1, old SDKs) don't understand `sso-session`; current AWS CLI v2, SDKs and Terraform do.
 
 ---
 

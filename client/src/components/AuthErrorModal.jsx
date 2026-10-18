@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import Icon from './Icons';
-import { ContextList } from './ContextPickerModal';
+import { ContextList, PROVIDERS, providerKeyOf } from './ContextPickerModal';
+import { useSsoSignIn, SsoSignInPanel } from './AwsSsoSignIn';
 import Modal from './ui/Modal';
 import Button from './ui/Button';
 import Menu from './ui/Menu';
@@ -29,6 +30,16 @@ const extractAwsSso = (raw) => (raw.match(/aws sso login(?:\s+--profile\s+\S+)?/
 // Classify the failure into { title, summary, fix } where fix describes the
 // remediation (a one-click cloud sign-in and/or a copyable CLI command).
 export function classify(auth) {
+  const out = classifyRaw(auth);
+  return out.provider ? out : { ...out, provider: guessProvider(auth) };
+}
+
+const guessProvider = (auth) => {
+  const server = (auth?.server || '').toLowerCase();
+  return /azmk8s.io|.azure/.test(server) ? 'azure' : /eks.amazonaws|.eks./.test(server) ? 'aws' : /gke|container.googleapis/.test(server) ? 'gcp' : null;
+};
+
+function classifyRaw(auth) {
   const reason = auth?.reason || 'error';
   const raw = auth?.message || '';
   const s = raw.toLowerCase();
@@ -41,9 +52,10 @@ export function classify(auth) {
   // backend has already looked at the exec plugin's stderr / exit status.
   if (reason === 'sso-expired') {
     return {
-      title: 'AWS SSO session expired',
-      summary: 'Your AWS SSO session has expired, so the cluster token could not be refreshed. Sign in again to refresh it, then retry.',
-      fix: { kind: 'aws', label: 'Sign in with AWS SSO', command: extractAwsSso(auth?.detail || raw) || 'aws sso login' },
+      title: 'AWS session expired',
+      summary: 'Your AWS sign-in for this cluster has ended. Sign in again to reconnect — or open a different cluster.',
+      fix: { kind: 'aws', label: 'Sign in with AWS', command: extractAwsSso(auth?.detail || raw) || 'aws sso login' },
+      provider: 'aws',
     };
   }
   if (reason === 'exec-helper') {
@@ -89,16 +101,62 @@ export function classify(auth) {
   return { title: TITLES[reason] || TITLES.error, summary: raw || 'The cluster could not be reached with the current kubeconfig.', fix: null, unmatched: true };
 }
 
+const fmtAccount = (id) => (/^\d{12}$/.test(id || '') ? id.replace(/(\d{4})(\d{4})(\d{4})/, '$1 $2 $3') : id);
+const fmtEnded = (iso) => {
+  const d = iso ? new Date(iso) : null;
+  if (!d || Number.isNaN(d.getTime())) return null;
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return d.toDateString() === new Date().toDateString() ? time : `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time}`;
+};
+
+/** Connect-another-cluster tiles, for when there is nothing to switch to. */
+function AddClusterTiles({ onAddAws, onAddAzure, onChangeConfig, disabled }) {
+  const tiles = [
+    onAddAws && { key: 'aws', icon: 'aws', title: 'AWS EKS', sub: 'Identity Center or access keys', onClick: () => onAddAws() },
+    onAddAzure && { key: 'azure', icon: 'azure', title: 'Azure AKS', sub: 'Microsoft sign-in', onClick: () => onAddAzure() },
+    onChangeConfig && { key: 'kubeconfig', icon: 'box', title: 'Kubeconfig', sub: 'GKE, on-prem, kind…', onClick: () => onChangeConfig() },
+  ].filter(Boolean);
+  if (!tiles.length) return null;
+  return (
+    <div className="auth-tiles">
+      {tiles.map((t) => (
+        <button key={t.key} type="button" className={`auth-tile auth-tile-${t.key}`} onClick={t.onClick} disabled={disabled}>
+          <span className={`auth-provider auth-provider-${t.key}`} aria-hidden="true"><Icon name={t.icon} size={16} /></span>
+          <span className="auth-tile-text"><strong>{t.title}</strong><span>{t.sub}</span></span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function AuthErrorModal({ open = true, auth, onRetry, onChangeConfig, retrying, contexts = [], contextsInfo, currentContext, onSwitchContext, onAddAzure, onAddAws }) {
   // `detail` carries the exec plugin's raw stderr when the backend replaced the
   // message with a friendlier one (sso-expired / exec-helper).
   const raw = auth?.detail || auth?.message || '';
-  const { title, summary, fix, unmatched } = classify(auth);
+  const { title, summary, fix, unmatched, provider: errProvider } = classify(auth);
   const [copied, setCopied] = useState(null); // 'cmd' | 'raw'
   const [addMenu, setAddMenu] = useState(null); // { x, y }
   const addRef = useRef(null);
 
+  const ctxName = currentContext || auth?.currentContext || '';
+  const aws = auth?.aws || null;
+  // The backend knows the profile + Identity Center → sign in right here.
+  const awsInline = fix?.kind === 'aws' && !!aws?.canSignIn;
+  // Let "Signed in" register for a moment, then reconnect.
+  const sso = useSsoSignIn({ onDone: () => { setTimeout(() => onRetry?.(), 1200); } });
+  const signingIn = ['starting', 'browser', 'device', 'done'].includes(sso.state.phase);
+
+  const provider = providerKeyOf(contextsInfo?.find((c) => c.name === ctxName)?.provider || (aws ? 'aws' : errProvider) || 'other');
+  const prov = PROVIDERS[provider];
+  const meta = [
+    prov.label,
+    aws?.accountId && `Account ${fmtAccount(aws.accountId)}`,
+    aws?.roleName,
+  ].filter(Boolean).join(' · ');
+  const ended = aws ? fmtEnded(aws.expiredAt) : null;
+
   const canAdd = onChangeConfig || onAddAzure || onAddAws;
+  const canSwitch = !!onSwitchContext && contexts.length > 1;
   // Only surface the raw error separately when it isn't already the summary.
   const showRaw = !!raw && (!unmatched || raw.length > 160);
 
@@ -111,9 +169,9 @@ export default function AuthErrorModal({ open = true, auth, onRetry, onChangeCon
     setAddMenu({ x: r ? r.left : 0, y: r ? r.bottom + 4 : 0 });
   };
   const addItems = [
-    onAddAws && { label: 'AWS EKS', icon: 'aws', onSelect: () => onAddAws() },
-    onAddAzure && { label: 'Azure AKS', icon: 'azure', onSelect: () => onAddAzure() },
-    onChangeConfig && { label: 'Local — load kubeconfig', icon: 'box', onSelect: () => onChangeConfig() },
+    onAddAws && { label: 'AWS EKS', icon: 'aws', onSelect: () => { sso.cancel(); onAddAws(); } },
+    onAddAzure && { label: 'Azure AKS', icon: 'azure', onSelect: () => { sso.cancel(); onAddAzure(); } },
+    onChangeConfig && { label: 'Kubeconfig file', hint: 'GKE · on-prem', icon: 'box', onSelect: () => { sso.cancel(); onChangeConfig(); } },
   ].filter(Boolean);
 
   return (
@@ -138,52 +196,67 @@ export default function AuthErrorModal({ open = true, auth, onRetry, onChangeCon
               {addMenu && <Menu open x={addMenu.x} y={addMenu.y} items={addItems} ariaLabel="Add cluster" returnFocusTo={addRef.current} onClose={() => setAddMenu(null)} />}
             </>
           )}
-          <Button variant="primary" icon="refresh" onClick={onRetry} busy={retrying} className="auth-retry">
+          <span className="auth-actions-spacer" />
+          <Button variant={awsInline ? 'secondary' : 'primary'} icon="refresh" onClick={onRetry} busy={retrying} disabled={signingIn && sso.state.phase !== 'done'} className="auth-retry">
             {retrying ? 'Retrying…' : 'Retry'}
           </Button>
         </div>
       )}
     >
-      {fix && (
-        <div className="auth-fix">
-          {(fix.kind === 'azure' || fix.kind === 'aws') && (
-            <Button
-              variant="primary"
-              icon={fix.kind === 'azure' ? 'azure' : 'aws'}
-              className="auth-fix-btn"
-              onClick={() => (fix.kind === 'azure' ? onAddAzure?.(fix.cli ? 'az' : undefined) : onAddAws?.())}
-              disabled={retrying || (fix.kind === 'azure' ? !onAddAzure : !onAddAws)}
-            >
-              {fix.label || `Sign in to ${fix.kind === 'azure' ? 'Azure' : 'AWS'}`}
-            </Button>
-          )}
-          {fix.command && (
-            <div className="auth-fix-cmd">
-              <span className="auth-fix-cmd-label">or run</span>
-              <code title={fix.command}>{fix.command}</code>
-              <Button variant="ghost" size="sm" icon={copied === 'cmd' ? 'check' : 'copy'} className="auth-copy" onClick={() => copy(fix.command, 'cmd')} aria-live="polite">
-                {copied === 'cmd' ? 'Copied' : 'Copy'}
-              </Button>
-            </div>
-          )}
-          {fix.note && <p className="auth-fix-note">{fix.note}</p>}
-        </div>
-      )}
-
-      <dl className="auth-detail">
-        {auth?.currentContext && (
-          <div className="auth-detail-row">
-            <dt className="auth-detail-key">Context</dt>
-            <dd><code>{auth.currentContext}</code></dd>
-          </div>
-        )}
+      <section className="auth-card" data-provider={provider} aria-label={`${ctxName || 'Current cluster'} connection`}>
+        <header className="auth-card-head">
+          <span className={`auth-provider auth-provider-${provider}`} aria-hidden="true"><Icon name={prov.icon} size={18} /></span>
+          <span className="auth-card-id">
+            <span className="auth-card-name" title={ctxName}>{ctxName || 'Current cluster'}</span>
+            <span className="auth-card-meta">{meta}</span>
+          </span>
+          {ended && <span className="auth-pill" title={aws.expiredAt}>Ended {ended}</span>}
+        </header>
         {auth?.server && (
-          <div className="auth-detail-row">
-            <dt className="auth-detail-key">API server</dt>
-            <dd><code>{auth.server}</code></dd>
+          <div className="auth-card-server" title={auth.server}>
+            <span className="auth-card-server-key">API server</span>
+            <code>{auth.server}</code>
           </div>
         )}
-      </dl>
+
+        {awsInline ? (
+          <div className="auth-card-body">
+            <SsoSignInPanel
+              sso={sso}
+              params={{ profile: aws.profile, startUrl: aws.startUrl, ssoRegion: aws.ssoRegion }}
+              portal={aws.startUrl}
+              browser={aws.browser}
+              command={fix.command}
+              doneText={`Reconnecting to ${ctxName || 'the cluster'}…`}
+            />
+          </div>
+        ) : fix && (
+          <div className="auth-card-body auth-fix">
+            {(fix.kind === 'azure' || fix.kind === 'aws') && (
+              <Button
+                variant="primary"
+                size="lg"
+                icon={fix.kind === 'azure' ? 'azure' : 'aws'}
+                className="auth-fix-btn"
+                onClick={() => (fix.kind === 'azure' ? onAddAzure?.(fix.cli ? 'az' : undefined) : onAddAws?.())}
+                disabled={retrying || (fix.kind === 'azure' ? !onAddAzure : !onAddAws)}
+              >
+                {fix.label || `Sign in to ${fix.kind === 'azure' ? 'Azure' : 'AWS'}`}
+              </Button>
+            )}
+            {fix.command && (
+              <div className="auth-fix-cmd">
+                <span className="auth-fix-cmd-label">or run</span>
+                <code title={fix.command}>{fix.command}</code>
+                <Button variant="ghost" size="sm" icon={copied === 'cmd' ? 'check' : 'copy'} className="auth-copy" onClick={() => copy(fix.command, 'cmd')} aria-live="polite">
+                  {copied === 'cmd' ? 'Copied' : 'Copy'}
+                </Button>
+              </div>
+            )}
+            {fix.note && <p className="auth-fix-note">{fix.note}</p>}
+          </div>
+        )}
+      </section>
 
       {showRaw && (
         <details className="auth-details">
@@ -195,16 +268,25 @@ export default function AuthErrorModal({ open = true, auth, onRetry, onChangeCon
         </details>
       )}
 
-      {onSwitchContext && contexts.length > 1 && (
+      {(canSwitch || canAdd) && (
         <div className="auth-switch">
-          <span className="auth-switch-label" id="auth-switch-label">Switch to another cluster</span>
-          <ContextList
-            contexts={contexts}
-            contextsInfo={contextsInfo}
-            currentContext={currentContext || auth?.currentContext}
-            onPick={(ctx) => { if (ctx && ctx !== (currentContext || auth?.currentContext)) onSwitchContext(ctx); }}
-            label="Switch to another cluster"
-          />
+          <div className="auth-divider" id="auth-switch-label"><span>{canSwitch ? 'Or open a different cluster' : 'Or connect a different cluster'}</span></div>
+          {canSwitch ? (
+            <ContextList
+              contexts={contexts}
+              contextsInfo={contextsInfo}
+              currentContext={ctxName}
+              onPick={(ctx) => { if (ctx && ctx !== ctxName) { sso.cancel(); onSwitchContext(ctx); } }}
+              label="Switch to another cluster"
+            />
+          ) : (
+            <AddClusterTiles
+              onAddAws={onAddAws && (() => { sso.cancel(); onAddAws(); })}
+              onAddAzure={onAddAzure && (() => { sso.cancel(); onAddAzure(); })}
+              onChangeConfig={onChangeConfig && (() => { sso.cancel(); onChangeConfig(); })}
+              disabled={retrying}
+            />
+          )}
         </div>
       )}
     </Modal>

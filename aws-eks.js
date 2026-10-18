@@ -3,7 +3,6 @@
 // SDK reads itself. Handles the three sign-in methods (SSO / access keys /
 // assume-role), discovers EKS clusters across accounts and regions, and writes
 // kubeconfig entries whose auth execs our native eks-token.js helper.
-import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -11,9 +10,9 @@ import yaml from 'js-yaml';
 import { fileURLToPath } from 'url';
 import { EKSClient, ListClustersCommand, DescribeClusterCommand } from '@aws-sdk/client-eks';
 import { STSClient, GetCallerIdentityCommand, AssumeRoleCommand } from '@aws-sdk/client-sts';
-import { SSOOIDCClient, RegisterClientCommand, StartDeviceAuthorizationCommand, CreateTokenCommand } from '@aws-sdk/client-sso-oidc';
 import { SSOClient, ListAccountsCommand, ListAccountRolesCommand, GetRoleCredentialsCommand } from '@aws-sdk/client-sso';
-import { loadSharedConfigFiles } from '@smithy/shared-ini-file-loader';
+import { loadSharedConfigFiles, loadSsoSessionData } from '@smithy/shared-ini-file-loader';
+import { awsConfigPath, ensureSsoSession, profileSsoInfo, saveAwsConfig, upsertSsoProfile } from './lib/aws-sso.mjs';
 import { execEntry } from './lib/paths.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -39,6 +38,12 @@ const AWS_REGIONS = [
 const awsDir = () => path.join(process.env.HOME || os.homedir(), '.aws');
 const kubeconfigPath = () => process.env.KUBECONFIG || path.join(process.env.HOME || os.homedir(), '.kube', 'config');
 
+// Is there any [profile <name>] (or [<name>] for default) section, SSO or not?
+const profileExists = (text, name) => {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, (c) => `\\${c}`);
+  return new RegExp(`^\\s*\\[\\s*(profile\\s+)?${escaped}\\s*\\]`, 'm').test(text);
+};
+
 // ---- private file writes --------------------------------------------------
 // Atomic, owner-only write: tmp file + rename, then an explicit chmod (rename
 // keeps the tmp file's 0600, but a pre-existing target may have been looser).
@@ -55,11 +60,21 @@ function writePrivate(file, text) {
 export async function listProfiles() {
   try {
     const { configFile = {}, credentialsFile = {} } = await loadSharedConfigFiles({ ignoreCache: true });
-    const names = new Set([...Object.keys(configFile), ...Object.keys(credentialsFile)]);
+    const sessions = await loadSsoSessionData().catch(() => ({}));
+    // "sso-session.<name>" (and other "<type>.<name>") sections are not profiles.
+    const isProfile = (n) => !/^(sso-session|services)\./.test(n);
+    const names = new Set([...Object.keys(configFile), ...Object.keys(credentialsFile)].filter(isProfile));
     return [...names].map((name) => {
       const c = { ...(configFile[name] || {}), ...(credentialsFile[name] || {}) };
+      const s = c.sso_session ? sessions[c.sso_session] || {} : null;
       const type = c.sso_start_url || c.sso_session ? 'sso' : c.role_arn ? 'role' : c.aws_access_key_id ? 'access-key' : 'other';
-      return { name, type, ssoStartUrl: c.sso_start_url, ssoRegion: c.sso_region, region: c.region, ssoAccountId: c.sso_account_id, ssoRoleName: c.sso_role_name };
+      return {
+        name, type,
+        ssoStartUrl: s ? s.sso_start_url : c.sso_start_url,
+        ssoRegion: s ? s.sso_region : c.sso_region,
+        ssoSession: c.sso_session || undefined,
+        region: c.region, ssoAccountId: c.sso_account_id, ssoRoleName: c.sso_role_name,
+      };
     }).sort((a, b) => a.name.localeCompare(b.name));
   } catch { return []; }
 }
@@ -110,69 +125,10 @@ export async function discoverClusters({ credentials, region, regions, account, 
   return { clusters: perRegion.flat(), regions: scan.length, scanned: scan };
 }
 
-// ---- AWS SSO (IAM Identity Center) device flow --------------------------
-// Returns a session used to poll for the token, then to enumerate accounts.
-// IAM Identity Center is regional, but the user only gives us a start URL. When
-// the region isn't known, probe the common regions and use the one that accepts
-// the start URL (StartDeviceAuthorization throws for the wrong region).
-const SSO_PROBE_REGIONS = ['us-east-1', 'eu-west-1', 'us-west-2', 'eu-central-1', 'us-east-2', 'eu-west-2', 'ap-southeast-1', 'ap-south-1', 'ap-northeast-1', 'eu-north-1', 'sa-east-1', 'ca-central-1', 'eu-west-3', 'ap-southeast-2', 'us-west-1', 'il-central-1'];
-
-export async function ssoStartDeviceFlow({ startUrl, ssoRegion }) {
-  if (!startUrl) throw new Error('An SSO start URL is required');
-  // Try the user's region first (if given), then auto-detect: Identity Center
-  // is regional and StartDeviceAuthorization returns InvalidRequestException
-  // when the start URL belongs to an instance in a different region.
-  const regions = ssoRegion ? [ssoRegion, ...SSO_PROBE_REGIONS.filter((r) => r !== ssoRegion)] : SSO_PROBE_REGIONS;
-  let lastErr;
-  for (const region of regions) {
-    try {
-      const oidc = new SSOOIDCClient({ region });
-      const reg = await oidc.send(new RegisterClientCommand({ clientName: 'kubepilot', clientType: 'public' }));
-      const auth = await oidc.send(new StartDeviceAuthorizationCommand({ clientId: reg.clientId, clientSecret: reg.clientSecret, startUrl }));
-      return {
-        ssoRegion: region, startUrl,
-        clientId: reg.clientId, clientSecret: reg.clientSecret, clientSecretExpiresAt: reg.clientSecretExpiresAt,
-        deviceCode: auth.deviceCode, userCode: auth.userCode,
-        verificationUri: auth.verificationUriComplete || auth.verificationUri,
-        interval: auth.interval || 5, expiresIn: auth.expiresIn || 600,
-      };
-    } catch (e) { lastErr = e; /* wrong region → try the next */ }
-  }
-  const hint = lastErr?.name === 'InvalidRequestException'
-    ? 'AWS did not recognise this start URL in any region it was tried in — check the URL (it should look like https://<id>.awsapps.com/start) and, if you typed a region, that it matches your IAM Identity Center region.'
-    : 'check the start URL and your network connection.';
-  throw new Error(`Could not start AWS SSO sign-in for ${startUrl} — ${hint} (${lastErr?.name || lastErr?.message || 'no region matched'})`);
-}
-
-// The SDK's `fromSSO` (used by fromNodeProviderChain for an SSO profile) reads
-// the Identity Center access token from ~/.aws/sso/cache/<sha1(startUrl)>.json —
-// the same file `aws sso login` writes. Persist ours there so a profile saved by
-// saveSsoProfile() can mint + refresh role credentials without static keys.
-export function writeSsoTokenCache({ startUrl, ssoRegion, clientId, clientSecret, clientSecretExpiresAt }, { accessToken, expiresIn }) {
-  const file = path.join(awsDir(), 'sso', 'cache', `${crypto.createHash('sha1').update(startUrl).digest('hex')}.json`);
-  const doc = {
-    startUrl, region: ssoRegion, accessToken,
-    expiresAt: new Date(Date.now() + (expiresIn || 3600) * 1000).toISOString(),
-    clientId, clientSecret,
-    ...(clientSecretExpiresAt ? { registrationExpiresAt: new Date(clientSecretExpiresAt * 1000).toISOString() } : {}),
-  };
-  writePrivate(file, JSON.stringify(doc));
-  return file;
-}
-
-// Poll once for the SSO access token. Returns { pending } or { accessToken }.
-export async function ssoPollToken(session) {
-  const oidc = new SSOOIDCClient({ region: session.ssoRegion });
-  try {
-    const out = await oidc.send(new CreateTokenCommand({ clientId: session.clientId, clientSecret: session.clientSecret, grantType: 'urn:ietf:params:oauth:grant-type:device_code', deviceCode: session.deviceCode }));
-    try { writeSsoTokenCache(session, out); } catch { /* non-fatal: static-key fallback still works */ }
-    return { accessToken: out.accessToken, expiresIn: out.expiresIn };
-  } catch (e) {
-    const name = e.name || '';
-    if (name === 'AuthorizationPendingException' || name === 'SlowDownException') return { pending: true };
-    throw e;
-  }
-}
+// ---- AWS SSO (IAM Identity Center) ---------------------------------------
+// Sign-in (browser PKCE / device code), the [sso-session] config and the
+// refreshable token cache live in lib/aws-sso.mjs. Below: what a signed-in
+// access token can do.
 
 // Granular SSO steps (guided account → role → clusters flow).
 export async function ssoListAccounts({ accessToken, ssoRegion }) {
@@ -291,6 +247,8 @@ const optionalMatch = (label, value, re) => (value == null || value === '' ? und
 // re-read with ignoreCache so an in-process fromNodeProviderChain({ profile })
 // sees the new profile (the exec helper runs in a fresh process anyway).
 const refreshSdkIniCache = () => loadSharedConfigFiles({ ignoreCache: true }).catch(() => {});
+/** Re-read ~/.aws after another module changed it (e.g. a sign-in converted profiles). */
+export const refreshAwsConfigCache = refreshSdkIniCache;
 
 // Replace (or append) one `[header]` section in an INI file, atomically, 0600.
 function setIniBlock(file, header, lines) {
@@ -337,11 +295,11 @@ export function saveProfile(name, { accessKeyId, secretAccessKey, sessionToken, 
   return profile;
 }
 
-// Persist an IAM Identity Center (SSO) profile — no static keys — so the SDK's
-// fromNodeProviderChain({ profile }) / fromSSO can mint and refresh the role's
-// credentials from the token cache written by ssoPollToken(). Returns the
-// profile name actually used: an existing profile with a *different*
-// sso_start_url is never clobbered — a `-2`, `-3`, … suffix is chosen instead.
+// Persist an IAM Identity Center (SSO) profile — no static keys — in the
+// format `aws configure sso` writes: the profile names an [sso-session], whose
+// refreshable token (lib/aws-sso.mjs adoptSsoLogin) the SDK's fromSSO renews on
+// its own. Returns the profile name actually used: an existing profile of a
+// *different* start URL is never clobbered — a `-2`, `-3`, … suffix is chosen.
 export async function saveSsoProfile(name, { startUrl, ssoRegion, accountId, roleName, region }) {
   const base = requireMatch('profile name', name, INI_VALUE);
   const url = requireMatch('SSO start URL', startUrl, SSO_START_URL);
@@ -350,19 +308,23 @@ export async function saveSsoProfile(name, { startUrl, ssoRegion, accountId, rol
   const role = requireMatch('SSO role name', roleName, INI_VALUE);
   const rg = optionalMatch('region', region, INI_VALUE);
 
-  let configFile = {};
-  try { ({ configFile = {} } = await loadSharedConfigFiles({ ignoreCache: true })); } catch { /* treat as empty */ }
+  const configFile = awsConfigPath();
+  let text = fs.existsSync(configFile) ? fs.readFileSync(configFile, 'utf8') : '';
+  const session = ensureSsoSession(text, { startUrl: url, ssoRegion: sr });
+  text = session.text;
   let chosen = base;
-  for (let i = 2; configFile[chosen]?.sso_start_url && configFile[chosen].sso_start_url !== url; i++) chosen = `${base}-${i}`;
-
-  const dir = awsDir();
-  fs.mkdirSync(dir, { recursive: true });
-  setIniBlock(path.join(dir, 'config'), chosen === 'default' ? 'default' : `profile ${chosen}`, [
-    `sso_start_url = ${url}`, `sso_region = ${sr}`, `sso_account_id = ${acct}`, `sso_role_name = ${role}`, rg ? `region = ${rg}` : '',
-  ]);
+  for (let i = 2; ; i++) {
+    const info = profileSsoInfo(text, chosen);
+    // Free: absent, or already an SSO profile of this start URL (re-import updates it).
+    const taken = info ? !!info.startUrl && info.startUrl !== url : profileExists(text, chosen);
+    if (!taken) break;
+    chosen = `${base}-${i}`;
+  }
+  text = upsertSsoProfile(text, { name: chosen, sessionName: session.name, accountId: acct, roleName: role, region: rg });
+  saveAwsConfig(configFile, text);
   // Stale static keys under the same name (written by older versions) would
   // take precedence over the SSO config — drop them.
-  removeIniBlock(path.join(dir, 'credentials'), chosen);
+  removeIniBlock(path.join(awsDir(), 'credentials'), chosen);
   await refreshSdkIniCache();
   return chosen;
 }

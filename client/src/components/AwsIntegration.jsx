@@ -4,6 +4,7 @@ import Loader from './Loader';
 import Modal from './ui/Modal';
 import Button from './ui/Button';
 import { getJson, postJson, errorMessage } from '../lib/api';
+import { useSsoSignIn, SsoSignInPanel } from './AwsSsoSignIn';
 
 const keyOf = (c) => `${c.region}/${c.name}`;
 // Already in the kubeconfig for the same cluster but signed in some other way:
@@ -53,7 +54,6 @@ export default function AwsIntegration({ onClose, onImported }) {
   const [roleArn, setRoleArn] = useState('');
   const [sourceProfile, setSourceProfile] = useState('');
   const [sessionName, setSessionName] = useState('');
-  const [device, setDevice] = useState(null);
   const [ssoAccounts, setSsoAccounts] = useState([]);
   const [ssoRoles, setSsoRoles] = useState([]);
   const [chosenAccount, setChosenAccount] = useState('');
@@ -68,7 +68,6 @@ export default function AwsIntegration({ onClose, onImported }) {
   const [touched, setTouched] = useState({});
   const [result, setResult] = useState(null);
   const [signedIn, setSignedIn] = useState(null); // { account, accountName, role } after an SSO sign-in
-  const pollRef = useRef(null);
 
   const checkStatus = useCallback(async () => {
     setPhase('checking'); setError(null);
@@ -84,10 +83,10 @@ export default function AwsIntegration({ onClose, onImported }) {
     } catch (e) { setError(errorMessage(e)); return setPhase('not-installed'); }
   }, []);
 
-  useEffect(() => { checkStatus(); return () => clearInterval(pollRef.current); }, [checkStatus]);
+  useEffect(() => { checkStatus(); }, [checkStatus]);
 
   const loadAccounts = async () => {
-    setDevice(null); setError(null); setBusy(true); setPhase('sso-account');
+    setError(null); setBusy(true); setPhase('sso-account');
     try {
       const data = await getJson('/api/aws/sso-accounts');
       const accts = data.accounts || [];
@@ -96,23 +95,18 @@ export default function AwsIntegration({ onClose, onImported }) {
     } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
   };
 
-  const startSsoLogin = async (profile) => {
-    setError(null); setDevice(null); setPhase('sso-login');
-    try {
-      const data = await postJson('/api/aws/sso-login', { profile: profile || undefined, startUrl: ssoStartUrl || undefined, ssoRegion: ssoRegionField || undefined });
-      if (data.error) { setError(data.error); setPhase('method'); return; }
-      if (data.userCode) setDevice({ userCode: data.userCode, verificationUrl: data.verificationUrl });
-      clearInterval(pollRef.current);
-      pollRef.current = setInterval(async () => {
-        try {
-          const s = await getJson('/api/aws/sso-login/status');
-          if (s.userCode) setDevice((d) => d || { userCode: s.userCode, verificationUrl: s.verificationUrl });
-          if (s.status === 'done') { clearInterval(pollRef.current); loadAccounts(); }
-          else if (s.status === 'error') { clearInterval(pollRef.current); setPhase('method'); setError(s.error || 'SSO sign-in failed or was cancelled.'); }
-        } catch { /* keep polling */ }
-      }, 2000);
-    } catch (e) { setPhase('method'); setError(errorMessage(e)); }
+  // Sign-in (browser in the desktop app, or a code): components/AwsSsoSignIn.
+  const loadAccountsRef = useRef(null);
+  loadAccountsRef.current = loadAccounts;
+  const sso = useSsoSignIn({ onDone: () => loadAccountsRef.current?.() });
+  const ssoParams = useRef({});
+  const startSsoLogin = (profile) => {
+    setError(null); setPhase('sso-login');
+    ssoParams.current = { profile: profile || undefined, startUrl: ssoStartUrl || undefined, ssoRegion: ssoRegionField || undefined };
+    sso.start(ssoParams.current);
   };
+  // Cancelled inside the sign-in panel → back to the first step.
+  useEffect(() => { if (phase === 'sso-login' && sso.state.phase === 'idle') setPhase('method'); }, [phase, sso.state.phase]);
 
   const loadRoles = async (accountId) => {
     setError(null); setBusy(true); setPhase('sso-role');
@@ -156,7 +150,7 @@ export default function AwsIntegration({ onClose, onImported }) {
   const discover = async (profile) => {
     setActiveProfile(profile || null);
     setSignedIn(null);
-    setPhase('listing'); setError(null); setDevice(null);
+    setPhase('listing'); setError(null);
     try { applyClusters(await postJson('/api/aws/clusters', { profile: profile || undefined, regions: regionList() })); }
     catch (e) { setError(errorMessage(e)); setPhase('list'); }
   };
@@ -203,14 +197,13 @@ export default function AwsIntegration({ onClose, onImported }) {
   };
 
   const cancelAndClose = () => {
-    clearInterval(pollRef.current);
-    if (phase === 'sso-login') postJson('/api/aws/sso-login/cancel').catch(() => {});
+    sso.cancel();
     onClose();
   };
 
   // Signed in but not importing — e.g. the user only needed to refresh expired
   // AWS credentials to fix the current cluster. Re-check auth and close.
-  const skip = () => { clearInterval(pollRef.current); onImported?.(); onClose(); };
+  const skip = () => { onImported?.(); onClose(); };
 
   const q = filter.toLowerCase();
   const visible = clusters.filter((c) => !q || c.name.toLowerCase().includes(q) || c.region.toLowerCase().includes(q));
@@ -350,17 +343,16 @@ export default function AwsIntegration({ onClose, onImported }) {
       )}
 
       {phase === 'sso-login' && (
-        <div className="azure-center azure-msg">
-          <div className="aws-step-label">AWS SSO Authorization</div>
-          {device ? (
-            <>
-              <p>Open the link in your browser and make sure that the code matches, or enter the code below to authorize the application.</p>
-              <div className="azure-code" aria-label={`Device code ${device.userCode}`}>{device.userCode}</div>
-              {device.verificationUrl && <a className="ui-btn" data-variant="primary" data-size="md" href={device.verificationUrl} target="_blank" rel="noreferrer noopener"><Icon name="externalLink" size={14} /> <span className="ui-btn-label">Open in browser</span></a>}
-              <div className="azure-waiting"><Loader label="Waiting for authorization…" /></div>
-            </>
-          ) : (
-            <div className="azure-waiting"><Loader label="Starting AWS SSO sign-in…" /></div>
+        <div className="aws-signin">
+          <div className="aws-step-label">Sign in to AWS</div>
+          <SsoSignInPanel
+            sso={sso}
+            params={ssoParams.current}
+            portal={ssoParams.current.startUrl || profileDetails.find((p) => p.name === ssoParams.current.profile)?.ssoStartUrl}
+            doneText="Loading your AWS accounts…"
+          />
+          {sso.state.phase === 'error' && (
+            <div className="aws-signin-back"><Button variant="ghost" size="sm" icon="arrowLeft" onClick={() => { sso.cancel(); setPhase('method'); }}>Back</Button></div>
           )}
         </div>
       )}

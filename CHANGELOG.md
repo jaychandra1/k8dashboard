@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **AWS sign-ins renew themselves.** Signing in to IAM Identity Center now asks AWS for a refresh token and stores the login the way `aws configure sso` does — an `[sso-session]` in `~/.aws/config` and its token in `~/.aws/sso/cache` — so the AWS SDK (KubePilot's EKS token helper, the AWS CLI, kubectl) renews the access token without a browser until the Identity Center session ends. KubePilot also renews the sessions behind your EKS contexts ahead of expiry (at launch and every 5 minutes), so the "AWS session expired" dialog only appears when the session itself has ended. Existing SSO profiles are moved to the session format the next time you sign in to them; `~/.aws/config` is backed up once (`config.kubepilot-backup-<time>`) before KubePilot first changes it.
+- **Sign in to AWS in one click.** The desktop app opens your AWS access portal in the browser and returns to KubePilot automatically (OAuth 2.0 authorization code + PKCE through a one-time `127.0.0.1` redirect — the AWS CLI's default flow); nothing to type. "Use a sign-in code instead" switches to the device-code flow, which is also what a KubePilot server uses.
+
+### Changed
+- The startup **"AWS session expired"** dialog signs the cluster's own profile in right there — no add-cluster wizard, no account/role picking — and reconnects by itself afterwards. It's redesigned around a cluster card (provider, account, role, when the session ended, API server) with every step in place (waiting for the browser, the code, signed in, errors with Try again), and keeps any other cluster one click away: the searchable list of every context grouped by provider (AWS, Azure, GKE, on-prem…), or AWS EKS / Azure AKS / kubeconfig tiles when there's nothing to switch to. Nothing opens a browser until you choose to.
+- The AWS add-cluster wizard uses the same sign-in panel (browser first, code as fallback) and saves new SSO profiles in the `sso-session` format.
+
 ## [1.5.1] – 2026-10-16
 
 ### Fixed

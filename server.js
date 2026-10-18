@@ -46,6 +46,7 @@ import {
 import { eksEntryFor as eksEntryForKc, sameEksCluster, eksClusterStatus as eksClusterStatusKc } from './lib/eks-kubeconfig.mjs';
 import { createUpdates, registerUpdateRoutes } from './lib/updater/routes.mjs';
 import { localShellAllowed, pinnedKubeconfig, helmShellEnv, helmShellCommand, helmShellBanner, helmDirOf } from './lib/helm-shell.mjs';
+import { createSsoLogin, adoptSsoLogin, refreshSsoToken, profileSsoInfo, sessionsForProfiles, sessionTokenState, awsConfigPath } from './lib/aws-sso.mjs';
 
 // node-pty powers the pod terminal (a real PTY bridged to `kubectl exec`). Load
 // it defensively so a missing/unbuildable native module never crashes the whole
@@ -936,7 +937,46 @@ app.post('/api/azure/import', async (req, res) => {
 // discover every EKS cluster across accounts and regions, and write kubeconfig
 // entries whose auth execs our native eks-token.js helper. See aws-eks.js.
 // ------------------------------------------------------------------
-let awsSession = null; // { sso: { accessToken, ssoRegion, startUrl }, ssoClusters: Map, poll }
+let awsSession = null; // { sso: { accessToken, ssoRegion, startUrl }, ssoClusters: Map, ssoSelected }
+
+// IAM Identity Center sign-in (lib/aws-sso.mjs): browser + PKCE in the desktop
+// app (the loopback redirect must reach this machine), device code otherwise
+// or on request. Each finished sign-in is stored as a refreshable
+// [sso-session] and converts this start URL's legacy profiles to it.
+const ssoBrowserAvailable = Boolean(process.versions.electron) || process.env.KUBEPILOT_SSO_BROWSER === '1';
+const ssoLogin = createSsoLogin({ browserAvailable: ssoBrowserAvailable });
+let ssoAdopted = null; // { sessionName, converted } of the last finished sign-in
+
+// Keep the SSO sessions behind the kubeconfig's EKS contexts ahead of expiry
+// (refresh token), so the token helper never has to renew them itself.
+const AWS_REFRESH_WINDOW_MS = 15 * 60 * 1000;
+const eksProfilesInKubeconfig = () => [...new Set((kubeConfig?.contexts || []).map((c) => eksEntryForKc(kubeConfig, c.name)?.profile).filter(Boolean))];
+const readAwsConfigText = () => { try { return fs.readFileSync(awsConfigPath(), 'utf8'); } catch { return ''; } };
+async function keepAwsSessionsFresh(profiles = eksProfilesInKubeconfig()) {
+  if (!profiles.length) return;
+  for (const session of sessionsForProfiles(readAwsConfigText(), profiles)) {
+    const r = await refreshSsoToken(session, { windowMs: AWS_REFRESH_WINDOW_MS });
+    if (r.status === 'refreshed') log.info('aws sso session renewed', { session, expiresAt: r.expiresAt });
+    else if (r.status === 'expired' || r.status === 'error') log.warn('aws sso session could not be renewed', { session, status: r.status, error: r.error });
+  }
+}
+const awsKeeper = setInterval(() => { keepAwsSessionsFresh().catch(() => {}); }, 5 * 60 * 1000);
+awsKeeper.unref();
+
+// What the "AWS session expired" dialog needs to sign the current context's
+// profile in again directly (no wizard). null when it isn't an EKS context.
+function awsSignInInfo() {
+  const entry = kubeConfig && currentContext ? eksEntryForKc(kubeConfig, currentContext) : null;
+  if (!entry?.profile) return null;
+  const info = profileSsoInfo(readAwsConfigText(), entry.profile);
+  if (!info?.startUrl) return { profile: entry.profile, canSignIn: false };
+  const token = info.sessionName ? sessionTokenState(info.sessionName) : null;
+  return {
+    profile: entry.profile, startUrl: info.startUrl, ssoRegion: info.ssoRegion, sessionName: info.sessionName,
+    accountId: info.accountId || null, roleName: info.roleName || null, expiredAt: token?.expiresAt || null,
+    canSignIn: true, browser: ssoBrowserAvailable,
+  };
+}
 
 app.get('/api/aws/status', async (req, res) => {
   // The SDK is bundled, so the integration is always available — no CLI needed.
@@ -961,6 +1001,7 @@ app.post('/api/aws/sso-login', async (req, res) => {
       while (i > 0 && s[i - 1] === '/') i--;
       return s.slice(0, i);
     };
+    const { method } = req.body || {};
     let startUrl = clean(bodyUrl), ssoRegion = bodyRegion;
     if (!startUrl || !ssoRegion) {
       // Fall back to an existing SSO profile's start URL / region.
@@ -972,25 +1013,36 @@ app.post('/api/aws/sso-login', async (req, res) => {
     // Leave ssoRegion undefined so the SDK layer auto-detects the Identity Center
     // region from the start URL (cluster discovery still scans every region).
     if (!startUrl) return res.status(400).json({ error: 'Enter your AWS SSO start URL.' });
-    const session = await awsEks.ssoStartDeviceFlow({ startUrl, ssoRegion: ssoRegion || undefined });
-    awsSession = { sso: null, ssoClusters: new Map(), device: session, status: 'pending', error: null };
-    res.json({ status: 'pending', userCode: session.userCode, verificationUrl: session.verificationUri });
-  } catch (e) { res.status(500).json({ error: firstLine(e.message) }); }
+    ssoAdopted = null;
+    awsSession = { sso: null, ssoClusters: new Map() };
+    const snap = await ssoLogin.start({ startUrl, ssoRegion: ssoRegion || undefined, method: method === 'device' ? 'device' : undefined });
+    log.info('aws sso sign-in started', { method: snap.method, region: snap.ssoRegion || 'auto' });
+    res.json(snap);
+  } catch (e) { res.status(e.status || 500).json({ error: firstLine(e.message) }); }
 });
 
 app.get('/api/aws/sso-login/status', async (req, res) => {
-  if (!awsSession?.device) return res.json({ status: awsSession?.status || 'idle' });
-  if (awsSession.status !== 'pending') return res.json({ status: awsSession.status, error: awsSession.error, userCode: awsSession.device.userCode, verificationUrl: awsSession.device.verificationUri });
-  try {
-    const out = await awsEks.ssoPollToken(awsSession.device);
-    if (out.pending) return res.json({ status: 'pending', userCode: awsSession.device.userCode, verificationUrl: awsSession.device.verificationUri });
-    awsSession.sso = { accessToken: out.accessToken, ssoRegion: awsSession.device.ssoRegion, startUrl: awsSession.device.startUrl };
-    awsSession.status = 'done';
-    res.json({ status: 'done' });
-  } catch (e) { awsSession.status = 'error'; awsSession.error = firstLine(e.message); res.json({ status: 'error', error: awsSession.error }); }
+  const snap = await ssoLogin.poll();
+  if (snap.status === 'done') {
+    const result = ssoLogin.takeResult();
+    if (result) {
+      awsSession = { ...(awsSession || { ssoClusters: new Map() }), sso: { accessToken: result.accessToken, ssoRegion: result.ssoRegion, startUrl: result.startUrl } };
+      try {
+        ssoAdopted = adoptSsoLogin(result);
+        await awsEks.refreshAwsConfigCache();
+        log.info('aws sso sign-in finished', { method: snap.method, session: ssoAdopted.sessionName, converted: ssoAdopted.converted.length, refreshable: !!result.refreshToken });
+      } catch (e) {
+        // The sign-in itself worked (the wizard can continue); only storing it failed.
+        ssoAdopted = { sessionName: null, converted: [], warning: `Signed in, but the session could not be saved to ~/.aws: ${firstLine(e.message)}` };
+        log.warn('aws sso session could not be saved', { err: e });
+      }
+    }
+    return res.json({ ...snap, session: ssoAdopted?.sessionName || undefined, converted: ssoAdopted?.converted || [], warning: ssoAdopted?.warning });
+  }
+  res.json(snap);
 });
 
-app.post('/api/aws/sso-login/cancel', (req, res) => { awsSession = null; res.json({ ok: true }); });
+app.post('/api/aws/sso-login/cancel', (req, res) => { ssoLogin.cancel(); awsSession = null; res.json({ ok: true }); });
 
 // After SSO auth: choose an AWS account, then a role for it.
 app.get('/api/aws/sso-accounts', async (req, res) => {
@@ -1278,6 +1330,12 @@ const classifyClusterError = (error, { exec, repaired = false } = {}) => {
 const checkClusterAuth = async () => {
   if (!kubeConfig) return { ok: false, reason: 'no-config', message: 'No kubeconfig is loaded.' };
   const server = currentServerUrl();
+  // An EKS context's SSO session that is about to (or did) expire but still
+  // has a valid refresh token is renewed before connecting — no prompt.
+  const eksProfile = currentContext ? eksEntryForKc(kubeConfig, currentContext)?.profile : null;
+  if (eksProfile) {
+    await Promise.race([keepAwsSessionsFresh([eksProfile]).catch(() => {}), new Promise((r) => setTimeout(r, 8000).unref())]);
+  }
   try {
     const core = kubeConfig.makeApiClient(k8s.CoreV1Api);
     // Lightweight authenticated request (limit=1). 200 ⇒ authenticated + reachable.
@@ -1295,6 +1353,10 @@ const checkClusterAuth = async () => {
         reloadPreservingContext();
         classified = classifyClusterError(error, { exec, repaired: true });
       }
+    }
+    if (classified.reason === 'sso-expired') {
+      const aws = awsSignInInfo();
+      if (aws) classified = { ...classified, aws };
     }
     return { ...classified, currentContext, server };
   }
@@ -4205,6 +4267,8 @@ const shutdown = (signal) => {
   try { server.closeIdleConnections?.(); } catch { /* ignore */ }
   clearInterval(wsHeartbeat);
   clearInterval(mcpSweeper);
+  clearInterval(awsKeeper);
+  try { ssoLogin.cancel(); } catch { /* ignore */ }
   cache.stop();
   for (const ws of wss.clients) { try { ws.terminate(); } catch { /* ignore */ } } // 'close' handlers kill their PTYs
   for (const term of terminals) { try { term.kill(); } catch { /* ignore */ } }
