@@ -33,7 +33,8 @@
     "dist:bundled-trivy": "npm run fetch:trivy && npm run build && electron-builder --publish never -c.extraResources.from=bin -c.extraResources.to=bin -c.extraResources.filter=trivy*"
   },
   "overrides": {
-    "qs": "^6.16.0"
+    "qs": "^6.16.0",
+    "global-agent": "^4.1.3"
   },
   "dependencies": {
     "@aws-crypto/sha256-js": "^5.2.0",
