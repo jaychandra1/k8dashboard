@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.7.0] – 2026-10-21
+
 ### Security
 - **Signed updates.** Every release's `SHA256SUMS.txt` is now signed with KubePilot's Ed25519 release key (`SHA256SUMS.txt.sig`, bound to the version so an old signed release can't be passed off as a new one), and the in-app updater installs nothing whose signature doesn't verify against a key built into the app. Publishing a release, or a matching checksum, is no longer enough to ship code to installed copies. The release workflow refuses to run until the key is set up (`node scripts/release-signing-keygen.mjs`, then the `RELEASE_SIGNING_KEY` secret of the `release` environment), and checks the secret matches before it signs. Installed builds ignore the test-only trust-key override.
 - **A separate token for AI agents.** MCP clients now get their own token (Preferences → MCP, stored in `~/.config/kubepilot/mcp-token`, with **Regenerate**). Requests made with it are MCP requests whatever headers they send, so the write gate holds by construction, and terminals, MCP settings, kubeconfig loading, cloud sign-ins, the assistant, security scans, app settings and updates refuse it. Switching context and stopping port-forwards now count as writes. The token also survives restarts, so desktop MCP configs stop breaking on every launch. Older bridges that still send the API token plus the MCP header keep working, with the same restrictions.
