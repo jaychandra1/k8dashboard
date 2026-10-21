@@ -10,7 +10,7 @@ process as a security issue.
 
 - Preferred: open a private report via
   [GitHub Security Advisories](https://github.com/jaychandra1/KubePilot/security/advisories/new).
-- Or email **security@k8dashboard.in** (placeholder — replace with the maintainer's monitored address).
+- Or email **kubepilot.dashboard@gmail.com** with "SECURITY" in the subject.
 
 Include the version (`GET /api/version` or Preferences → About), how you are running it
 (desktop app / Docker / source), reproduction steps and, if you have one, a suggested fix.
@@ -48,7 +48,13 @@ Out of scope:
 
 ## Hardening summary (what the app does)
 
-- Bearer token (`KUBEPILOT_TOKEN` or `~/.config/kubepilot/token`, mode 0600) on every non-public route.
+- Bearer token (`KUBEPILOT_TOKEN` or `~/.config/kubepilot/token`, mode 0600) on every non-public route; a
+  production server without a terminal never prints it to its log.
+- AI agents use a separate MCP token (`~/.config/kubepilot/mcp-token`): its requests are MCP requests by
+  construction — the write gate applies, terminals, settings, kubeconfig loading, cloud sign-ins and updates
+  are refused — and Kubernetes Secret values are masked for agents unless the user opts in.
+- KubePilot's own secrets (API/MCP tokens, secret key, LLM key) are removed from the environment of every
+  process it starts; the Helm and AI-agent terminals are desktop-only and see only the selected cluster.
 - Loopback bind by default; `Host` allowlist (HTTP 421 otherwise); strict same-origin checks.
 - CSP, `X-Frame-Options: DENY`, `nosniff`, rate limiting, body-size limits, strict input validation.
 - Electron: sandboxed renderer, `contextIsolation`, no `nodeIntegration`, navigation pinned to the
@@ -56,4 +62,6 @@ Out of scope:
   `--inspect`, allow-listed environment for the backend process, fresh token per launch.
 - Docker: pinned base-image digest, checksum-verified `kubectl` / `kubelogin` / `trivy`, non-root user,
   `npm ci --ignore-scripts`, image scanned with Trivy in CI.
-- Releases: SHA256SUMS and a CycloneDX SBOM for every artifact.
+- Releases: SHA256SUMS signed with KubePilot's Ed25519 release key (`SHA256SUMS.txt.sig`, bound to the
+  version) and a CycloneDX SBOM. The in-app updater installs nothing that isn't signed with a key built into
+  the app. The Microsoft Store edition is signed by Microsoft and updated by the Store.

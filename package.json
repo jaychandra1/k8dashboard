@@ -135,8 +135,25 @@
       "icon": "build/icon.ico",
       "artifactName": "${productName}-windows.${ext}",
       "target": [
-        "nsis"
+        "nsis",
+        "appx"
       ]
+    },
+    "appx": {
+      "identityName": "KubePilot.Desktop",
+      "publisher": "CN=KubePilot",
+      "publisherDisplayName": "Kubepilot Program",
+      "applicationId": "KubePilot",
+      "displayName": "KubePilot",
+      "backgroundColor": "#0b1220",
+      "showNameOnTiles": true,
+      "languages": [
+        "en-US"
+      ],
+      "minVersion": "10.0.17763.0",
+      "maxVersionTested": "10.0.26100.0",
+      "customExtensionsPath": "build/appx-extensions.xml",
+      "artifactName": "${productName}-windows-store.${ext}"
     },
     "nsis": {
       "shortcutName": "KubePilot",

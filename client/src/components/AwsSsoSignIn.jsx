@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Icon from './Icons';
 import Button from './ui/Button';
 import { getJson, postJson, errorMessage } from '../lib/api';
+import { redactSensitive } from '../lib/redact';
 
 // AWS IAM Identity Center sign-in, used by the "AWS session expired" dialog
 // and the AWS add-cluster wizard. The server (lib/aws-sso.mjs) runs the flow:
@@ -13,13 +14,6 @@ import { getJson, postJson, errorMessage } from '../lib/api';
 // its own until the Identity Center session ends.
 
 const POLL_MS = 1500;
-export const hostOf = (u) => {
-  try {
-    return new URL(u).host;
-  } catch {
-    return '';
-  }
-};
 const openExternal = (url) => {
   if (/^https:\/\//.test(url || '')) window.open(url, '_blank', 'noopener,noreferrer');
 };
@@ -191,21 +185,21 @@ function CopyButton({ text, label = 'Copy', className = '' }) {
 }
 
 /**
- * The sign-in area: one primary action, then each step in place.
- *   <SsoSignInPanel sso={useSsoSignIn(…)} params={{ profile }} portal={startUrl}
+ * The sign-in area: one primary action, then each step in place. It never
+ * displays environment details (portal address, account): the command is
+ * shown masked and copied in full.
+ *   <SsoSignInPanel sso={useSsoSignIn(…)} params={{ profile }}
  *     browser={true|false|undefined} command="aws sso login --profile x" doneText="Reconnecting…" />
  */
 export function SsoSignInPanel({
   sso,
   params = {},
-  portal,
   browser,
   command,
   doneText = 'Reconnecting…',
   startLabel = 'Sign in with AWS',
 }) {
   const { state } = sso;
-  const host = hostOf(state.startUrl || portal || params.startUrl);
   const codeOnly = browser === false;
 
   if (state.phase === 'browser') {
@@ -217,10 +211,7 @@ export function SsoSignInPanel({
         </div>
         <div className="sso-wait-text" role="status" aria-live="polite">
           <strong>Finish signing in in your browser</strong>
-          <span>
-            Approve the request on {host ? <b>{host}</b> : 'your AWS access portal'}. KubePilot reconnects on
-            its own.
-          </span>
+          <span>Approve the request on your AWS access portal. KubePilot reconnects on its own.</span>
           {state.expiresAt && <Countdown expiresAt={state.expiresAt} prefix="Waiting · expires in" />}
         </div>
         <div className="sso-actions">
@@ -258,16 +249,7 @@ export function SsoSignInPanel({
         </div>
         <div className="sso-waiting-line" role="status" aria-live="polite">
           <span className="sso-pulse" aria-hidden="true" />
-          <span>
-            Waiting for approval
-            {host ? (
-              <>
-                {' '}
-                on <b>{host}</b>
-              </>
-            ) : null}
-            …
-          </span>
+          <span>Waiting for approval…</span>
           {state.expiresAt && <Countdown expiresAt={state.expiresAt} prefix="Code expires in" />}
         </div>
       </div>
@@ -286,11 +268,9 @@ export function SsoSignInPanel({
           <strong>Signed in to AWS</strong>
           <span>{doneText}</span>
           {state.warning ? (
-            <span className="sso-note sso-note-warn">{state.warning}</span>
+            <span className="sso-note sso-note-warn">{redactSensitive(state.warning)}</span>
           ) : (
-            <span className="sso-note">
-              Your sign-in now renews automatically until your AWS session ends.
-            </span>
+            <span className="sso-note">Your sign-in now renews automatically until your AWS session ends.</span>
           )}
         </div>
       </div>
@@ -301,7 +281,7 @@ export function SsoSignInPanel({
     return (
       <div className="sso-panel sso-error" data-phase="error">
         <div className="sso-error-msg" role="alert">
-          <Icon name="warning" size={15} /> <span>{state.error}</span>
+          <Icon name="warning" size={15} /> <span>{redactSensitive(state.error)}</span>
         </div>
         <div className="sso-actions">
           <Button variant="primary" size="sm" icon="refresh" onClick={sso.retry}>
@@ -332,14 +312,9 @@ export function SsoSignInPanel({
         {starting ? 'Opening AWS sign-in…' : startLabel}
       </Button>
       <p className="sso-hint">
-        {codeOnly ? (
-          <>Shows a code to confirm on {host ? <b>{host}</b> : 'your AWS access portal'} in your browser.</>
-        ) : (
-          <>
-            Opens {host ? <b>{host}</b> : 'your AWS access portal'} in your browser — you’ll come straight
-            back here.
-          </>
-        )}
+        {codeOnly
+          ? 'Shows a code to confirm on your AWS access portal in your browser.'
+          : 'Opens your AWS access portal in your browser — you’ll come straight back here.'}
       </p>
       <div className="sso-alt">
         {!codeOnly && (
@@ -359,7 +334,7 @@ export function SsoSignInPanel({
                 ·
               </span>
             )}
-            or run <code title={command}>{command}</code>
+            or run <code>{redactSensitive(command)}</code>
             <CopyButton text={command} />
           </span>
         )}

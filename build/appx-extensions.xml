@@ -1,0 +1,17 @@
+        <!--
+          App execution alias for the Microsoft Store (MSIX) package. Programs
+          outside the package may not launch an exe under WindowsApps by path,
+          but kubeconfig entries written by KubePilot run it as their token
+          helper (the token-helper flag with eks or azure) from kubectl in any
+          terminal. The alias (%LOCALAPPDATA%\Microsoft\WindowsApps\kubepilot.exe,
+          on PATH by default) is that launchable, version-independent name;
+          electron/main.cjs uses it as KUBEPILOT_APP_EXEC in Store installs.
+          Inserted by electron-builder inside Extensions (appx.customExtensionsPath).
+          XML comments may not contain two hyphens in a row.
+        -->
+        <uap5:Extension xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
+          Category="windows.appExecutionAlias" Executable="app\KubePilot.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap5:AppExecutionAlias>
+            <uap5:ExecutionAlias Alias="kubepilot.exe" />
+          </uap5:AppExecutionAlias>
+        </uap5:Extension>

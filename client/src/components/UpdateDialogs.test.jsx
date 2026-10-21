@@ -275,6 +275,25 @@ describe('Help → Check for Updates', { timeout: 15000 }, () => {
     expect(within(dlg).getByRole('button', { name: 'View Release' })).toBeInTheDocument();
   });
 
+  it('a Microsoft Store install points to the Store instead of downloading or the release page', async () => {
+    postJson.mockResolvedValue(
+      state('available', {
+        canInstall: false,
+        managedBy: 'store',
+        installUnavailable: 'This copy of KubePilot comes from the Microsoft Store, which installs its updates.',
+      })
+    );
+    const user = setup();
+    await host({ type: 'check-updates' });
+    const dlg = await screen.findByRole('dialog', { name: 'KubePilot Update Available' }, SLOW);
+    expect(dlg).toHaveTextContent('comes from the Microsoft Store');
+    expect(dlg).not.toHaveTextContent('download the installer');
+    expect(within(dlg).queryByRole('button', { name: 'Download and Install' })).toBeNull();
+    expect(within(dlg).queryByRole('button', { name: 'View Release' })).toBeNull();
+    await user.click(within(dlg).getByRole('button', { name: 'Open Microsoft Store' }));
+    expect(window.open).toHaveBeenCalledWith('ms-windows-store://downloadsandupdates', '_blank', 'noopener,noreferrer');
+  });
+
   it('after a Windows update that did not complete, says the old version is untouched', async () => {
     setup();
     await host({ type: 'update-result', status: 'failed', version: '1.4.0', from: '1.3.0' });

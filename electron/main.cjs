@@ -149,6 +149,8 @@ const { execFileSync } = require('child_process');
 const { createUpdateHost } = require('./update-host.cjs');
 
 const PREFERRED_PORT = 3001; // used when free — keeps documented MCP URLs stable
+// Microsoft Store → Library / updates (Help → Check for Updates on a Store install).
+const MS_STORE_UPDATES_URL = 'ms-windows-store://downloadsandupdates';
 const READY_TIMEOUT_MS = 30000;
 
 let backendPort = null;
@@ -277,6 +279,9 @@ function backendEnv({ fixedPath, port, token }) {
   // the test-only synthetic-cluster fixture; the desktop app never offers it.
   for (const k of ['NODE_OPTIONS', 'NODE_EXTRA_CA_CERTS', 'ELECTRON_RUN_AS_NODE', 'HOST', 'PORT', 'KUBEPILOT_DEMO'])
     delete env[k];
+  // The updater's trust anchor is the release key built into the app; the
+  // test-only override (lib/updater/keys.mjs) never reaches an installed build.
+  if (app.isPackaged) delete env.KUBEPILOT_UPDATE_TRUSTED_KEYS;
   env.PATH = fixedPath;
   if (process.platform === 'win32') env.Path = fixedPath;
   env.NODE_ENV = 'production';
@@ -292,13 +297,20 @@ function backendEnv({ fixedPath, port, token }) {
   env.KUBEPILOT_SECRET_SCOPE = azureSealing ? 'llm,azure' : 'llm';
   // The app binary the backend must write into kubeconfig exec entries
   // (`<exe> --token-helper …`); the utility process's own execPath may differ.
-  env.KUBEPILOT_APP_EXEC = process.execPath;
+  // A Microsoft Store install lives under WindowsApps, which kubectl in the
+  // user's own terminal may not launch by path (and whose path changes with
+  // every update), so there it's the package's app execution alias
+  // (build/appx-extensions.xml).
+  env.KUBEPILOT_APP_EXEC = process.windowsStore && process.env.LOCALAPPDATA
+    ? path.join(process.env.LOCALAPPDATA, 'Microsoft', 'WindowsApps', 'kubepilot.exe')
+    : process.execPath;
   // How this copy is installed (so the backend picks the matching release
   // asset) and where updates download — only ever what the host detected.
-  for (const k of ['KUBEPILOT_INSTALL_KIND', 'KUBEPILOT_INSTALL_UNAVAILABLE', 'KUBEPILOT_UPDATE_DIR']) delete env[k];
+  for (const k of ['KUBEPILOT_INSTALL_KIND', 'KUBEPILOT_INSTALL_UNAVAILABLE', 'KUBEPILOT_INSTALL_MANAGED_BY', 'KUBEPILOT_UPDATE_DIR']) delete env[k];
   if (updateHost) {
     if (updateHost.install.kind) env.KUBEPILOT_INSTALL_KIND = updateHost.install.kind;
     else env.KUBEPILOT_INSTALL_UNAVAILABLE = updateHost.install.message;
+    if (updateHost.install.managedBy) env.KUBEPILOT_INSTALL_MANAGED_BY = updateHost.install.managedBy;
     env.KUBEPILOT_UPDATE_DIR = updateHost.dir;
   }
   return env;
@@ -567,8 +579,9 @@ function createWindow() {
   wc.on('will-attach-webview', (event) => event.preventDefault());
 
   // Open target=_blank / external links in the default browser, not a new window.
+  // The one non-web link: the Microsoft Store's updates page (Store installs).
   wc.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/i.test(url)) shell.openExternal(url).catch(() => {});
+    if (/^https?:/i.test(url) || url === MS_STORE_UPDATES_URL) shell.openExternal(url).catch(() => {});
     return { action: 'deny' };
   });
 

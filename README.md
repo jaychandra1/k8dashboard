@@ -109,14 +109,14 @@ docker run --rm -p 127.0.0.1:8080:3001 \
   ghcr.io/jaychandra1/kubepilot:latest
 ```
 
-Every API call needs a **bearer token**. The container generates one at boot and prints the login URL — read it with `docker logs`:
+Every API call needs a **bearer token**. The container generates one at first boot and keeps it out of its log (log collectors would store it); print the sign-in link with:
 
 ```bash
-docker logs <container> 2>&1 | grep '#token='
-# open http://127.0.0.1:3001/#token=…   ← use your published port instead, e.g. http://localhost:8080/#token=…
+docker exec <container> node scripts/login-url.mjs --base http://localhost:8080
+# → http://localhost:8080/#token=…   (use the address you actually open)
 ```
 
-Or choose the token yourself with `-e KUBEPILOT_TOKEN=<your-secret>`. Tags: `latest`, `<major.minor>` (e.g. `1.2`) and `v<semver>` (e.g. `v1.2.0`).
+Or choose the token yourself with `-e KUBEPILOT_TOKEN=<your-secret>`. (`-e KUBEPILOT_PRINT_LOGIN_URL=1` brings back the old login-URL line in `docker logs`.) Tags: `latest`, `<major.minor>` (e.g. `1.2`) and `v<semver>` (e.g. `v1.2.0`).
 
 > [!WARNING]
 > Publish to `127.0.0.1` unless you mean to expose it. If the container is reached through another hostname (a reverse proxy), allow it with `-e ALLOWED_HOSTS=kubepilot.internal` — other `Host` headers are refused with HTTP 421. See [Security](#security).
@@ -202,13 +202,13 @@ App data (token, assistant config, scan cache) lives in `~/.config/kubepilot`.
 
 The API, `/mcp` and the `/ws/exec` shell carry your kubeconfig's full read/write access, so the backend is protected by a **bearer token** and locked to the local machine by default. Report vulnerabilities as described in [SECURITY.md](SECURITY.md).
 
-- **Token auth on every request** — `Authorization: Bearer <token>` on `/api/*` and `/mcp`, `?token=` on the `/ws/exec` upgrade. Only `GET /healthz` and `GET /api/version` are public. The token comes from `KUBEPILOT_TOKEN`, else `~/.config/kubepilot/token` (auto-generated, mode `0600`). The server prints the login URL `http://127.0.0.1:3001/#token=<token>` at boot; the UI moves the token from the URL fragment into `sessionStorage`.
+- **Token auth on every request** — `Authorization: Bearer <token>` on `/api/*` and `/mcp`, `?token=` on the `/ws/exec` upgrade. Only `GET /healthz` and `GET /api/version` are public. The token comes from `KUBEPILOT_TOKEN`, else `~/.config/kubepilot/token` (auto-generated, mode `0600`). Run from a terminal (`npm start`), the server prints the login URL `http://127.0.0.1:3001/#token=<token>` at boot; a production server without a terminal (Docker, systemd) doesn't, and `node scripts/login-url.mjs` prints it instead. The UI moves the token from the URL fragment into `sessionStorage`.
 - **Desktop app** — generates a fresh random token per launch, starts the backend on a port it verified is free (never attaching to a process that already listens there), passes only an allow-listed environment to it, keeps the renderer sandboxed with navigation pinned to the backend origin, and ships with Electron fuses that disable `ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS` and `--inspect`. Because `ELECTRON_RUN_AS_NODE` is off, imported clusters authenticate through an explicit CLI mode of the app binary (`KubePilot --token-helper eks|azure …`) rather than by turning the app into node; stale kubeconfig entries from older builds are repaired automatically when the kubeconfig is loaded.
 - **Loopback by default** — binds `127.0.0.1`; set `HOST=0.0.0.0` only to expose it deliberately (the Docker image does this so its published port works).
 - **Host allowlist** — only `localhost`, `127.0.0.1`, `[::1]` (plus `ALLOWED_HOSTS`) are accepted as `Host`; anything else gets HTTP 421, which defeats DNS rebinding.
 - **Same-origin only** — a page on another origin can't drive the API or the exec WebSocket. Non-browser MCP clients are unaffected but still need the token.
 - **Hardened responses** — strict CSP on the UI, `X-Frame-Options: DENY`, `nosniff`, no `X-Powered-By`, rate limiting, request-size limits and input validation on every path segment that reaches `kubectl`.
-- **When exposing it**, publish to loopback and/or put an authenticating proxy in front, add its hostname via `ALLOWED_HOSTS` and its origin via `ALLOWED_ORIGINS`, and keep the token secret (it is printed in the container log — restrict `docker logs` access accordingly).
+- **When exposing it**, publish to loopback and/or put an authenticating proxy in front, add its hostname via `ALLOWED_HOSTS` and its origin via `ALLOWED_ORIGINS`, and keep the token secret (it is not printed in the container log unless `KUBEPILOT_PRINT_LOGIN_URL=1`). The Helm and AI-agent terminals run on the KubePilot host, so a server offers them only with `KUBEPILOT_LOCAL_SHELL=1`.
 
 ## Architecture
 

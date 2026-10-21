@@ -81,6 +81,20 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Release tag: $TAG (VERSION=$VERSION)"
 
+      # The app refuses updates that aren't signed with a key it trusts, so a
+      # release is only built once the trust anchor is in place (the release
+      # job then checks the secret matches it before signing).
+      - name: Require a trusted release-signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          n="$(node --input-type=module -e "import('./lib/updater/keys.mjs').then((m) => console.log(m.RELEASE_PUBLIC_KEYS.length))")"
+          if [ "$n" -lt 1 ]; then
+            echo "::error::lib/updater/keys.mjs trusts no release-signing key. Run 'node scripts/release-signing-keygen.mjs' once, store the private key as the RELEASE_SIGNING_KEY secret of the 'release' environment ('gh secret set RELEASE_SIGNING_KEY --env release < <key file>') and commit lib/updater/keys.mjs."
+            exit 1
+          fi
+          echo "lib/updater/keys.mjs trusts $n release-signing key(s)"
+
   # ---------------------------------------------------------------------------
   build:
     name: Build ${{ matrix.name }}
@@ -138,9 +152,10 @@ jobs:
         run: npm test
 
       - name: Build & package
-        # `npm run dist` fetches trivy (checksum-verified), builds the client
-        # and runs electron-builder for the host OS with --publish never; the
-        # release job below publishes. No GitHub token is exposed here.
+        # `npm run dist` builds the client and runs electron-builder for the
+        # host OS with --publish never (Windows: the NSIS installer and the
+        # Microsoft Store AppX); the release and store jobs below publish. No
+        # GitHub token is exposed here.
         run: npm run dist
 
       - name: Upload build artifacts
@@ -155,6 +170,19 @@ jobs:
             release/*.AppImage
             release/*.deb
             release/latest*.yml
+
+      # Microsoft Store package (AppX/MSIX). Unsigned on purpose: the Store
+      # signs it with Microsoft's certificate after certification, and it only
+      # installs through the Store — so it stays out of the GitHub release
+      # (and SHA256SUMS). The `store` job below submits it.
+      - name: Upload Microsoft Store package
+        if: matrix.artifact == 'windows'
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: store-kubepilot-windows
+          if-no-files-found: error
+          retention-days: 30
+          path: release/*.appx
 
   # ---------------------------------------------------------------------------
   release:
@@ -209,10 +237,19 @@ jobs:
           fi
           echo "RELEASE_TOKEN is set; publishing to ${RELEASE_REPO}"
 
+      # Fail before touching anything if the signing secret is missing or
+      # doesn't match a key the app trusts (lib/updater/keys.mjs).
+      - name: Require RELEASE_SIGNING_KEY
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: node scripts/sign-release.mjs --check
+
       - name: Download all build artifacts
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
           path: dist
+          # The installers only — not the Store package (store-kubepilot-windows).
+          pattern: kubepilot-*
           merge-multiple: true
 
       - name: Generate SHA256SUMS.txt
@@ -225,6 +262,14 @@ jobs:
           [ ${#files[@]} -gt 0 ] || { echo "::error::no installers found"; exit 1; }
           sha256sum "${files[@]}" > SHA256SUMS.txt
           cat SHA256SUMS.txt
+
+      # SHA256SUMS.txt.sig: Ed25519 over "KubePilot release <version>\n" +
+      # SHA256SUMS.txt. The in-app updater installs nothing without it.
+      - name: Sign SHA256SUMS.txt
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: node scripts/sign-release.mjs dist "$VERSION"
 
       - name: Generate CycloneDX SBOM
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
@@ -249,6 +294,7 @@ jobs:
             dist/*.AppImage
             dist/*.deb
             dist/SHA256SUMS.txt
+            dist/SHA256SUMS.txt.sig
 
       # Release body = the "## [<version>]" section of CHANGELOG.md, with a
       # one-line fallback when that section is missing.
@@ -279,7 +325,7 @@ jobs:
             echo
             echo "---"
             echo
-            echo "Checksums are in \`SHA256SUMS.txt\`; the CycloneDX SBOM is \`kubepilot-${TAG}.cdx.json\`."
+            echo "Checksums are in \`SHA256SUMS.txt\`, signed with KubePilot's release key (\`SHA256SUMS.txt.sig\`, verified by the in-app updater); the CycloneDX SBOM is \`kubepilot-${TAG}.cdx.json\`."
             echo "Container image: \`ghcr.io/jaychandra1/kubepilot:${TAG}\`."
             echo "Built from \`${SRC}@${SHA:0:12}\`."
           } > release-body.md
@@ -305,6 +351,7 @@ jobs:
             dist/*.AppImage
             dist/*.deb
             dist/SHA256SUMS.txt
+            dist/SHA256SUMS.txt.sig
             dist/*.cdx.json
 
   # ---------------------------------------------------------------------------
@@ -486,3 +533,76 @@ jobs:
           IMAGE: ${{ steps.img.outputs.name }}
           TAG: ${{ needs.verify.outputs.tag }}
         run: docker buildx imagetools inspect "${IMAGE}:${TAG}"
+
+  # ---------------------------------------------------------------------------
+  # Microsoft Store: submit the AppX built above as a new submission of the
+  # existing Store product, after the GitHub release is published. Off until
+  # the repository variable MS_STORE_PRODUCT_ID is set — Microsoft requires
+  # the FIRST submission to be made by hand in Partner Center (upload the
+  # store-kubepilot-windows artifact there).
+  #
+  # Secrets of the `release` environment: MS_STORE_TENANT_ID,
+  # MS_STORE_SELLER_ID, MS_STORE_CLIENT_ID, MS_STORE_CLIENT_SECRET — a
+  # Microsoft Entra ID app added in Partner Center (Account settings → User
+  # management → Microsoft Entra applications) with the Manager role.
+  # Certification then takes Microsoft a few days before the update is live.
+  store:
+    name: Submit to Microsoft Store
+    needs: [verify, build, release]
+    if: ${{ vars.MS_STORE_PRODUCT_ID != '' }}
+    runs-on: windows-latest
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      # The package identity must be the one Partner Center reserved for the
+      # product, or the submission is rejected.
+      - name: Require the Partner Center identity in package.json
+        shell: pwsh
+        run: |
+          $appx = (Get-Content package.json -Raw | ConvertFrom-Json).build.appx
+          if ($appx.identityName -eq 'KubePilot.Desktop' -or $appx.publisher -eq 'CN=KubePilot') {
+            Write-Output "::error::package.json build.appx still has the placeholder identity. Copy Package/Identity/Name, Package/Identity/Publisher and Package/Properties/PublisherDisplayName from Partner Center (Product management -> Product identity) into build.appx identityName, publisher and publisherDisplayName."
+            exit 1
+          }
+          Write-Output "Package identity: $($appx.identityName) / $($appx.publisher)"
+
+      - name: Download the Store package
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          name: store-kubepilot-windows
+          path: store
+
+      - name: Set up the Microsoft Store CLI
+        uses: microsoft/microsoft-store-apppublisher@cc9910a8d59f2eb55cbb83df0a3800cf3b5300e0 # v1.4
+        with:
+          version: v0.4.3
+
+      - name: Submit to the Microsoft Store
+        shell: pwsh
+        env:
+          TENANT_ID: ${{ secrets.MS_STORE_TENANT_ID }}
+          SELLER_ID: ${{ secrets.MS_STORE_SELLER_ID }}
+          CLIENT_ID: ${{ secrets.MS_STORE_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.MS_STORE_CLIENT_SECRET }}
+          PRODUCT_ID: ${{ vars.MS_STORE_PRODUCT_ID }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($name in 'TENANT_ID', 'SELLER_ID', 'CLIENT_ID', 'CLIENT_SECRET') {
+            if (-not [Environment]::GetEnvironmentVariable($name)) {
+              Write-Output "::error::secrets.MS_STORE_$name is not set on the 'release' environment."
+              exit 1
+            }
+          }
+          msstore reconfigure --tenantId $env:TENANT_ID --sellerId $env:SELLER_ID --clientId $env:CLIENT_ID --clientSecret $env:CLIENT_SECRET
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $pkg = Get-ChildItem store -Filter *.appx | Select-Object -First 1
+          if (-not $pkg) { Write-Output "::error::no .appx in the store-kubepilot-windows artifact"; exit 1 }
+          msstore publish $pkg.FullName -id $env:PRODUCT_ID
+          exit $LASTEXITCODE

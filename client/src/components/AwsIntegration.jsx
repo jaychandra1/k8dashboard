@@ -348,7 +348,6 @@ export default function AwsIntegration({ onClose, onImported }) {
           <SsoSignInPanel
             sso={sso}
             params={ssoParams.current}
-            portal={ssoParams.current.startUrl || profileDetails.find((p) => p.name === ssoParams.current.profile)?.ssoStartUrl}
             doneText="Loading your AWS accounts…"
           />
           {sso.state.phase === 'error' && (

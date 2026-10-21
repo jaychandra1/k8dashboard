@@ -12,7 +12,7 @@ import * as k8s from '@kubernetes/client-node';
 import yaml from 'js-yaml';
 import * as azure from './azure-aks.js';
 import compression from 'compression';
-import { registerAssistant } from './assistant.js';
+import { registerAssistant, redactSecret } from './assistant.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { randomUUID } from 'crypto';
@@ -30,9 +30,9 @@ import {
 } from './lib/validate.mjs';
 import { createCache } from './lib/cache.mjs';
 import {
-  getAuthToken, authMiddleware, verifyWsAuth, isAllowedHost, isAllowedOrigin, hostGuard, originGuard, pathCaseGuard,
+  getAuthToken, getMcpToken, rotateMcpToken, authMiddleware, verifyWsAuth, isAllowedHost, isAllowedOrigin, hostGuard, originGuard, pathCaseGuard,
 } from './lib/auth.mjs';
-import { CONFIG_DIR, DEMO_ENABLED, configFile, findConfigFile, isMcpSource, execEntry } from './lib/paths.mjs';
+import { CONFIG_DIR, DEMO_ENABLED, configFile, envFlag, findConfigFile, isMcpSource, execEntry } from './lib/paths.mjs';
 import { repairExecEntries } from './lib/kubeconfig-repair.mjs';
 import {
   createKubectl, positional, spawnBin, collectChild, commandExists, resolveBinSync, loginShellPath,
@@ -45,7 +45,8 @@ import {
 } from './lib/k8s-ops.mjs';
 import { eksEntryFor as eksEntryForKc, sameEksCluster, eksClusterStatus as eksClusterStatusKc } from './lib/eks-kubeconfig.mjs';
 import { createUpdates, registerUpdateRoutes } from './lib/updater/routes.mjs';
-import { localShellAllowed, pinnedKubeconfig, helmShellEnv, helmShellCommand, helmShellBanner, helmDirOf } from './lib/helm-shell.mjs';
+import { localShellAllowed, pinnedKubeconfig, helmShellEnv, helmShellCommand, helmShellBanner, helmDirOf, shq, agentPromptArg } from './lib/helm-shell.mjs';
+import { childEnv } from './lib/child-env.mjs';
 import { createSsoLogin, adoptSsoLogin, refreshSsoToken, profileSsoInfo, sessionsForProfiles, sessionTokenState, awsConfigPath } from './lib/aws-sso.mjs';
 
 // node-pty powers the pod terminal (a real PTY bridged to `kubectl exec`). Load
@@ -230,14 +231,39 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-// MCP write gate: mcp.js calls this REST API with `X-KubePilot-Source: mcp`;
-// when the UI toggle is off, every mutating route refuses those calls.
+// MCP write gate: requests made with the MCP token (or carrying
+// `X-KubePilot-Source: mcp`) are refused on every mutating route while the UI
+// toggle is off — see isMcpSource() in lib/paths.mjs.
 const mcpWriteGate = (req, res, next) => {
   if (isMcpSource(req) && !mcpAllowWrite) {
     return res.status(403).json({ error: 'MCP write access is disabled', code: 'mcp_write_disabled' });
   }
   next();
 };
+
+// What an AI agent sees of an object it reads (get_resource /
+// get_resource_yaml): unless the user lets agents read Secret values
+// (Preferences → MCP), Secret data and secret-looking env values are masked —
+// keys, type and metadata stay — and the last-applied-configuration
+// annotation, which repeats the applied data verbatim, is dropped.
+const agentView = (req, resource, kind) => {
+  if (!isMcpSource(req) || mcpAllowSecrets || !resource || typeof resource !== 'object') return resource;
+  const isSecret = resource.kind === 'Secret' || String(kind).toLowerCase() === 'secret';
+  delete resource.metadata?.annotations?.['kubectl.kubernetes.io/last-applied-configuration'];
+  return redactSecret(resource, isSecret ? 'secret' : undefined);
+};
+
+// For the person at the UI only — never an AI agent, whatever its write
+// access: the MCP settings and tokens, kubeconfig loading, cloud sign-ins and
+// imports, the assistant (its LLM key and spend), security scans, external
+// terminals, app settings and updates.
+const UI_ONLY_PREFIXES = [
+  '/api/mcp', '/api/config/load', '/api/config/reload', '/api/azure', '/api/aws', '/api/assistant',
+  '/api/security/scan', '/api/ai-agents/launch-external', '/api/app', '/api/settings',
+];
+app.use(UI_ONLY_PREFIXES, (req, res, next) => (isMcpSource(req)
+  ? res.status(403).json({ error: 'This action is not available to MCP clients', code: 'mcp_forbidden' })
+  : next()));
 
 // ------------------------------------------------------------------
 // Demo mode (test/dev fixture, KUBEPILOT_DEMO=1 only) — when the flag is set
@@ -458,42 +484,66 @@ let mcpAllowWrite = (() => {
   return ['1', 'true', 'yes'].includes(String(process.env.MCP_ALLOW_WRITE || '').toLowerCase());
 })();
 
-// MCP connection info for the Preferences → MCP section. The HTTP endpoint is
-// this same server at /mcp; write tools are gated by `mcpAllowWrite`.
-app.get('/api/mcp/info', (req, res) => {
-  const httpUrl = `http://127.0.0.1:${PORT}/mcp`;
-  res.json({
-    allowWrite: mcpAllowWrite,
-    token: getAuthToken(),
-    httpUrl,
-    stdioEnv: { MCP_API_BASE: `http://127.0.0.1:${PORT}`, MCP_API_TOKEN: getAuthToken() },
-    readTools: [
-      'list_contexts', 'switch_context', 'list_namespaces', 'list_resources',
-      'get_resource', 'get_resource_yaml', 'get_pod_logs', 'get_events', 'get_topology',
-      'get_cluster_summary', 'list_nodes', 'get_node_pods', 'get_node_metrics',
-      'get_pod_metrics', 'list_pod_metrics', 'list_storage', 'get_rbac',
-      'list_helm_releases', 'get_helm_values', 'get_helm_manifest',
-      'list_crds', 'list_custom_resources', 'get_custom_resource',
-      'get_argocd_status', 'list_argocd_apps', 'get_argocd_app',
-      'list_argocd_projects', 'list_argocd_appsets', 'list_argocd_repositories', 'list_argocd_clusters',
-    ],
-    writeTools: [
-      'apply_yaml', 'delete_resource', 'scale_workload', 'rollout_restart',
-      'sync_argocd_app', 'refresh_argocd_app',
-    ],
-  });
+// Kubernetes Secret values over MCP: masked unless the user opts in
+// (Preferences → MCP). Keys, type and metadata stay visible.
+let mcpAllowSecrets = readSettings().mcpAllowSecrets === true;
+// Create the MCP token at boot so the stdio bridge (mcp-stdio.js) finds it.
+getMcpToken();
+
+// MCP connection info for the Preferences → MCP section (UI-only, like every
+// /api/mcp route). The HTTP endpoint is this same server at /mcp. Agents get
+// the MCP token, never the UI token; write tools are gated by `mcpAllowWrite`.
+const mcpInfo = () => ({
+  allowWrite: mcpAllowWrite,
+  allowSecrets: mcpAllowSecrets,
+  token: getMcpToken(),
+  httpUrl: `http://127.0.0.1:${PORT}/mcp`,
+  stdioEnv: { MCP_API_BASE: `http://127.0.0.1:${PORT}`, MCP_API_TOKEN: getMcpToken() },
+  readTools: [
+    'list_contexts', 'list_namespaces', 'list_resources',
+    'get_resource', 'get_resource_yaml', 'get_pod_logs', 'get_events', 'get_topology',
+    'get_cluster_summary', 'list_nodes', 'get_node_pods', 'get_node_metrics',
+    'get_pod_metrics', 'list_pod_metrics', 'list_storage', 'get_rbac',
+    'list_helm_releases', 'get_helm_values', 'get_helm_manifest',
+    'list_crds', 'list_custom_resources', 'get_custom_resource',
+    'get_argocd_status', 'list_argocd_apps', 'get_argocd_app',
+    'list_argocd_projects', 'list_argocd_appsets', 'list_argocd_repositories', 'list_argocd_clusters',
+  ],
+  writeTools: [
+    'switch_context', 'apply_yaml', 'delete_resource', 'scale_workload', 'rollout_restart',
+    'sync_argocd_app', 'refresh_argocd_app',
+  ],
+});
+app.get('/api/mcp/info', (req, res) => res.json(mcpInfo()));
+
+// Toggle MCP write tools / Secret values from the UI (persisted). Write tools
+// take effect for new MCP sessions — a connected agent must reconnect to pick
+// up the new tool set; the server enforces both immediately.
+app.post('/api/mcp/config', (req, res) => {
+  const { allowWrite, allowSecrets } = req.body || {};
+  if (allowWrite === undefined && allowSecrets === undefined) {
+    return res.status(400).json({ error: 'allowWrite or allowSecrets (boolean) is required' });
+  }
+  if (allowWrite !== undefined && typeof allowWrite !== 'boolean') return bad(res, 'allowWrite');
+  if (allowSecrets !== undefined && typeof allowSecrets !== 'boolean') return bad(res, 'allowSecrets');
+  if (allowWrite !== undefined) mcpAllowWrite = allowWrite;
+  if (allowSecrets !== undefined) mcpAllowSecrets = allowSecrets;
+  writeSettings({ mcpAllowWrite, mcpAllowSecrets });
+  res.json({ allowWrite: mcpAllowWrite, allowSecrets: mcpAllowSecrets });
 });
 
-// Toggle MCP write tools from the UI (persisted). Takes effect for new MCP
-// sessions — a connected agent must reconnect to pick up the new tool set.
-app.post('/api/mcp/config', (req, res) => {
-  const { allowWrite } = req.body || {};
-  if (typeof allowWrite !== 'boolean') {
-    return res.status(400).json({ error: 'allowWrite (boolean) is required' });
+// Regenerate the MCP token: every agent must be reconfigured, and open MCP
+// sessions (which call this API with the old token) are closed.
+app.post('/api/mcp/token', (req, res) => {
+  try {
+    rotateMcpToken();
+  } catch (err) {
+    log.warn('MCP token rotation failed', { err });
+    return res.status(500).json({ error: 'Could not save a new MCP token', code: 'internal_error' });
   }
-  mcpAllowWrite = allowWrite;
-  writeSettings({ mcpAllowWrite: allowWrite });
-  res.json({ allowWrite: mcpAllowWrite });
+  for (const sid of [...mcpTransports.keys()]) evictMcpSession(sid);
+  log.info('MCP token regenerated');
+  res.json(mcpInfo());
 });
 
 // Pinned clusters — shared by the in-app cluster switcher (top bar) and the
@@ -620,7 +670,7 @@ app.get('/api/config/context', (req, res) => {
   });
 });
 
-app.post('/api/config/context', (req, res) => {
+app.post('/api/config/context', mcpWriteGate, (req, res) => {
   const { contextName } = req.body || {};
   if (!isContextName(contextName)) return bad(res, 'contextName');
 
@@ -1188,7 +1238,9 @@ loginShellPath();
 // net in case the shell never ran its own cleanup.
 const TEMP_KUBECONFIG_TTL_MS = 12 * 60 * 60 * 1000;
 const scheduleTempUnlink = (p) => setTimeout(() => fs.unlink(p, () => {}), TEMP_KUBECONFIG_TTL_MS).unref();
-const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
+// Terminals that run on this server's own host (Helm, AI agents) are for the
+// desktop app, where that host is the user's machine (lib/helm-shell.mjs).
+const LOCAL_SHELL_DISABLED_MESSAGE = 'This terminal runs on the KubePilot host, so it is only available in the KubePilot desktop app (set KUBEPILOT_LOCAL_SHELL=1 to allow it on a server).';
 app.get('/api/ai-agents', async (req, res) => {
   const agents = await Promise.all(AI_AGENTS.map(async (a) => ({ id: a.id, name: a.name, command: a.command, desc: a.desc, install: a.install, installed: await commandExists(a.command) })));
   res.json({ agents });
@@ -1197,7 +1249,9 @@ app.get('/api/ai-agents', async (req, res) => {
 // Launch the chosen agent in a *native* OS terminal window (rather than the
 // in-app terminal panel) — the "Open AI tools in an external terminal" option.
 // Writes a temp kubeconfig pinned to the app's current context, then opens the
-// platform terminal running the agent CLI. macOS/Linux; best-effort.
+// platform terminal running the agent CLI. macOS/Linux; best-effort. Like the
+// in-app agent and Helm terminals it runs on this server's host, so it is
+// desktop-only unless KUBEPILOT_LOCAL_SHELL=1.
 app.post('/api/ai-agents/launch-external', (req, res) => {
   try {
     // Only a known agent id may be launched — no free-form command.
@@ -1205,12 +1259,18 @@ app.post('/api/ai-agents/launch-external', (req, res) => {
     const info = AI_AGENTS.find((a) => a.id === agentId);
     if (!info) return res.status(400).json({ error: 'Unknown AI agent', code: 'invalid_param', field: 'agentId' });
     if (prompt != null && (typeof prompt !== 'string' || prompt.length > 16384)) return bad(res, 'prompt');
+    if (!localShellAllowed()) return res.status(403).json({ error: LOCAL_SHELL_DISABLED_MESSAGE, code: 'local_shell_disabled' });
     if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
     const command = info.command;
 
-    // Temp kubeconfig with the app's in-memory current context.
-    const kubeconfigPath = path.join(os.tmpdir(), `km-agent-${randomUUID()}.yaml`);
-    fs.writeFileSync(kubeconfigPath, kubeConfig.exportConfig(), { mode: 0o600 });
+    // Temp kubeconfig holding ONLY the app's current context (its cluster and
+    // user), so the agent can't reach the user's other clusters.
+    const kubeconfigPath = path.join(os.tmpdir(), `km-agent-${randomUUID()}.json`);
+    try {
+      fs.writeFileSync(kubeconfigPath, pinnedKubeconfig(kubeConfig, currentContext, k8s.KubeConfig), { mode: 0o600 });
+    } catch (err) {
+      return res.status(400).json({ error: `Could not prepare a kubeconfig for ${currentContext || 'the current cluster'}: ${err.message}`, code: 'kubeconfig_error' });
+    }
     scheduleTempUnlink(kubeconfigPath);
 
     const launch = prompt ? `${command} ${shq(prompt)}` : command;
@@ -1233,13 +1293,13 @@ app.post('/api/ai-agents/launch-external', (req, res) => {
     fs.writeFileSync(script, body, { mode: 0o700 });
 
     if (process.platform === 'darwin') {
-      execFile('open', ['-a', 'Terminal', script], () => { /* fire and forget */ });
+      execFile('open', ['-a', 'Terminal', script], { env: childEnv() }, () => { /* fire and forget */ });
     } else if (process.platform === 'linux') {
       // Try a few common terminal emulators.
       const term = ['x-terminal-emulator', 'gnome-terminal', 'konsole', 'xterm'];
       const tryNext = (i) => {
         if (i >= term.length) return;
-        execFile(term[i], ['-e', 'bash', script], (err) => { if (err) tryNext(i + 1); });
+        execFile(term[i], ['-e', 'bash', script], { env: childEnv() }, (err) => { if (err) tryNext(i + 1); });
       };
       tryNext(0);
     } else {
@@ -1632,7 +1692,7 @@ app.get('/api/resource/:namespace/:kind/:name', async (req, res) => {
       return fail(res, apiError, undefined, 'Failed to read resource');
     }
 
-    res.json(resource);
+    res.json(agentView(req, resource, kind));
   } catch (error) {
     fail(res, error);
   }
@@ -1850,7 +1910,7 @@ app.get('/api/portforward', (req, res) => {
   res.json({ forwards });
 });
 
-app.delete('/api/portforward/:id', (req, res) => {
+app.delete('/api/portforward/:id', mcpWriteGate, (req, res) => {
   const entry = portForwards.get(req.params.id);
   if (!entry) return res.status(404).json({ error: 'Port-forward not found', code: 'not_found' });
   try { entry.proc.kill(); } catch (e) { /* ignore */ }
@@ -1933,7 +1993,7 @@ app.get('/api/yaml/:namespace/:kind/:name', async (req, res) => {
       return fail(res, apiError, undefined, 'Failed to read resource');
     }
 
-    const yamlString = yaml.dump(resource, { indent: 2 });
+    const yamlString = yaml.dump(agentView(req, resource, kind), { indent: 2 });
     res.json({ yaml: yamlString });
   } catch (error) {
     fail(res, error);
@@ -3514,7 +3574,11 @@ const TOPOLOGY_LISTS = [
   ['ServiceAccount', 'CoreV1Api', 'listNamespacedServiceAccount'], ['PersistentVolumeClaim', 'CoreV1Api', 'listNamespacedPersistentVolumeClaim'],
   ['Role', 'RbacAuthorizationV1Api', 'listNamespacedRole'], ['RoleBinding', 'RbacAuthorizationV1Api', 'listNamespacedRoleBinding'],
 ];
-const tagKind = (items, kind) => (items || []).map((it) => Object.assign(it, { kind }));
+// The graph only needs Secret names, so their data is dropped right away.
+const tagKind = (items, kind) => (items || []).map((it) => {
+  if (kind === 'Secret') { delete it.data; delete it.stringData; }
+  return Object.assign(it, { kind });
+});
 const listTopologyItems = async (namespace) => {
   const opts = requestOptions(25000);
   const settled = await Promise.allSettled(TOPOLOGY_LISTS.map(([kind, api, method]) =>
@@ -3933,11 +3997,13 @@ app.post('/mcp', async (req, res) => {
         onsessioninitialized: (id) => { mcpTransports.set(id, { transport, lastSeen: Date.now() }); },
       });
       transport.onclose = () => { if (transport.sessionId) mcpTransports.delete(transport.sessionId); };
+      // The tools call this API with the MCP token, so the write gate and the
+      // UI-only routes hold even for an agent that connected with the UI token.
       const mcp = createMcpServer({
         version: getAppVersion(),
         allowWrite: mcpAllowWrite,
         apiBase: `http://127.0.0.1:${PORT}`,
-        token: getAuthToken(),
+        token: getMcpToken(),
       });
       await mcp.connect(transport);
     } else if (!transport) {
@@ -4010,10 +4076,12 @@ const terminals = new Set(); // live PTYs (for the cap and for shutdown)
 // environment. Cloud exec-credential plugins need their SDK variables.
 const PTY_ENV_KEYS = ['PATH', 'HOME', 'USERPROFILE', 'KUBECONFIG', 'TERM', 'LANG', 'SHELL', 'SystemRoot', 'TEMP', 'TMP',
   'APPDATA', 'LOCALAPPDATA', 'HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY', 'https_proxy', 'http_proxy', 'no_proxy'];
+// KUBE* covers KUBECACHEDIR, KUBECTL_* and kubelogin settings, but not
+// KUBEPILOT_* (the API token) — childEnv() drops KubePilot's secrets as well.
 const ptyEnv = () => {
   const env = {};
-  for (const [k, v] of Object.entries(process.env)) {
-    if (PTY_ENV_KEYS.includes(k) || /^(AWS_|AZURE_|GOOGLE_|KUBE|CLOUDSDK_)/.test(k)) env[k] = v;
+  for (const [k, v] of Object.entries(childEnv())) {
+    if (PTY_ENV_KEYS.includes(k) || /^(AWS_|AZURE_|GOOGLE_|KUBE(?!PILOT_)|CLOUDSDK_)/i.test(k)) env[k] = v;
   }
   return env;
 };
@@ -4022,7 +4090,10 @@ const ptyEnv = () => {
 // on them, so the upgrade is authenticated here by hand: Host allowlist,
 // Origin rule, bearer token (?token=…), then parameter validation — each
 // failure answered with a JSON HTTP response before any socket is upgraded.
-const wss = new WebSocketServer({ noServer: true });
+// Terminal frames are keystrokes, pastes and resize messages; 1 MiB is far
+// above any of them and far below ws's 100 MiB default.
+const WS_MAX_PAYLOAD = 1024 * 1024;
+const wss = new WebSocketServer({ noServer: true, maxPayload: WS_MAX_PAYLOAD });
 const rejectUpgrade = (socket, status, body) => {
   const text = JSON.stringify(body);
   const reason = http.STATUS_CODES[status] || 'Error';
@@ -4055,10 +4126,11 @@ server.on('upgrade', async (req, socket, head) => {
       ['container', q('container'), (v) => v === null || v === '' || isContainer(v)],
     ]);
   if (invalid) return rejectUpgrade(socket, 400, { error: `Invalid ${invalid}`, code: 'invalid_param', field: invalid });
-  // The Helm terminal is a shell on this server's host: the user's own machine
-  // in the desktop app, never a shared server unless explicitly enabled.
-  if (q('shell') !== null && !localShellAllowed() && !demoActive()) {
-    return rejectUpgrade(socket, 403, { error: 'The Helm terminal is only available in the KubePilot desktop app', code: 'local_shell_disabled' });
+  // The Helm and AI-agent terminals are shells on this server's host: the
+  // user's own machine in the desktop app, never a shared server unless
+  // explicitly enabled. (Demo mode answers with a scripted terminal.)
+  if ((q('shell') !== null || q('agent')) && !localShellAllowed() && !demoActive()) {
+    return rejectUpgrade(socket, 403, { error: LOCAL_SHELL_DISABLED_MESSAGE, code: 'local_shell_disabled' });
   }
   // The pod terminal is a real PTY around `kubectl exec -it`: without kubectl
   // (and outside demo mode) answer with the actionable JSON error up front.
@@ -4149,21 +4221,27 @@ wss.on('connection', async (browserWs, req) => {
     }
     log.info('helm terminal opened', { context });
   } else if (agentId) {
-    // ---- AI agent terminal: a login shell with the app's current cluster
-    // context pinned via a temp kubeconfig, then launch the chosen agent CLI.
-    // Only a known agent id is accepted (validated at upgrade). ----
+    // ---- AI agent terminal: a login shell whose kubeconfig holds ONLY the
+    // app's current context (like the Helm terminal), then launch the chosen
+    // agent CLI. Only a known agent id is accepted, and only where local
+    // shells are allowed (both checked at upgrade). The shell gets the user's
+    // environment — agent CLIs need their own API keys — minus KubePilot's
+    // secrets. ----
     const info = AI_AGENTS.find((a) => a.id === agentId);
     if (!info) { send('\r\n\x1b[31mUnknown AI agent.\x1b[0m\r\n'); browserWs.close(); return; }
     const command = info.command;
-
-    let kubeconfigPath = getKubeConfigPath();
+    const context = currentContext;
+    let kubeconfigPath;
     try {
-      const tmp = path.join(os.tmpdir(), `km-agent-${randomUUID()}.yaml`);
-      fs.writeFileSync(tmp, kubeConfig.exportConfig(), { mode: 0o600 });
-      scheduleTempUnlink(tmp);
-      kubeconfigPath = tmp;
-      cleanup = () => { try { fs.unlinkSync(tmp); } catch { /* ignore */ } };
-    } catch { /* fall back to the default kubeconfig path */ }
+      kubeconfigPath = path.join(os.tmpdir(), `km-agent-${randomUUID()}.json`);
+      fs.writeFileSync(kubeconfigPath, pinnedKubeconfig(kubeConfig, context, k8s.KubeConfig), { mode: 0o600 });
+      scheduleTempUnlink(kubeconfigPath);
+      cleanup = () => { try { fs.unlinkSync(kubeconfigPath); } catch { /* already gone */ } };
+    } catch (err) {
+      send(`\r\n\x1b[31mCould not prepare a kubeconfig for ${context || 'the current cluster'}: ${err.message}\x1b[0m\r\n`);
+      browserWs.close();
+      return;
+    }
 
     const isWin = process.platform === 'win32';
     const shell = isWin ? (process.env.COMSPEC || 'powershell.exe') : (process.env.SHELL || '/bin/bash');
@@ -4172,7 +4250,7 @@ wss.on('connection', async (browserWs, req) => {
       term = pty.spawn(shell, shellArgs, {
         name: 'xterm-256color', cols: 80, rows: 24,
         cwd: process.env.HOME || os.homedir(),
-        env: { ...process.env, KUBECONFIG: kubeconfigPath, KUBE_CONTEXT: currentContext || '' },
+        env: childEnv(process.env, { KUBECONFIG: kubeconfigPath, KUBE_CONTEXT: context || '' }),
       });
     } catch (err) {
       cleanup();
@@ -4182,10 +4260,7 @@ wss.on('connection', async (browserWs, req) => {
     }
     // Once the shell is ready, launch the agent (with an optional seed prompt).
     const prompt = url.searchParams.get('prompt');
-    const quote = isWin
-      ? (s) => `"${String(s).replace(/[\r\n"]/g, ' ')}"` // cmd.exe: no reliable escaping — strip quotes/newlines
-      : shq;
-    const launch = prompt ? `${command} ${quote(prompt)}\r` : `${command}\r`;
+    const launch = prompt ? `${command} ${agentPromptArg(prompt, process.platform)}\r` : `${command}\r`;
     setTimeout(() => { try { term.write(launch); } catch { /* ignore */ } }, 700);
   } else {
     // ---- pod exec: bridge to `kubectl exec -it` in a real PTY (robust against
@@ -4298,6 +4373,14 @@ server.listen(PORT, HOST, () => {
   const shown = HOST === '0.0.0.0' ? '127.0.0.1' : HOST;
   const base = `http://${shown}:${PORT}`;
   // The login URL (token in the fragment): the client stores it from the hash.
-  log.raw(`KubePilot listening on ${base}  —  open ${base}/#token=${getAuthToken()}`);
+  // A production server whose output isn't a terminal (Docker, systemd, the
+  // desktop app) doesn't print it — log collectors would keep a full-access,
+  // non-expiring credential; scripts/login-url.mjs prints it on demand.
+  // KUBEPILOT_PRINT_LOGIN_URL=1 restores the old line.
+  if (process.stdout.isTTY || process.env.NODE_ENV !== 'production' || envFlag('PRINT_LOGIN_URL')) {
+    log.raw(`KubePilot listening on ${base}  —  open ${base}/#token=${getAuthToken()}`);
+  } else {
+    log.raw(`KubePilot listening on ${base}  —  print the sign-in link with: node scripts/login-url.mjs (Docker: docker exec <container> node scripts/login-url.mjs --base <the URL you open>)`);
+  }
   log.info('listening', { host: HOST, port: PORT, bound: HOST === '0.0.0.0' ? '0.0.0.0' : HOST });
 });

@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import Icon from './Icons';
 import { ContextList, PROVIDERS, providerKeyOf } from './ContextPickerModal';
 import { useSsoSignIn, SsoSignInPanel } from './AwsSsoSignIn';
+import { maskAccountId, redactSensitive } from '../lib/redact';
 import Modal from './ui/Modal';
 import Button from './ui/Button';
 import Menu from './ui/Menu';
@@ -101,7 +102,6 @@ function classifyRaw(auth) {
   return { title: TITLES[reason] || TITLES.error, summary: raw || 'The cluster could not be reached with the current kubeconfig.', fix: null, unmatched: true };
 }
 
-const fmtAccount = (id) => (/^\d{12}$/.test(id || '') ? id.replace(/(\d{4})(\d{4})(\d{4})/, '$1 $2 $3') : id);
 const fmtEnded = (iso) => {
   const d = iso ? new Date(iso) : null;
   if (!d || Number.isNaN(d.getTime())) return null;
@@ -132,8 +132,12 @@ function AddClusterTiles({ onAddAws, onAddAzure, onChangeConfig, disabled }) {
 export default function AuthErrorModal({ open = true, auth, onRetry, onChangeConfig, retrying, contexts = [], contextsInfo, currentContext, onSwitchContext, onAddAzure, onAddAws }) {
   // `detail` carries the exec plugin's raw stderr when the backend replaced the
   // message with a friendlier one (sso-expired / exec-helper).
-  const raw = auth?.detail || auth?.message || '';
-  const { title, summary, fix, unmatched, provider: errProvider } = classify(auth);
+  // Nothing environment-identifying is displayed: account ids, endpoints, IPs,
+  // tenant ids and tokens are masked (lib/redact). Copy-to-run commands keep
+  // their real values so they still work.
+  const raw = redactSensitive(auth?.detail || auth?.message || '');
+  const { title, summary: rawSummary, fix, unmatched, provider: errProvider } = classify(auth);
+  const summary = redactSensitive(rawSummary);
   const [copied, setCopied] = useState(null); // 'cmd' | 'raw'
   const [addMenu, setAddMenu] = useState(null); // { x, y }
   const addRef = useRef(null);
@@ -150,7 +154,7 @@ export default function AuthErrorModal({ open = true, auth, onRetry, onChangeCon
   const prov = PROVIDERS[provider];
   const meta = [
     prov.label,
-    aws?.accountId && `Account ${fmtAccount(aws.accountId)}`,
+    aws?.accountId && `Account ${maskAccountId(aws.accountId)}`,
     aws?.roleName,
   ].filter(Boolean).join(' · ');
   const ended = aws ? fmtEnded(aws.expiredAt) : null;
@@ -212,19 +216,11 @@ export default function AuthErrorModal({ open = true, auth, onRetry, onChangeCon
           </span>
           {ended && <span className="auth-pill" title={aws.expiredAt}>Ended {ended}</span>}
         </header>
-        {auth?.server && (
-          <div className="auth-card-server" title={auth.server}>
-            <span className="auth-card-server-key">API server</span>
-            <code>{auth.server}</code>
-          </div>
-        )}
-
         {awsInline ? (
           <div className="auth-card-body">
             <SsoSignInPanel
               sso={sso}
               params={{ profile: aws.profile, startUrl: aws.startUrl, ssoRegion: aws.ssoRegion }}
-              portal={aws.startUrl}
               browser={aws.browser}
               command={fix.command}
               doneText={`Reconnecting to ${ctxName || 'the cluster'}…`}
@@ -247,7 +243,7 @@ export default function AuthErrorModal({ open = true, auth, onRetry, onChangeCon
             {fix.command && (
               <div className="auth-fix-cmd">
                 <span className="auth-fix-cmd-label">or run</span>
-                <code title={fix.command}>{fix.command}</code>
+                <code>{redactSensitive(fix.command)}</code>
                 <Button variant="ghost" size="sm" icon={copied === 'cmd' ? 'check' : 'copy'} className="auth-copy" onClick={() => copy(fix.command, 'cmd')} aria-live="polite">
                   {copied === 'cmd' ? 'Copied' : 'Copy'}
                 </Button>

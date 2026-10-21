@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useState } from 'react';
 import Icon from './Icons';
 import Loader from './Loader';
 import Button from './ui/Button';
+import { ConfirmModal } from './ui/Modal';
 import useRequest from '../hooks/useRequest';
 import { getJson, postJson, del, sseFetch, errorMessage } from '../lib/api';
 import { AGENT_ICON } from '../lib/kinds';
@@ -336,13 +337,27 @@ function McpSection() {
     }
   };
 
-  const setWrite = async (allowWrite) => {
-    setData((prev) => ({ ...(prev || {}), allowWrite })); // optimistic
+  // { allowWrite } or { allowSecrets } — optimistic, reverted on failure.
+  const setConfig = async (patch) => {
+    setData((prev) => ({ ...(prev || {}), ...patch }));
     try {
-      const data = await postJson('/api/mcp/config', { allowWrite });
-      setData((prev) => ({ ...(prev || {}), allowWrite: data.allowWrite }));
+      const data = await postJson('/api/mcp/config', patch);
+      setData((prev) => ({ ...(prev || {}), allowWrite: data.allowWrite, allowSecrets: data.allowSecrets }));
     } catch {
-      refetch(); // revert on failure
+      refetch();
+    }
+  };
+  const setWrite = (allowWrite) => setConfig({ allowWrite });
+
+  const [rotate, setRotate] = useState({ open: false, busy: false, error: null });
+  const regenerate = async () => {
+    setRotate((r) => ({ ...r, busy: true, error: null }));
+    try {
+      setData(await postJson('/api/mcp/token', {}));
+      setRotate({ open: false, busy: false, error: null });
+      setTest({ state: 'idle' });
+    } catch (e) {
+      setRotate({ open: true, busy: false, error: errorMessage(e, 'Could not regenerate the token') });
     }
   };
 
@@ -364,20 +379,36 @@ function McpSection() {
       <p className="prefs-lead">
         KubePilot is a <a className="prefs-link" href="https://modelcontextprotocol.io" target="_blank" rel="noopener noreferrer">Model Context Protocol</a> server,
         so any MCP-compatible agent (Claude Code, Claude Desktop, Cursor…) can inspect and operate the
-        <strong> currently selected cluster</strong>. The server runs while the app is open. Every request needs the session token below.
+        <strong> currently selected cluster</strong>. The server runs while the app is open. Every request needs the MCP token below.
       </p>
 
       {error && <div className="prefs-badge-row err" role="alert"><Icon name="warning" size={13} /> {errorMessage(error, 'Could not load MCP info')}</div>}
 
       {info && (
         <>
-          <Field label="Session token" hint="Sent as a Bearer token. Masked by default — reveal or copy it into your client config.">
+          <Field label="MCP token" hint="A token just for AI agents, sent as a Bearer token. It can't open terminals or change KubePilot settings, and it stays the same across restarts. Masked by default — reveal or copy it into your client config.">
             <div className="prefs-inline">
               <code className="prefs-code" aria-label={reveal ? `Token ${token}` : 'Token hidden'}>{shownToken}</code>
               <Button variant="secondary" size="sm" icon={reveal ? 'eyeOff' : 'eye'} aria-pressed={reveal} onClick={() => setReveal((r) => !r)}>{reveal ? 'Hide' : 'Reveal'}</Button>
               <CopyBtn text={token} label="Copy token" />
+              <Button variant="secondary" size="sm" icon="refresh" onClick={() => setRotate({ open: true, busy: false, error: null })}>Regenerate</Button>
             </div>
           </Field>
+          <ConfirmModal
+            open={rotate.open}
+            title="Regenerate the MCP token?"
+            message={(
+              <>
+                Agents using the current token stop working until you update their configuration with the new one. Connected agents are disconnected.
+                {rotate.error && <div className="tone-bad" role="alert" style={{ marginTop: 8 }}>{rotate.error}</div>}
+              </>
+            )}
+            confirmLabel="Regenerate"
+            danger
+            busy={rotate.busy}
+            onConfirm={regenerate}
+            onCancel={() => setRotate({ open: false, busy: false, error: null })}
+          />
 
           <CopyField label="HTTP endpoint" hint="Streamable HTTP transport — recommended." value={httpUrl} copyLabel="Copy HTTP endpoint" />
 
@@ -408,6 +439,19 @@ function McpSection() {
               <div className={`prefs-status ${info.allowWrite ? 'warn' : 'ok'}`} role="status">
                 <span className="prefs-status-dot" aria-hidden="true" />
                 {info.allowWrite ? 'Write tools exposed — reconnect your agent to pick them up.' : 'Only read tools are exposed.'}
+              </div>
+            </div>
+          </Field>
+
+          <Field label="Secret values" hint="Masked is safest: agents see each Secret's keys and type, but not its values (secret-looking environment variables are masked too)." labelId="mcp-secrets-label">
+            <div className="prefs-stack">
+              <div className="prefs-seg" role="radiogroup" aria-labelledby="mcp-secrets-label">
+                <button type="button" role="radio" aria-checked={!info.allowSecrets} className={`prefs-seg-btn ${!info.allowSecrets ? 'active' : ''}`} onClick={() => setConfig({ allowSecrets: false })}>Masked</button>
+                <button type="button" role="radio" aria-checked={!!info.allowSecrets} className={`prefs-seg-btn ${info.allowSecrets ? 'active' : ''}`} onClick={() => setConfig({ allowSecrets: true })}>Visible to agents</button>
+              </div>
+              <div className={`prefs-status ${info.allowSecrets ? 'warn' : 'ok'}`} role="status">
+                <span className="prefs-status-dot" aria-hidden="true" />
+                {info.allowSecrets ? 'Agents can read Secret values — they may end up in the agent’s provider logs.' : 'Secret values are masked for agents.'}
               </div>
             </div>
           </Field>

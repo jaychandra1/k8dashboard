@@ -16,6 +16,7 @@ import fs from 'fs';
 import { isIP, isIPv4, isIPv6 } from 'net';
 import { CONFIG_DIR, configFile, findConfigFile } from './lib/paths.mjs';
 import { seal, unseal, needsSealing, PURPOSE } from './lib/secret-store.mjs';
+import { redactSecretsInText } from './lib/redact-secrets.mjs';
 
 const MAX_TOOL_ITERATIONS = 12;
 const MAX_TOOL_OUTPUT = 14000; // chars — keep tool results bounded
@@ -421,7 +422,9 @@ ${ctx?.selected ? `- Selected resource: ${ctx.selected.type || ''} ${ctx.selecte
             const fn = impls[tc.function.name];
             if (!fn) throw new Error(`Unknown tool: ${tc.function.name}`);
             const result = await fn(input);
-            out = typeof result === 'string' ? result : JSON.stringify(result);
+            // Logs, events and object text can carry credentials in plain
+            // text; scrub them before anything reaches the LLM provider.
+            out = redactSecretsInText(typeof result === 'string' ? result : JSON.stringify(result));
           } catch (e) {
             out = `Error: ${e?.body?.message || e?.message || String(e)}`;
           }
@@ -460,7 +463,9 @@ ${ctx?.selected ? `- Selected resource: ${ctx.selected.type || ''} ${ctx.selecte
 
   // SSRF guard for the LLM base URL: http(s) only, no embedded credentials,
   // and the host must not resolve to link-local / cloud-metadata addresses.
-  // Loopback and RFC1918 are allowed — people run Ollama / LM Studio locally.
+  // Loopback and RFC1918 are allowed — people run Ollama / LM Studio locally —
+  // and only they may use plain http://: cluster data sent to a provider on
+  // the internet must be encrypted in transit.
   const BLOCKED_HOSTS = new Set(['metadata.google.internal', 'metadata', '169.254.169.254', 'fd00:ec2::254']);
   // IPv6 text (any compression, optional trailing dotted-quad) → 16 bytes.
   const ipv6Bytes = (s) => {
@@ -504,6 +509,27 @@ ${ctx?.selected ? `- Selected resource: ${ctx.selected.type || ''} ${ctx.selecte
       catch { throw new Error(`Could not resolve the API URL host "${host}".`); }
     }
     if (!addrs.length || addrs.some(isBlockedAddress)) throw new Error('API URL resolves to a link-local / cloud metadata address, which is not allowed.');
+    if (u.protocol === 'http:' && !addrs.every(isLocalAddress)) {
+      throw new Error('Use https:// for an LLM provider on the internet — http:// is only allowed for a local or private-network LLM (e.g. Ollama).');
+    }
+  };
+  // Loopback and private ranges: 127/8, 10/8, 172.16/12, 192.168/16, 100.64/10
+  // (CGNAT, e.g. Tailscale), ::1 and fc00::/7.
+  const isLocalAddress = (addr) => {
+    const a = String(addr || '').toLowerCase();
+    if (isIPv4(a)) {
+      const [x, y] = a.split('.').map(Number);
+      return x === 127 || x === 10 || (x === 172 && y >= 16 && y <= 31) || (x === 192 && y === 168) || (x === 100 && y >= 64 && y <= 127);
+    }
+    if (isIPv6(a)) {
+      const b = ipv6Bytes(a);
+      if (b.length !== 16) return false;
+      if (b.slice(0, 15).every((x) => x === 0) && b[15] === 1) return true; // ::1
+      const mapped = b.slice(0, 10).every((x) => x === 0) && b[10] === 0xff && b[11] === 0xff;
+      if (mapped) return isLocalAddress(b.slice(12).join('.'));
+      return (b[0] & 0xfe) === 0xfc; // fc00::/7
+    }
+    return false;
   };
 
   // Save the LLM connection. Validates against the provider before persisting.

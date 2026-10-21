@@ -6,8 +6,9 @@
 //
 // The app (npm start) must be running so this bridge has an API to call. Point
 // it at a non-default address with MCP_API_BASE. Every API call is sent with
-// `Authorization: Bearer <token>` (MCP_API_TOKEN, else KUBEPILOT_TOKEN, else
-// ~/.config/kubepilot/token) and `X-KubePilot-Source: mcp`.
+// `Authorization: Bearer <token>` — MCP_API_TOKEN, else the MCP token
+// (KUBEPILOT_MCP_TOKEN or ~/.config/kubepilot/mcp-token, shown in Preferences →
+// MCP), else the API token for older setups — and `X-KubePilot-Source: mcp`.
 //
 // MCP_ALLOW_WRITE=1 only decides which tools this bridge *offers* by default —
 // the app's server is the authority and refuses MCP-sourced mutations unless
@@ -28,7 +29,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { createMcpServer, readApiToken } from './mcp.js';
 
 const token = String(process.env.MCP_API_TOKEN || '').trim() || readApiToken();
-if (!token) console.error('[KubePilot MCP] no API token found (set MCP_API_TOKEN / KUBEPILOT_TOKEN or start the app once to create ~/.config/kubepilot/token)');
+if (!token) console.error('[KubePilot MCP] no token found (set MCP_API_TOKEN to the MCP token from Preferences → MCP, or start the app once to create ~/.config/kubepilot/mcp-token)');
 
 const server = createMcpServer({
   apiBase: process.env.MCP_API_BASE || undefined,

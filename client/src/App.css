@@ -4674,14 +4674,6 @@ h3.sec-drawer-section:first-child { margin-top: 0; }
   font-size: 0.6875rem; font-weight: 650; font-variant-numeric: tabular-nums;
   color: var(--red); background: var(--red-tint);
 }
-.auth-card-server {
-  display: flex; align-items: baseline; gap: 10px; min-width: 0;
-  padding: 8px 16px;
-  border-top: 1px solid var(--border-subtle);
-  background: var(--bg-base);
-}
-.auth-card-server-key { flex: none; font-size: 0.6563rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
-.auth-card-server code { min-width: 0; font-family: var(--mono); font-size: 0.7188rem; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .auth-card-body { padding: 18px 16px 16px; border-top: 1px solid var(--border-subtle); }
 .auth-card[data-provider='aws'] .auth-card-body { background: linear-gradient(180deg, rgba(255, 153, 0, 0.06), transparent 75%); }
 .auth-card[data-provider='azure'] .auth-card-body { background: linear-gradient(180deg, rgba(0, 120, 212, 0.06), transparent 75%); }

@@ -20,7 +20,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { envToken, findConfigFile } from './lib/paths.mjs';
+import { configFile, envToken, envVar, findConfigFile } from './lib/paths.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -29,13 +29,16 @@ function packageVersion() {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')).version; } catch { return undefined; }
 }
 
-// The API bearer token: KUBEPILOT_TOKEN (lib/paths.mjs also honours the legacy names), else the token file
-// (the same places server.js reads it from). Returns '' when neither exists.
+// The bearer token the bridge uses: the MCP token (KUBEPILOT_MCP_TOKEN, else
+// ~/.config/kubepilot/mcp-token, which the app creates at boot) — so the app
+// treats every call as an MCP call and applies the write gate — else, for
+// setups from before the MCP token existed, the API token (KUBEPILOT_TOKEN or
+// the token file). Returns '' when none exists.
 export const TOKEN_FILE = findConfigFile('token');
+export const MCP_TOKEN_FILE = configFile('mcp-token');
+const readFile = (f) => { try { return fs.readFileSync(f, 'utf8').trim(); } catch { return ''; } };
 export function readApiToken() {
-  const env = envToken();
-  if (env) return env;
-  try { return fs.readFileSync(TOKEN_FILE, 'utf8').trim(); } catch { return ''; }
+  return envVar('MCP_TOKEN').trim() || readFile(MCP_TOKEN_FILE) || envToken() || readFile(TOKEN_FILE);
 }
 
 // ---- input schemas (tightened; the server validates again) --------------

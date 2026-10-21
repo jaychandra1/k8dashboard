@@ -56,17 +56,30 @@ describe('AuthErrorModal rendering', () => {
     expect(screen.getByText(SSO_STDERR)).toBeInTheDocument();
   });
 
-  it('cluster card: context, provider, account and role; nothing starts on its own', () => {
+  it('cluster card: context, provider, masked account and role; nothing starts on its own', () => {
     render(<AuthErrorModal auth={expiredAuth({ aws: { ...AWS, expiredAt: new Date().toISOString() } })} onRetry={() => {}} contexts={CONTEXTS} contextsInfo={INFO} currentContext="dev-env-cluster" onSwitchContext={() => {}} />);
     const card = screen.getByRole('region', { name: 'dev-env-cluster connection' });
     expect(card).toHaveTextContent('dev-env-cluster');
-    expect(card).toHaveTextContent('AWS EKS · Account 2415 3311 8296 · AdministratorAccess');
+    expect(card).toHaveTextContent('AWS EKS · Account ••••8296 · AdministratorAccess');
     expect(card).toHaveTextContent(/Ended \d/);
-    expect(card).toHaveTextContent('https://x.eks.amazonaws.com');
     expect(within(card).getByRole('button', { name: 'Sign in with AWS' })).toBeInTheDocument();
-    expect(card).toHaveTextContent('Opens d-906600a9b0.awsapps.com in your browser');
+    expect(card).toHaveTextContent('Opens your AWS access portal in your browser');
     expect(postJson).not.toHaveBeenCalled();
     expect(window.open).not.toHaveBeenCalled();
+  });
+
+  it('shows nothing environment-identifying: no API server, portal, account or raw ids', () => {
+    const auth = expiredAuth({
+      server: 'https://49B8A64035E12DFA22A9C44C3ABF0985.gr7.eu-west-1.eks.amazonaws.com',
+      detail: 'token-helper: profile=sso-241533118296 failed for https://d-906600a9b0.awsapps.com/start via 10.24.30.223. To refresh this SSO session run aws sso login --profile sso-241533118296',
+    });
+    const { container } = render(<AuthErrorModal auth={auth} onRetry={() => {}} />);
+    const text = container.ownerDocument.body.textContent;
+    for (const secret of ['49B8A64035E12DFA22A9C44C3ABF0985', '241533118296', 'd-906600a9b0', '10.24.30.223', 'API server']) {
+      expect(text).not.toContain(secret);
+    }
+    // The command is shown masked but copied in full, so it still works.
+    expect(screen.getByText('aws sso login --profile sso-••••8296')).toBeInTheDocument();
   });
 
   it('signs in right here: browser step, then reconnects automatically', async () => {

@@ -28,6 +28,7 @@ import {
   sessionTokenState,
   tokenCacheDoc,
   REGISTERED_REDIRECT_URI,
+  resultPage,
 } from '../lib/aws-sso.mjs';
 
 const START = 'https://d-906600a9b0.awsapps.com/start';
@@ -38,7 +39,7 @@ const get = (url) =>
       .get(url, (res) => {
         let body = '';
         res.on('data', (c) => (body += c));
-        res.on('end', () => resolve({ status: res.statusCode, body }));
+        res.on('end', () => resolve({ status: res.statusCode, body, headers: res.headers }));
       })
       .on('error', reject);
   });
@@ -109,9 +110,17 @@ describe('PKCE, authorize URL and the loopback callback', () => {
     assert.equal(bad.status, 400);
     assert.equal((await get(cb.redirectUri.replace('/oauth/callback', '/other'))).status, 404);
     const ok = await get(`${cb.redirectUri}?code=the-code&state=good-state`);
-    assert.equal(ok.status, 200);
-    assert.match(ok.body, /signed in to AWS/);
+    // Off the code-carrying URL onto a clean one.
+    assert.equal(ok.status, 303);
+    assert.equal(ok.headers.location, '/oauth/complete');
     assert.deepEqual(await cb.result, { code: 'the-code' });
+    // The app finishing first must not take the page away from the browser.
+    cb.close();
+    const done = await get(cb.redirectUri.replace('/oauth/callback', '/oauth/complete'));
+    assert.equal(done.status, 200);
+    assert.match(done.body, /signed in to AWS/);
+    assert.doesNotMatch(done.body, /the-code/);
+    assert.match(done.headers['content-security-policy'], /default-src 'none'/);
     await new Promise((r) => setTimeout(r, 50));
     await assert.rejects(
       get(`${cb.redirectUri}?code=again&state=good-state`),
@@ -119,12 +128,26 @@ describe('PKCE, authorize URL and the loopback callback', () => {
     );
   });
 
+  test('result page: every colour follows the theme (no fixed white card in dark mode)', () => {
+    const html = resultPage(true);
+    const dark = html.indexOf('@media (prefers-color-scheme:dark){:root{');
+    assert.ok(dark > 0, 'dark theme overrides the colour variables');
+    assert.ok(html.slice(dark).includes('--card:#161b22'));
+    assert.ok(html.includes('.card{') && html.includes('background:var(--card)'));
+    // No hard-coded light background outside the variable definitions.
+    assert.ok(!html.includes('background:#fff'));
+    assert.ok(resultPage(false, '<b>x</b>').includes('&lt;b&gt;x&lt;/b&gt;'));
+  });
+
   test('callback: AWS error, timeout and cancel', async () => {
     const denied = await startCallbackServer({ state: 's1' });
-    const page = await get(
+    const redirect = await get(
       `${denied.redirectUri}?error=access_denied&error_description=User%20denied&state=s1`
     );
+    assert.equal(redirect.status, 303);
+    const page = await get(denied.redirectUri.replace('/oauth/callback', '/oauth/complete'));
     assert.match(page.body, /didn’t finish/);
+    assert.match(page.body, /User denied/);
     await assert.rejects(denied.result, (e) => e.code === 'denied');
     const slow = await startCallbackServer({ state: 's2', timeoutMs: 50 });
     await assert.rejects(slow.result, (e) => e.code === 'timeout');

@@ -19,7 +19,14 @@ import {
 import { createReleaseService, normalizeRelease, releaseRepository } from '../lib/updater/github.mjs';
 import { detectTarget, parseAssetName, selectAsset } from '../lib/updater/platform.mjs';
 import { downloadFile, isAllowedDownloadUrl } from '../lib/updater/download.mjs';
-import { digestsMatch, expectedSha256, parseChecksums } from '../lib/updater/verify.mjs';
+import {
+  digestsMatch,
+  expectedSha256,
+  parseChecksums,
+  signedMessage,
+  verifyChecksumsSignature,
+} from '../lib/updater/verify.mjs';
+import { RELEASE_PUBLIC_KEYS, trustedReleaseKeys } from '../lib/updater/keys.mjs';
 import { createUpdateService } from '../lib/updater/service.mjs';
 import { createHostBridge } from '../lib/updater/host.mjs';
 import {
@@ -411,6 +418,43 @@ describe('verification', () => {
       code: 'verification_unavailable',
     });
   });
+  test('signed checksum list: version-bound Ed25519 signature from a trusted key', () => {
+    const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
+    const pub = publicKey.export({ type: 'spki', format: 'der' }).toString('base64');
+    const other = crypto.generateKeyPairSync('ed25519').publicKey.export({ type: 'spki', format: 'der' }).toString('base64');
+    const text = `${good}  KubePilot-windows.exe\n`;
+    const signature = crypto.sign(null, signedMessage('1.4.0', text), privateKey).toString('base64');
+    const ok = (o) => verifyChecksumsSignature({ version: '1.4.0', checksumsText: text, signature, keys: [pub], ...o });
+    assert.equal(ok(), true);
+    assert.equal(ok({ signature: `${signature}\n` }), true, 'trailing newline in the .sig file');
+    assert.equal(ok({ keys: [other, pub] }), true, 'any trusted key');
+    assert.equal(ok({ keys: [other] }), false, 'untrusted key');
+    assert.equal(ok({ keys: [] }), false);
+    assert.equal(ok({ version: '1.5.0' }), false, 'signature is bound to its version');
+    assert.equal(ok({ checksumsText: text.replace(good.slice(0, 4), 'ffff') }), false, 'tampered list');
+    assert.equal(ok({ signature: 'not base64 at all' }), false);
+    assert.equal(ok({ keys: ['bm90IGEga2V5'] }), false, 'malformed key');
+    const rsa = crypto.generateKeyPairSync('rsa', { modulusLength: 1024 }).publicKey;
+    assert.equal(ok({ keys: [rsa.export({ type: 'spki', format: 'der' }).toString('base64')] }), false, 'non-Ed25519 key');
+    const signedOnly = new Map([['KubePilot-windows.exe', good]]);
+    assert.deepEqual(expectedSha256({ name: 'KubePilot-windows.exe', digest: good }, signedOnly, { signed: true }).sources, [
+      'signed SHA256SUMS.txt',
+      'github-digest',
+    ]);
+    assert.throws(() => expectedSha256({ name: 'KubePilot-windows.exe', digest: good }, new Map(), { signed: true }), {
+      code: 'verification_unavailable',
+    });
+  });
+
+  test('trusted release keys: built-in list is valid Ed25519; the env override replaces it', () => {
+    for (const k of RELEASE_PUBLIC_KEYS) {
+      const key = crypto.createPublicKey({ key: Buffer.from(k, 'base64'), format: 'der', type: 'spki' });
+      assert.equal(key.asymmetricKeyType, 'ed25519');
+    }
+    assert.deepEqual(trustedReleaseKeys({}), RELEASE_PUBLIC_KEYS);
+    assert.deepEqual(trustedReleaseKeys({ KUBEPILOT_UPDATE_TRUSTED_KEYS: ' a, b ,' }), ['a', 'b']);
+  });
+
   test('digest comparison', () => {
     assert.equal(digestsMatch(good, good.toUpperCase()), true);
     assert.equal(digestsMatch(good, 'a'.repeat(64)), false);
@@ -523,11 +567,14 @@ describe('update workflow (service)', () => {
     arch = 'x64',
     host,
     latest,
+    sig,
+    trustedKeys = [],
   } = {}) {
     const rel = ghRelease(tag, { assets: assets || assetsFor(tag) });
     const routes = { [`${API}/releases/latest`]: latest || json(rel) };
-    for (const a of rel.assets)
-      routes[a.browser_download_url] = () => new Response(a.name === 'SHA256SUMS.txt' ? sums : installer);
+    const bodyOf = (name) =>
+      name === 'SHA256SUMS.txt' ? sums : name === 'SHA256SUMS.txt.sig' ? sig : installer;
+    for (const a of rel.assets) routes[a.browser_download_url] = () => new Response(bodyOf(a.name));
     const fetchImpl = fakeFetch(routes);
     const requests = [];
     const fakeHost = host || {
@@ -545,6 +592,7 @@ describe('update workflow (service)', () => {
       install: { kind },
       updateDir: dir,
       host: fakeHost,
+      trustedKeys,
       fetchImpl,
     });
     return { svc, requests, dir, fetchImpl };
@@ -660,6 +708,72 @@ describe('update workflow (service)', () => {
     );
   });
 
+  describe('signed releases (a release key is trusted)', () => {
+    const signer = crypto.generateKeyPairSync('ed25519');
+    const pub = signer.publicKey.export({ type: 'spki', format: 'der' }).toString('base64');
+    const sumsText = `${sha(installer)}  KubePilot-windows.exe\n`;
+    const signFor = (version, text = sumsText, key = signer.privateKey) =>
+      crypto.sign(null, signedMessage(version, text), key).toString('base64');
+    const signedAssets = (tag, opts) => [...assetsFor(tag, { withSums: true, ...opts }), { name: 'SHA256SUMS.txt.sig' }];
+    const signedSetup = (o = {}) =>
+      setup({ assets: signedAssets('v1.4.0'), sums: sumsText, sig: signFor('1.4.0'), trustedKeys: [pub], ...o });
+    const run = async ({ svc }) => {
+      await svc.check();
+      svc.startDownload();
+      return settle(svc, ['downloading', 'verifying']);
+    };
+    const fetchedInstaller = (fetchImpl) => fetchImpl.calls.some((c) => c.url.endsWith('.exe'));
+
+    test('valid signature → verified and ready to install', async () => {
+      const t = signedSetup();
+      const s = await run(t);
+      assert.equal(s.phase, 'ready');
+      await t.svc.install();
+      assert.equal(t.requests[0].payload.sha256, sha(installer));
+    });
+
+    test('unsigned release (no SHA256SUMS.txt.sig) → refused before downloading', async () => {
+      const t = signedSetup({ assets: assetsFor('v1.4.0', { withSums: true }) });
+      const s = await run(t);
+      assert.equal(s.error.code, 'verification_unavailable');
+      assert.match(s.error.message, /isn't signed with KubePilot's release key/);
+      assert.equal(fetchedInstaller(t.fetchImpl), false);
+      assert.equal(t.requests.length, 0);
+    });
+
+    test('signature from an untrusted key → refused, nothing installed', async () => {
+      const t = signedSetup({ sig: signFor('1.4.0', sumsText, crypto.generateKeyPairSync('ed25519').privateKey) });
+      const s = await run(t);
+      assert.equal(s.error.code, 'verification_failed');
+      assert.equal(fetchedInstaller(t.fetchImpl), false);
+      assert.equal(t.requests.length, 0);
+    });
+
+    test("an older release's valid signature re-attached to a newer tag → refused (no forced downgrade)", async () => {
+      const s = await run(signedSetup({ sig: signFor('1.3.5') }));
+      assert.equal(s.error.code, 'verification_failed');
+    });
+
+    test('installer missing from the signed list → refused even with a GitHub digest', async () => {
+      const other = `${'a'.repeat(64)}  KubePilot-macos.dmg\n`;
+      const s = await run(signedSetup({ sums: other, sig: signFor('1.4.0', other) }));
+      assert.equal(s.error.code, 'verification_unavailable');
+    });
+
+    test('installer bytes that differ from the signed list → deleted, never installed', async () => {
+      const forged = `${'f'.repeat(64)}  KubePilot-windows.exe\n`;
+      const t = signedSetup({
+        assets: signedAssets('v1.4.0', { digest: null }),
+        sums: forged,
+        sig: signFor('1.4.0', forged),
+      });
+      const s = await run(t);
+      assert.equal(s.error.code, 'verification_failed');
+      assert.equal(t.requests.length, 0);
+      assert.deepEqual(fs.readdirSync(path.join(t.dir, 'pending')), []);
+    });
+  });
+
   test('missing installer for this platform / architecture', async () => {
     const { svc } = setup({ arch: 'arm64' });
     await svc.check();
@@ -681,6 +795,7 @@ describe('update workflow (service)', () => {
       install: { kind: 'nsis' },
       updateDir: tmp(),
       host: { available: true, request: async () => ({}) },
+      trustedKeys: [],
       fetchImpl: async () => new Response('', { status: 404 }),
     });
     await failing.check();
@@ -804,6 +919,17 @@ describe('installers (mocked — nothing is installed)', () => {
       }).reason,
       'portable'
     );
+    // Microsoft Store (MSIX): Electron's process.windowsStore, or the WindowsApps location.
+    for (const opts of [
+      { windowsStore: true, execPath: 'C:\\x\\KubePilot.exe' },
+      { execPath: 'C:\\Program Files\\WindowsApps\\KubePilot_1.6.0.0_x64__abc\\app\\KubePilot.exe' },
+    ]) {
+      const store = detectInstall({ platform: 'win32', isPackaged: true, existsSync: exists(new Set()), ...opts });
+      assert.equal(store.kind, null);
+      assert.equal(store.reason, 'store');
+      assert.equal(store.managedBy, 'store');
+      assert.match(store.message, /Microsoft Store/);
+    }
     assert.deepEqual(
       detectInstall({
         platform: 'darwin',

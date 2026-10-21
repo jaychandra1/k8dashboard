@@ -98,7 +98,7 @@ async function createUpdateHost({
   existsSync = fs.existsSync,
 } = {}) {
   const lib = await import(pathToFileURL(path.join(rootDir, 'lib', 'updater', 'install.mjs')).href);
-  const install = lib.detectInstall({ platform, isPackaged, execPath, env, existsSync });
+  const install = lib.detectInstall({ platform, isPackaged, execPath, env, existsSync, windowsStore: !!process.windowsStore });
   log(
     install.kind ? `install kind ${install.kind}` : `self-update unavailable (${install.reason})`,
     dryRun ? '(dry run)' : ''

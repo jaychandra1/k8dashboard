@@ -36,6 +36,10 @@ const v = (version) => (version ? `v${String(version).replace(/^v/, '')}` : '');
 const openExternal = (url) => {
   if (/^https:\/\//.test(url || '')) window.open(url, '_blank', 'noopener,noreferrer');
 };
+// Microsoft Store installs: the Store's Library / updates page (the desktop
+// host allows exactly this non-web link).
+const MS_STORE_UPDATES_URL = 'ms-windows-store://downloadsandupdates';
+const openStoreUpdates = () => window.open(MS_STORE_UPDATES_URL, '_blank', 'noopener,noreferrer');
 
 export default function UpdateDialogs() {
   const toast = useToast();
@@ -339,14 +343,26 @@ export function UpdateDialog({ open, onClose, onShowNotes }) {
             What&apos;s new in {v(latest?.version)}
           </button>
         )}
-        {!s.canInstall && (
+        {!s.canInstall && s.managedBy === 'store' && (
+          <p className="update-note" role="note">
+            {s.installUnavailable} New versions reach the Store after Microsoft&apos;s review, usually within a few days.
+          </p>
+        )}
+        {!s.canInstall && s.managedBy !== 'store' && (
           <p className="update-note" role="note">
             {s.installUnavailable} You can download the installer from the release page.
           </p>
         )}
       </>
     );
-    footer = s.canInstall ? (
+    footer = s.managedBy === 'store' ? (
+      <>
+        <Button onClick={onClose}>Close</Button>
+        <Button variant="primary" icon="externalLink" onClick={openStoreUpdates}>
+          Open Microsoft Store
+        </Button>
+      </>
+    ) : s.canInstall ? (
       <>
         <Button onClick={onClose}>Cancel</Button>
         <Button

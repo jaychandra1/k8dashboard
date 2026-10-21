@@ -23,6 +23,7 @@ import zlib from 'zlib';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { childEnv } from './lib/child-env.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -40,7 +41,7 @@ const GITHUB_RELEASES = 'https://github.com/aquasecurity/trivy/releases/download
 const children = new Set();
 function run(bin, args, opts = {}) {
   return new Promise((resolve, reject) => {
-    const child = execFile(bin, args, { windowsHide: true, ...opts }, (err, stdout, stderr) => {
+    const child = execFile(bin, args, { windowsHide: true, ...opts, env: childEnv(opts.env || process.env) }, (err, stdout, stderr) => {
       children.delete(child);
       if (err) { err.stderr = stderr; reject(err); } else resolve({ stdout, stderr });
     });
