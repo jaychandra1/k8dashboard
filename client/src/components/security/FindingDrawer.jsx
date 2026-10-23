@@ -12,6 +12,7 @@ import { KIND_TYPE, kindType } from '../../lib/kinds';
 import { navToNamespace, navToPods, navToResource } from '../shared/nav';
 import { withKeys } from '../shared/keys';
 import { SevPill, SevFilter, sevSegments, worstSeverity } from './severity';
+import Remediation from './Remediation';
 
 function Prop({ k, children }) {
   return <div className="sec-prop"><span className="sec-prop-k">{k}</span><span className="sec-prop-v">{children}</span></div>;
@@ -96,6 +97,13 @@ function ImageDetail({ d, onNavigate }) {
       {d.tag && <Prop k="Tag">{d.tag}</Prop>}
       {d.digest && <Prop k="Image Digest"><span className="sec-mono sec-break">{d.digest}</span></Prop>}
       <Prop k="Status">{d.status}</Prop>
+      {d.pending && (
+        <p className="sec-dim sec-note">
+          {d.status === 'Scanning' ? 'The Trivy Operator is scanning this image now — its findings appear here when the scan finishes.'
+            : d.status === 'Failed' ? 'The last scan of this image failed. The banner above the table shows why; the operator retries failed scans after a while.'
+              : 'The Trivy Operator hasn’t scanned this image yet — it scans a few workloads at a time.'}
+        </p>
+      )}
       <Prop k="Used By Pods">
         <span className="sec-podlinks">
           {withKeys(workloads.slice(0, 30), (w) => `${w.namespace}/${w.name}`).map(({ key, item: w }) => (
@@ -108,6 +116,9 @@ function ImageDetail({ d, onNavigate }) {
         </span>
       </Prop>
 
+      {!d.pending && <Remediation image={d} />}
+      {!d.pending && (
+      <>
       <h3 className="sec-drawer-section">Vulnerabilities</h3>
       <div className="sec-drawer-donut">
         <Donut segments={sevSegments(d.summary)} size={120} thickness={15} ariaLabel="Vulnerabilities by severity" onSegmentClick={toggleSev} activeKey={sevFilter} />
@@ -152,6 +163,8 @@ function ImageDetail({ d, onNavigate }) {
           stickyHeader={false}
         />
       </div>
+      </>
+      )}
     </>
   );
 }

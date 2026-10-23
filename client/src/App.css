@@ -3708,6 +3708,38 @@ button.sec-tr.row.sel { background: var(--accent-tint); }
 .sec-banner-text { flex: none; }
 .sec-banner-progress { flex: 1; min-width: 60px; height: 5px; border-radius: 3px; background: var(--bg-surface-2); overflow: hidden; margin: 0 6px; }
 .sec-banner-progress-bar { display: block; height: 100%; background: var(--green); transition: width .4s ease; }
+/* Trivy Operator progress banner: a status row, then why scans stall/fail. */
+.sec-op-banner { flex-direction: column; align-items: stretch; gap: 8px; }
+.sec-op-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.sec-op-row .sec-banner-text { flex: 0 1 auto; min-width: 0; }
+.sec-op-banner.tone-warn { border-color: color-mix(in srgb, var(--amber) 45%, var(--border)); background: color-mix(in srgb, var(--amber) 7%, var(--bg-surface)); }
+.sec-op-banner.tone-warn > .sec-op-row > svg { color: var(--amber); }
+.sec-op-banner.tone-bad { border-color: color-mix(in srgb, var(--red) 45%, var(--border)); background: color-mix(in srgb, var(--red) 7%, var(--bg-surface)); }
+.sec-op-banner.tone-bad > .sec-op-row > svg { color: var(--red); }
+.sec-op-why { display: flex; flex-direction: column; gap: 6px; padding-left: 25px; line-height: 1.5; }
+.sec-op-why p { margin: 0; }
+.sec-op-hint { color: var(--text); }
+.sec-op-why details summary { cursor: pointer; color: var(--text-secondary); font-weight: 600; }
+.sec-op-errors { margin: 6px 0 0; padding-left: 18px; font-family: var(--mono); font-size: 0.7188rem; color: var(--text-secondary); word-break: break-word; }
+.sec-op-errors li + li { margin-top: 4px; }
+.sec-op-why .sec-linkbtn { align-self: flex-start; font-size: 0.75rem; }
+.sec-scanning { color: var(--accent); font-weight: 600; }
+.sec-fix-all { color: var(--green); font-weight: 600; }
+.sec-fix-some { color: var(--amber); font-weight: 600; }
+/* Remediation (finding drawer). */
+.sec-fix { margin-top: 14px; }
+.sec-fix-lead { margin: 2px 0 8px; font-size: 0.8125rem; color: var(--text-secondary); }
+.sec-fix-tips { margin: 0 0 10px; padding-left: 18px; font-size: 0.7813rem; line-height: 1.55; color: var(--text-secondary); }
+.sec-fix-tips li + li { margin-top: 5px; }
+.sec-fix-tips strong { color: var(--text); }
+.sec-fix-tips code, .sec-fix-lead code { font-family: var(--mono); font-size: 0.95em; }
+.sec-fix-table-wrap { overflow-x: auto; margin-bottom: 6px; }
+.sec-fix-table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+.sec-fix-table th { text-align: left; font-weight: 600; color: var(--text-muted); padding: 6px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.sec-fix-table td { padding: 6px 8px; border-bottom: 1px solid var(--border-subtle, var(--border)); vertical-align: top; }
+.sec-fix-to { color: var(--green); font-weight: 600; white-space: nowrap; }
+.sec-fix-where { display: block; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: 0.6875rem; }
+.sec-fix-table-wrap .sec-linkbtn { margin-top: 6px; font-size: 0.75rem; }
 /* Images tab (full) table */
 .sec-tr.imgfull { grid-template-columns: 2.4fr 1fr .5fr 1.7fr 1.1fr .9fr; }
 .sec-secretnum { color: #e5484d; font-weight: 700; }

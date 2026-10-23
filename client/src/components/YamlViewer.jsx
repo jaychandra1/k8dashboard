@@ -207,7 +207,7 @@ export default function YamlViewer({ namespace, kind, name, onClose, onApplied, 
         open={confirm === 'apply'}
         icon="check"
         title={`Apply changes to ${n}?`}
-        message={<>This runs <code>kubectl apply</code> against the cluster for <b>{k}/{n}</b>{ns ? <> in <b>{ns}</b></> : null}.</>}
+        message={<>This replaces <b>{k}/{n}</b>{ns ? <> in <b>{ns}</b></> : null} with the edited YAML, like <code>kubectl edit</code> — anything you removed is removed from the cluster.</>}
         confirmLabel="Apply"
         busy={applying}
         onConfirm={doApply}

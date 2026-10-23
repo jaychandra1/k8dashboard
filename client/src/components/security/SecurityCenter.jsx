@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import Icon from '../Icons';
 import Loader from '../Loader';
 import useRequest from '../../hooks/useRequest';
@@ -9,7 +9,7 @@ import { errorTitle } from '../shared/errors';
 import { tablistKeys } from '../shared/tabs';
 import VulnTable from './VulnTable';
 import ChecksTable from './ChecksTable';
-import ScanPanel, { OperatorNote } from './ScanPanel';
+import ScanPanel, { OperatorBanner, OperatorNote } from './ScanPanel';
 import FindingDrawer from './FindingDrawer';
 import SetupState from './SetupState';
 
@@ -47,6 +47,26 @@ export default function SecurityCenter({ view, onViewChange, refreshSignal = 0, 
   const configReq = useRequest(
     ({ signal }) => getJson(p('api', 'security', 'checks'), { signal, params: { namespace: nsParam, kind: 'config' } }),
     { enabled: operatorMode && tab === 'resources', deps: [ns, refreshSignal], dedupeKey: `security:config:${ns}` },
+  );
+  // What the operator is doing — polled every 10 s while scans run or images
+  // are still waiting; new reports refresh the image list.
+  const [progressPoll, setProgressPoll] = useState(false);
+  const lastReportRef = useRef(null);
+  const progressReq = useRequest(
+    ({ signal }) => getJson(p('api', 'security', 'progress'), { signal, params: { namespace: nsParam } }),
+    {
+      enabled: operatorMode && vulnTab,
+      deps: [ns, refreshSignal],
+      dedupeKey: `security:progress:${ns}`,
+      pollMs: progressPoll ? 10000 : 0,
+      onSuccess: (d) => {
+        const waiting = !!d?.scanning || (d?.coverage?.notScanned > 0 && d?.operator?.ready > 0);
+        setProgressPoll(waiting);
+        const mark = `${d?.reports}|${d?.lastReportAt}`;
+        if (lastReportRef.current !== null && lastReportRef.current !== mark) vulnReq.refetch();
+        lastReportRef.current = mark;
+      },
+    },
   );
   const rbacReq = useRequest(
     ({ signal }) => getJson(p('api', 'security', 'checks'), { signal, params: { namespace: nsParam, kind: 'rbac' } }),
@@ -152,6 +172,14 @@ export default function SecurityCenter({ view, onViewChange, refreshSignal = 0, 
           ) : (
             <>
               {scanMode && scan && <ScanPanel scan={scan} onRescan={runScan} />}
+              {operatorMode && vulnTab && progressReq.data && (
+                <OperatorBanner
+                  progress={progressReq.data}
+                  onRefresh={() => { progressReq.refetch(); vulnReq.refetch(); }}
+                  refreshing={progressReq.refetching || vulnReq.refetching}
+                  onNavigate={onNavigate}
+                />
+              )}
               {scanMode && scanError && <ErrorState error={scanError} title="The scan could not be started" compact />}
               {softError && <ErrorState error={activeReq.error} title={errorTitle(activeReq.error, WHAT[tab])} onRetry={activeReq.refetch} busy={activeReq.refetching} compact />}
               {blockingError ? (

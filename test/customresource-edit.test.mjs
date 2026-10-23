@@ -1,7 +1,9 @@
-// Editing a custom resource (Custom Resources → instance → Apply):
-// PUT /api/customresource/:group/:version/:plural/:name server-side applies
-// the edited YAML — only when it is this very object — against a fake API
-// server that serves discovery and records the apply patch.
+// Editing in the YAML editors (Custom Resources → instance, and built-in
+// resources) → Apply: the edited YAML *replaces* the object (kubectl replace /
+// edit), so whatever was removed in the editor is removed — even fields set by
+// another tool, which server-side apply left in place. Only when the YAML is
+// this very object. Against a fake API server that serves discovery and
+// records the update.
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -19,21 +21,25 @@ const DISCOVERY = {
     { name: 'clusterwidgets', kind: 'ClusterWidget', namespaced: false, verbs: ['get', 'patch'] },
   ],
 };
+const CORE_DISCOVERY = { kind: 'APIResourceList', groupVersion: 'v1', resources: [{ name: 'configmaps', kind: 'ConfigMap', namespaced: true, verbs: ['get', 'update'] }] };
 
 function fakeKubeApi() {
-  const patches = [];
+  const patches = []; // every write: { method, url, contentType, body, object }
   const server = http.createServer((req, res) => {
     let body = '';
     req.on('data', (c) => (body += c));
     req.on('end', () => {
       const json = (status, obj) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
       if (req.method === 'GET' && req.url === '/apis/example.com/v1') return json(200, DISCOVERY);
-      if (req.method === 'PATCH') {
-        patches.push({ url: req.url, contentType: req.headers['content-type'], body });
-        if (body.includes('resourceVersion: stale')) {
+      if (req.method === 'GET' && req.url === '/api/v1') return json(200, CORE_DISCOVERY);
+      if (req.method === 'PUT' || req.method === 'PATCH') {
+        let object = null;
+        try { object = JSON.parse(body); } catch { /* not JSON */ }
+        patches.push({ method: req.method, url: req.url, contentType: req.headers['content-type'], body, object });
+        if (object?.metadata?.resourceVersion === 'stale') {
           return json(409, { kind: 'Status', status: 'Failure', reason: 'Conflict', code: 409, message: 'Operation cannot be fulfilled on widgets.example.com "w1": the object has been modified; please apply your changes to the latest version and try again' });
         }
-        return json(200, { apiVersion: 'example.com/v1', kind: 'Widget', metadata: { name: 'w1' } });
+        return json(200, object || {});
       }
       return json(404, { kind: 'Status', code: 404 });
     });
@@ -82,15 +88,38 @@ contexts:
     body: JSON.stringify({ yaml }),
   });
 
-  test('a namespaced instance is server-side applied like the built-in editor', async () => {
+  test('a namespaced instance is replaced with the edited YAML (PUT, like kubectl replace / edit)', async () => {
     const r = await put('/api/customresource/example.com/v1/widgets/w1?namespace=apps', widget());
     const body = await r.json();
     assert.equal(r.status, 200, JSON.stringify(body));
-    assert.equal(body.message, 'widget.example.com/w1 serverside-applied');
+    assert.equal(body.message, 'widget.example.com/w1 replaced');
     const sent = kube.patches.at(-1);
-    assert.match(sent.url, /^\/apis\/example\.com\/v1\/namespaces\/apps\/widgets\/w1\?fieldManager=kubepilot&force=true&fieldValidation=Strict$/);
-    assert.equal(sent.contentType, 'application/apply-patch+yaml');
-    assert.match(sent.body, /size: 3/);
+    assert.equal(sent.method, 'PUT');
+    assert.match(sent.url, /^\/apis\/example\.com\/v1\/namespaces\/apps\/widgets\/w1\?fieldManager=kubepilot&fieldValidation=Strict$/);
+    assert.equal(sent.contentType, 'application/json');
+    assert.deepEqual(sent.object.spec, { size: 3 });
+  });
+
+  test('an annotation deleted in the editor is gone — whoever set it (the KEDA paused-replicas case)', async () => {
+    // Loaded with `autoscaling.keda.sh/paused-replicas` (set by kubectl, not KubePilot); the user deletes that line.
+    const edited = widget({ extra: '  annotations:\n    team: core\n  resourceVersion: "395632221"\n' });
+    const r = await put('/api/customresource/example.com/v1/widgets/w1?namespace=apps', edited);
+    assert.equal(r.status, 200, JSON.stringify(await r.json()));
+    const sent = kube.patches.at(-1).object;
+    assert.deepEqual(sent.metadata.annotations, { team: 'core' }, 'the whole object is sent, so the removed annotation is removed');
+    assert.equal(sent.metadata.resourceVersion, '395632221', 'conditional on the version that was loaded');
+
+    // Same for built-in resources (PUT /api/yaml).
+    const cm = 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: settings\n  namespace: apps\n  labels:\n    app: web\ndata:\n  a: "1"\n';
+    const r2 = await put('/api/yaml/apps/configmap/settings', cm);
+    const b2 = await r2.json();
+    assert.equal(r2.status, 200, JSON.stringify(b2));
+    assert.equal(b2.message, 'configmap/settings replaced');
+    const sent2 = kube.patches.at(-1);
+    assert.equal(sent2.method, 'PUT');
+    assert.match(sent2.url, /^\/api\/v1\/namespaces\/apps\/configmaps\/settings\?/);
+    assert.deepEqual(sent2.object.metadata.labels, { app: 'web' });
+    assert.equal(sent2.object.metadata.annotations, undefined);
   });
 
   test('a cluster-scoped instance needs no namespace', async () => {
@@ -122,7 +151,7 @@ contexts:
   });
 
   test('an edit based on a stale copy is a 409 conflict, not a generic error', async () => {
-    const r = await put('/api/customresource/example.com/v1/widgets/w1?namespace=apps', widget({ extra: '  resourceVersion: stale\n' }));
+    const r = await put('/api/customresource/example.com/v1/widgets/w1?namespace=apps', widget({ extra: '  resourceVersion: "stale"\n' }));
     const body = await r.json();
     assert.equal(r.status, 409, JSON.stringify(body));
     assert.equal(body.code, 'conflict');

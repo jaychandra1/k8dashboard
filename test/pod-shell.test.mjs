@@ -116,7 +116,8 @@ contexts:
     t.ws.send(JSON.stringify({ type: 'data', data: 'echo hi\r' }));
     await waitFor(t, () => /ECHO:echo hi — ünïcødé ✓/.test(t.out), 'echo');
     assert.match(t.out, /built-in Kubernetes client/);
-    assert.match(t.out, /SIZE:132x40/);
+    // Resizes travel on their own channel, so they may land after the echo.
+    await waitFor(t, () => /SIZE:132x40/.test(t.out), 'replayed resize');
     t.ws.send(JSON.stringify({ type: 'resize', cols: 100, rows: 30 }));
     await waitFor(t, () => /SIZE:100x30/.test(t.out), 'resize');
     t.ws.send(JSON.stringify({ type: 'data', data: 'exit\r' }));

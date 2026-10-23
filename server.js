@@ -40,14 +40,15 @@ import {
 } from './lib/kubectl.mjs';
 import {
   restMappingFor, restartPatch, restartTarget, scaleTarget, scalePatch, argoSyncPatch, argoRefreshPatch,
-  dropFinalizersPatch, parseApplyDocuments, validateApplyDocument, requestOptions, patchOptions, PatchStrategy, applyDocuments, applyDocumentsEach,
-  deleteResource, execInPod, openPodShell, resourceLabel, labelSelectorFor, discoverResource, serverSideApply,
+  dropFinalizersPatch, parseApplyDocuments, validateApplyDocument, requestOptions, patchOptions, PatchStrategy, applyDocumentsEach,
+  deleteResource, execInPod, openPodShell, resourceLabel, labelSelectorFor, discoverResource, replaceDocument,
 } from './lib/k8s-ops.mjs';
 import { eksEntryFor as eksEntryForKc, sameEksCluster, eksClusterStatus as eksClusterStatusKc } from './lib/eks-kubeconfig.mjs';
 import { createUpdates, registerUpdateRoutes } from './lib/updater/routes.mjs';
 import { localShellAllowed, pinnedKubeconfig, helmShellEnv, helmShellCommand, helmShellBanner, helmDirOf, shq, agentPromptArg } from './lib/helm-shell.mjs';
 import { childEnv } from './lib/child-env.mjs';
 import { endpointKind, networkFailure, shortReason, unreachableMessage } from './lib/cluster-network.mjs';
+import { failureHints, operatorLogErrors, remediationFor, reportTarget, scanCoverage, scanUnits } from './lib/security-insights.mjs';
 import { createSsoLogin, adoptSsoLogin, refreshSsoToken, profileSsoInfo, sessionsForProfiles, sessionTokenState, awsConfigPath } from './lib/aws-sso.mjs';
 
 // node-pty powers the pod terminal (a real PTY bridged to `kubectl exec`). Load
@@ -2012,6 +2013,9 @@ app.get('/api/yaml/:namespace/:kind/:name', async (req, res) => {
       return fail(res, apiError, undefined, 'Failed to read resource');
     }
 
+    // `kubectl get -o yaml` hides managedFields; so does the editor (leaving
+    // them out of an edit keeps the API server's own bookkeeping).
+    if (resource?.metadata?.managedFields) delete resource.metadata.managedFields;
     const yamlString = yaml.dump(agentView(req, resource, kind), { indent: 2 });
     res.json({ yaml: yamlString });
   } catch (error) {
@@ -2062,9 +2066,11 @@ app.put('/api/yaml/:namespace/:kind/:name', mcpWriteGate, async (req, res) => {
     if (!CLUSTER_SCOPED_KINDS.has(k) && namespace !== '-') {
       if (doc.metadata?.namespace !== namespace) throw badRequest(`YAML metadata.namespace "${doc.metadata?.namespace || ''}" does not match the path (${namespace})`, 'yaml_mismatch');
     }
-    const messages = await applyDocuments(kubeConfig, docs, { scope: discoveryScope(), defaultNamespace: effectiveNamespace(k, namespace) || contextNamespace() });
+    // An edit replaces the object (kubectl replace / edit semantics): fields
+    // removed in the editor are removed, whoever set them (lib/k8s-ops.mjs).
+    const result = await replaceDocument(kubeConfig, doc, { scope: discoveryScope(), defaultNamespace: effectiveNamespace(k, namespace) || contextNamespace() });
     cache.clear();
-    res.json({ success: true, message: messages.join('\n') || 'Applied' });
+    res.json({ success: true, message: result.message });
   } catch (error) {
     fail(res, error);
   }
@@ -2638,8 +2644,8 @@ app.get('/api/customresource/:group/:version/:plural/:name', async (req, res) =>
 
 // Save an edited custom resource (Custom Resources → instance → Apply).
 // Body: { yaml }. The document must be this very object — same group/version,
-// a kind that discovery maps to this plural, same name and namespace — and is
-// server-side applied exactly like the built-in YAML editor (PUT /api/yaml).
+// a kind that discovery maps to this plural, same name and namespace — and
+// replaces it, exactly like the built-in YAML editor (PUT /api/yaml).
 // The resourceVersion in the edited YAML makes it a conditional update: if the
 // object changed since it was loaded, the API server answers 409.
 app.put('/api/customresource/:group/:version/:plural/:name', mcpWriteGate, async (req, res) => {
@@ -2661,7 +2667,7 @@ app.put('/api/customresource/:group/:version/:plural/:name', mcpWriteGate, async
       if (!namespace) throw badRequest(`${m.kind} is namespaced: the namespace is required`, 'invalid_param');
       if ((doc.metadata.namespace || namespace) !== namespace) throw badRequest(`YAML metadata.namespace "${doc.metadata.namespace}" does not match this resource (${namespace})`, 'yaml_mismatch');
     }
-    const result = await serverSideApply(kubeConfig, doc, { scope: discoveryScope(), defaultNamespace: namespace });
+    const result = await replaceDocument(kubeConfig, doc, { scope: discoveryScope(), defaultNamespace: namespace });
     cache.clear();
     res.json({ success: true, message: result.message });
   } catch (error) {
@@ -2763,6 +2769,27 @@ const addSummary = (into, s = {}) => {
   return into;
 };
 
+// The operator's vulnerability scan jobs (one per workload + container being
+// scanned): { name, namespace, target, active, failed, reason }.
+const TRIVY_MANAGED = 'app.kubernetes.io/managed-by=trivy-operator';
+const listScanJobs = async () => {
+  const { items } = await kubeConfig.makeApiClient(k8s.BatchV1Api).listJobForAllNamespaces({ labelSelector: TRIVY_MANAGED }, requestOptions(15000));
+  return (items || [])
+    .filter((j) => j.metadata?.labels?.['vulnerabilityReport.scanner'] || /^scan-vulnerabilityreport/.test(j.metadata?.name || ''))
+    .map((j) => {
+      const failedCond = (j.status?.conditions || []).find((c) => c.type === 'Failed' && c.status === 'True');
+      return {
+        name: j.metadata.name, namespace: j.metadata.namespace, target: reportTarget(j),
+        active: (j.status?.active || 0) > 0 || (!j.status?.succeeded && !failedCond && !j.status?.failed),
+        failed: !!failedCond || (j.status?.failed || 0) > 0,
+        reason: failedCond ? [failedCond.reason, failedCond.message].filter(Boolean).join(': ') : '',
+      };
+    });
+};
+const listAllPods = async () => (await kubeConfig.makeApiClient(k8s.CoreV1Api).listPodForAllNamespaces({ limit: 5000 }, requestOptions(20000))).items || [];
+const nsUnits = (pods, ns) => scanUnits(pods).filter((u) => !ns || u.namespace === ns);
+const nsReports = (reports, ns) => (reports || []).filter((r) => !ns || trivyOwner(r).namespace === ns);
+
 app.get('/api/security/status', async (req, res) => {
   if (!kubeConfig) return res.json({ installed: false });
   try {
@@ -2821,6 +2848,8 @@ app.get('/api/security/vulnerabilities', async (req, res) => {
           id: v.vulnerabilityID, severity: sev(v.severity), pkg: v.resource || '',
           installedVersion: v.installedVersion || '', fixedVersion: v.fixedVersion || '',
           title: v.title || '', link: v.primaryLink || (v.links || [])[0] || '', score: v.score,
+          // os-pkgs (base image) vs lang-pkgs (application dependency) + where.
+          class: v.class || '', packageType: v.packageType || '', packagePath: v.packagePath || '', target: v.target || '',
         });
       }
     }
@@ -2843,25 +2872,108 @@ app.get('/api/security/vulnerabilities', async (req, res) => {
       g.platform = g.platform || g.os;
       g.criticalCount = g.summary.CRITICAL;
       g.vulnerabilities.sort((a, b) => order[a.severity] - order[b.severity] || (b.score || 0) - (a.score || 0));
+      g.remediation = remediationFor(g.vulnerabilities);
       return g;
     }).sort((a, b) => (b.summary.CRITICAL - a.summary.CRITICAL) || (b.summary.HIGH - a.summary.HIGH));
     // Results donut: images with any finding vs clean.
     const vulnerable = images.filter((g) => sevTotalOf(g.summary) > 0).length;
     const results = { vulnerable, ok: images.length - vulnerable };
-    // Status donut: scanned vs not-scanned (best-effort pod count for the total).
-    const scanned = images.length;
-    let podCount = null;
+    // Status donut: the images running in the cluster that have a report vs
+    // not yet — per (workload, container), the way the operator scans.
+    // Best-effort: without pod access the donut falls back to the reports.
+    let coverage = null;
     try {
-      const pods = await kubeConfig.makeApiClient(k8s.CoreV1Api).listPodForAllNamespaces({ limit: 5000 });
-      podCount = (pods.items || []).length;
+      const [pods, jobs] = await Promise.all([listAllPods(), listScanJobs().catch(() => [])]);
+      coverage = scanCoverage(nsUnits(pods, ns), nsReports(items, ns), jobs);
     } catch { /* best-effort */ }
     res.json({
-      installed: true, images, summary: total, reportCount: items.length,
-      results, scanned, notScanned: podCount != null ? Math.max(0, podCount - scanned) : null,
+      installed: true, images, summary: total, reportCount: items.length, results,
+      scanned: coverage ? coverage.scanned : images.length,
+      notScanned: coverage ? coverage.notScanned : null,
+      pending: coverage ? coverage.pending : [],
     });
   } catch (e) {
     res.status(500).json({ error: firstLine(e.message) });
   }
+});
+
+// Scan progress — the operator scans in the background and reports nothing of
+// its own: is it running, how many scans are in flight, how much of what runs
+// in the cluster has a report, and why scans fail (scan job conditions, scan
+// pods stuck pulling or scheduling, and errors in the operator's log), with a
+// hint for the usual causes. Cheap enough to poll while scans are running;
+// every part is best-effort (RBAC may hide some of it).
+app.get('/api/security/progress', async (req, res) => {
+  if (!kubeConfig) return res.json({ operator: { found: false } });
+  const ns = req.query.namespace && req.query.namespace !== 'all' ? String(req.query.namespace) : null;
+  if (ns && !isNamespace(ns)) return bad(res, 'namespace');
+  const out = { operator: { found: false }, jobs: { active: 0, failed: 0 }, coverage: null, reports: 0, lastReportAt: '', failures: [], hints: [], scanning: false };
+  const failures = [];
+  try {
+    const { items } = await kubeConfig.makeApiClient(k8s.AppsV1Api).listDeploymentForAllNamespaces({ labelSelector: 'app.kubernetes.io/name=trivy-operator' }, requestOptions(15000));
+    const d = (items || [])[0];
+    if (d) {
+      const c = d.spec?.template?.spec?.containers?.[0] || {};
+      const limit = Number((c.env || []).find((e) => e.name === 'OPERATOR_CONCURRENT_SCAN_JOBS_LIMIT')?.value);
+      out.operator = {
+        found: true, namespace: d.metadata.namespace, name: d.metadata.name,
+        ready: d.status?.readyReplicas || 0, desired: d.spec?.replicas ?? 1,
+        version: (String(c.image || '').match(/:([^:@/]+)(?:@|$)/) || [])[1] || '',
+        concurrency: Number.isFinite(limit) && limit > 0 ? limit : 10,
+      };
+    }
+  } catch { /* no deployment access */ }
+  let jobs = [];
+  try {
+    jobs = await listScanJobs();
+    out.jobs = { active: jobs.filter((j) => j.active).length, failed: jobs.filter((j) => j.failed).length };
+    for (const j of jobs.filter((x) => x.failed && x.reason)) failures.push(`${j.target.kind || 'Scan'} ${j.target.name || j.name}: ${j.reason}`);
+  } catch { /* no job access */ }
+  const opNs = out.operator.namespace;
+  if (opNs) {
+    // Scan pods that can't start: image pull of the scanner, scheduling.
+    try {
+      const { items } = await kubeConfig.makeApiClient(k8s.CoreV1Api).listNamespacedPod({ namespace: opNs, labelSelector: 'job-name' }, requestOptions(15000));
+      const scanJobNames = new Set(jobs.map((j) => j.name));
+      for (const p of items || []) {
+        if (!scanJobNames.has(p.metadata?.labels?.['job-name'])) continue;
+        for (const s of [...(p.status?.initContainerStatuses || []), ...(p.status?.containerStatuses || [])]) {
+          const w = s.state?.waiting;
+          if (w && w.reason && w.reason !== 'ContainerCreating' && w.reason !== 'PodInitializing') failures.push(`Scan pod ${w.reason}${w.message ? `: ${w.message}` : ''}`);
+          const t = s.state?.terminated || s.lastState?.terminated;
+          if (t && t.exitCode && (t.reason === 'OOMKilled' || t.message)) failures.push(`Scan pod ${t.reason || 'failed'}${t.message ? `: ${t.message}` : ''}`);
+        }
+        const unsched = (p.status?.conditions || []).find((c) => c.type === 'PodScheduled' && c.status === 'False');
+        if (unsched) failures.push(`Scan pod not scheduled: ${unsched.message || unsched.reason}`);
+      }
+    } catch { /* best-effort */ }
+    // The operator logs why a scan job failed (the scanner's own error).
+    try {
+      const { items } = await kubeConfig.makeApiClient(k8s.CoreV1Api).listNamespacedPod({ namespace: opNs, labelSelector: 'app.kubernetes.io/name=trivy-operator' }, requestOptions(15000));
+      const pod = (items || []).find((p) => p.status?.phase === 'Running') || (items || [])[0];
+      if (pod) {
+        const log = await kubeConfig.makeApiClient(k8s.CoreV1Api).readNamespacedPodLog({ name: pod.metadata.name, namespace: opNs, tailLines: 400 }, requestOptions(15000));
+        failures.push(...operatorLogErrors(typeof log === 'string' ? log : ''));
+      }
+    } catch { /* no pods/log access */ }
+  }
+  try {
+    const reports = await listTrivy('vulnerabilityreports');
+    if (reports) {
+      const mine = nsReports(reports, ns);
+      out.reports = mine.length;
+      out.lastReportAt = mine.reduce((m, r) => {
+        const t = r.report?.updateTimestamp || r.metadata?.creationTimestamp || '';
+        return t > m ? t : m;
+      }, '');
+      const cov = scanCoverage(nsUnits(await listAllPods(), ns), mine, jobs);
+      out.coverage = { images: cov.images, scanned: cov.scanned, notScanned: cov.notScanned, scanning: cov.pending.filter((pd) => pd.status === 'Scanning').length, failed: cov.pending.filter((pd) => pd.status === 'Failed').length };
+    }
+  } catch { /* best-effort */ }
+  out.failures = [...new Set(failures)].slice(-6);
+  out.hints = failureHints(out.failures);
+  out.scanning = out.jobs.active > 0;
+  res.json(out);
 });
 
 // Config-audit (resource best-practice) + RBAC assessment reports. `kind` picks

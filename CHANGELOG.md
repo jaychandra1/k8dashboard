@@ -9,7 +9,20 @@ All notable changes to this project are documented here. The format follows
 ### Added
 - **Edit custom resources.** A custom resource instance (Custom Resources → group → kind → instance) now opens in the same YAML editor as built-in resources. Edit it, then Apply (⌘S / Ctrl+S, after a confirmation) and it is server-side applied like the built-in editor (`kubectl apply --server-side`). The YAML must be the same object (apiVersion, a kind of that resource type, name and namespace), so a paste can't change something else. AI agents can edit only while MCP write access is on. New route: `PUT /api/customresource/:group/:version/:plural/:name`.
 
+- **Trivy Operator scan progress.** The Security Center shows what the operator is doing above its Overview and Images tabs, and refreshes every 10 seconds while scans run:
+  - **Status:** how many scans are running (and how many it runs at a time), how many running images have a report ("8 of 32 images scanned"), and when the last report arrived.
+  - **When scans stall or fail:** why. This comes from failed scan jobs, scan pods stuck pulling or being scheduled, and errors in the operator's log, shown with account IDs and hosts masked. A hint covers the common causes: private registry access (e.g. ECR read access for the trivy-operator service account), memory, timeouts, quotas and vulnerability-database downloads.
+  - **Images tab:** now also lists the images that are waiting, being scanned or failed.
+- **Remediation.** An image's details now open with what to do about its vulnerabilities:
+  - how many have a fix (and how many of the critical and high ones);
+  - whether the fixes are base-image OS packages or application dependencies;
+  - a list of package upgrades (installed → upgrade to, and the vulnerabilities each fixes), biggest wins first.
+
+  The Overview's critical list gains a **Fix available** column ("6 of 8").
+
 ### Fixed
+- **Deleting a line in the YAML editor now deletes it in the cluster.** Apply used server-side apply, which only removes fields KubePilot itself set. A field set by another tool stayed put: an annotation from `kubectl annotate` or an earlier `kubectl apply` came straight back after you removed it and applied. Both YAML editors (built-in and custom resources) now replace the object with the edited YAML, like `kubectl edit`/`replace`. It's still conditional on the version you loaded (a 409 "changed since you loaded it" otherwise), and the editor now hides `managedFields` like `kubectl get -o yaml`.
+- The Security Center's **Not Scanned** count compared the number of pods with the number of scanned images. It now counts the running images that have no report yet, matched per workload and container the way the operator scans.
 - **The pod terminal works without kubectl.** On a machine without kubectl it closed at once, with only "disconnected", because the server refused the session and a browser can't show why. It now opens the same interactive shell through KubePilot's built-in Kubernetes client: typing, colours, resizing, exit codes and the pod's default container all work. kubectl is still used when it's installed. If a session can't open, the terminal says why in plain words ("the pod or container no longer exists", "your user isn't allowed to open a shell in this pod (needs pods/exec)", "the cluster's API server didn't answer"), without hostnames or addresses.
 - "Some kinds could not be loaded: deployments (fetch failed)" now gives the reason ("connection timed out", "DNS lookup failed", …).
 - The YAML editor reloads the stored object after a successful Apply, so a second edit in a row is no longer refused as a conflict. An edit made while the resource changed in the cluster now says so ("Reload, then apply again") instead of showing a generic upstream error. The server answers 409 `conflict` for it, where it used to answer 502.
