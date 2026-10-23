@@ -1,9 +1,9 @@
 // kubectl-free operation: unit tests for the REST-mapping / patch helpers in
 // lib/k8s-ops.mjs, the kubectl availability probe, the friendly
 // `kubectl_required` error mapping, and HTTP checks that the capabilities
-// endpoint has the documented shape and that port-forward / the pod terminal
-// answer `kubectl_required` when the binary is missing
-// (KUBEPILOT_KUBECTL_BIN=/nonexistent).
+// endpoint has the documented shape, that port-forward answers
+// `kubectl_required` when the binary is missing (KUBEPILOT_KUBECTL_BIN=/nonexistent)
+// and that the pod terminal then goes over the Kubernetes API instead.
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -186,13 +186,14 @@ describe('HTTP without kubectl', () => {
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
   });
 
-  test('GET /api/config/capabilities → { kubectl: { available, path }, terminal, portForward }', async () => {
+  test('GET /api/config/capabilities → { kubectl: { available, path }, terminal, terminalVia, portForward }', async () => {
     const res = await srv.authed('/api/config/capabilities');
     assert.equal(res.status, 200);
     const body = await res.json();
-    assert.deepEqual(Object.keys(body).sort(), ['kubectl', 'portForward', 'terminal']);
+    assert.deepEqual(Object.keys(body).sort(), ['kubectl', 'portForward', 'terminal', 'terminalVia']);
     assert.deepEqual(body.kubectl, { available: false, path: null });
-    assert.equal(body.terminal, false);
+    assert.equal(body.terminal, true, 'the pod terminal works without kubectl');
+    assert.equal(body.terminalVia, 'api');
     assert.equal(body.portForward, false);
     const again = await (await srv.authed('/api/config/capabilities?refresh=1')).json();
     assert.equal(again.kubectl.available, false);
@@ -214,19 +215,20 @@ describe('HTTP without kubectl', () => {
     assert.equal(body.error, KUBECTL_REQUIRED_MESSAGE);
   });
 
-  test('the pod terminal upgrade is refused with kubectl_required', async () => {
+  test('without kubectl the pod terminal opens over the API and explains why a session fails', async () => {
     const outcome = await new Promise((resolve) => {
-      const ws = new WebSocket(`ws://127.0.0.1:${srv.port}/ws/exec?token=${TOKEN}&namespace=default&pod=web-0`, { origin: `http://127.0.0.1:${srv.port}` });
-      ws.on('unexpected-response', (req, res) => {
-        let data = '';
-        res.on('data', (c) => (data += c));
-        res.on('end', () => resolve({ status: res.statusCode, body: data }));
-      });
-      ws.on('open', () => { ws.close(); resolve({ status: 101 }); });
+      const ws = new WebSocket(`ws://127.0.0.1:${srv.port}/ws/exec?token=${TOKEN}&namespace=default&pod=web-0&container=web`, { origin: `http://127.0.0.1:${srv.port}` });
+      let out = '';
+      ws.on('unexpected-response', (req, res) => resolve({ status: res.statusCode }));
+      ws.on('message', (d) => { out += d.toString(); });
+      ws.on('close', () => resolve({ status: 101, out }));
       ws.on('error', (e) => resolve({ status: 0, error: e.message }));
     });
-    assert.equal(outcome.status, 501, JSON.stringify(outcome));
-    assert.equal(JSON.parse(outcome.body).code, 'kubectl_required');
+    assert.equal(outcome.status, 101, JSON.stringify(outcome));
+    assert.match(outcome.out, /built-in Kubernetes client/);
+    // The cluster at 127.0.0.1:1 refuses — said plainly, without the address.
+    assert.match(outcome.out, /Could not open a shell in web-0: The cluster's API server refused the connection./);
+    assert.doesNotMatch(outcome.out, /127.0.0.1/);
   });
 
   test('reads no longer shell out: /api/nodes answers with an API error, never "spawn kubectl"', async () => {

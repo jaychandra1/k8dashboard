@@ -1,5 +1,4 @@
 import Icon from './Icons';
-import Loader from './Loader';
 import useRequest from '../hooks/useRequest';
 import { getJson, p, withQuery } from '../lib/api';
 import { formatAge } from '../lib/format';
@@ -8,7 +7,7 @@ import Tooltip from './ui/Tooltip';
 import DataTable from './ui/DataTable';
 import EmptyState from './ui/EmptyState';
 import ErrorState from './ui/ErrorState';
-import HighlightedCode from './ui/HighlightedCode';
+import YamlViewer from './YamlViewer';
 import { errorTitle } from './shared/errors';
 import { navToView } from './shared/nav';
 
@@ -29,12 +28,10 @@ function CloseButton({ onClose }) {
   );
 }
 
-function InstanceView({ sel, refreshSignal, onClose }) {
-  const { data, error, loading, refetch, refetching } = useRequest(
-    ({ signal }) => getJson(withQuery(p('api', 'customresource', sel.group, sel.version, sel.plural, sel.name), { namespace: hasNs(sel.namespace) ? sel.namespace : undefined }), { signal }),
-    { deps: [sel.group, sel.version, sel.plural, sel.name, sel.namespace, refreshSignal], dedupeKey: `cr:${sel.group}/${sel.version}/${sel.plural}/${sel.namespace || ''}/${sel.name}` },
-  );
-  const yaml = data?.yaml || '';
+// A single instance: its YAML in the same editor as built-in resources — edit,
+// then Apply (⌘S / Ctrl+S) server-side applies it after a confirmation.
+function InstanceView({ sel, onClose }) {
+  const apiPath = withQuery(p('api', 'customresource', sel.group, sel.version, sel.plural, sel.name), { namespace: hasNs(sel.namespace) ? sel.namespace : undefined });
   return (
     <div className="cr-detail">
       <div className="cr-detail-head">
@@ -48,19 +45,8 @@ function InstanceView({ sel, refreshSignal, onClose }) {
         </div>
         <CloseButton onClose={onClose} />
       </div>
-      <div className="cr-detail-body">
-        {loading && !data ? <Loader label="Loading resource…" inline /> : error && !data ? (
-          <div className="cr-detail-error">
-            <ErrorState
-              error={error}
-              title={errorTitle(error, `${sel.kind || sel.plural} ${sel.name}`, { notFound: `${sel.kind || 'Resource'} ${sel.name} was not found` })}
-              onRetry={refetch}
-              busy={refetching}
-            />
-          </div>
-        ) : (
-          <HighlightedCode code={yaml} lang="yaml" className="yaml-code" />
-        )}
+      <div className="cr-detail-body cr-detail-editor">
+        <YamlViewer kind={sel.kind || sel.plural} name={sel.name} namespace={hasNs(sel.namespace) ? sel.namespace : ''} apiPath={apiPath} />
       </div>
     </div>
   );

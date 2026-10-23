@@ -79,6 +79,38 @@ describe('YamlViewer', () => {
     expect(ta).toHaveAttribute('aria-invalid', 'true');
   });
 
+  it('apiPath: loads and saves elsewhere (custom resources), then reloads the stored object', async () => {
+    const user = userEvent.setup();
+    const CR = 'apiVersion: example.com/v1\nkind: Widget\nmetadata:\n  name: w1\n  namespace: apps\n  resourceVersion: "41"\nspec:\n  size: 3\n';
+    getJson.mockResolvedValueOnce({ yaml: CR }).mockResolvedValueOnce({ yaml: CR.replace('"41"', '"42"').replace('size: 3', 'size: 4') });
+    putJson.mockResolvedValueOnce({ message: 'widget.example.com/w1 serverside-applied' });
+    const apiPath = '/api/customresource/example.com/v1/widgets/w1?namespace=apps';
+    renderYaml({ kind: 'Widget', name: 'w1', namespace: 'apps', apiPath });
+    const ta = await screen.findByRole('textbox', { name: /YAML for Widget w1/ });
+    await waitFor(() => expect(ta).toHaveValue(CR));
+    expect(getJson).toHaveBeenCalledWith(apiPath, expect.anything());
+    fireEvent.change(ta, { target: { value: CR.replace('size: 3', 'size: 4') } });
+    await user.click(screen.getByRole('button', { name: /Apply/ }));
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Apply' }));
+    await waitFor(() => expect(putJson).toHaveBeenCalledWith(apiPath, { yaml: CR.replace('size: 3', 'size: 4') }));
+    // Reloaded: the new resourceVersion is in the editor for the next edit.
+    await waitFor(() => expect(ta.value).toContain('resourceVersion: "42"'));
+    expect(getJson).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole('button', { name: /Apply/ })).toBeDisabled();
+  }, 15000);
+
+  it('a conflict (changed in the cluster meanwhile) asks to reload and re-apply', async () => {
+    const user = userEvent.setup();
+    putJson.mockRejectedValueOnce(new ApiError({ status: 409, code: 'conflict', message: 'the object has been modified' }));
+    renderYaml();
+    const ta = await screen.findByRole('textbox', { name: /YAML for pod web-1/ });
+    await waitFor(() => expect(ta).toHaveValue(YAML));
+    await user.type(ta, 'x');
+    await user.click(screen.getByRole('button', { name: /Apply/ }));
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Apply' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/changed in the cluster since you loaded it.*Reload/);
+  });
+
   it('guards closing with unsaved changes', async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();

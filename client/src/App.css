@@ -1433,6 +1433,9 @@ body {
 .cr-detail-head h3 .icon { color: var(--accent); }
 .cr-detail-meta { display: flex; align-items: center; gap: 12px; margin-top: 6px; font-size: 0.75rem; color: var(--text-secondary); }
 .cr-detail-body { flex: 1; overflow: auto; }
+/* An instance's YAML editor fills the body; it scrolls inside itself. */
+.cr-detail-body.cr-detail-editor { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.cr-detail-editor > .yaml-viewer { flex: 1; min-height: 0; height: auto; }
 .cr-empty {
   flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 10px; color: var(--text-muted); text-align: center; padding: 40px;

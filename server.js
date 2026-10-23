@@ -36,17 +36,18 @@ import { CONFIG_DIR, DEMO_ENABLED, configFile, envFlag, findConfigFile, isMcpSou
 import { repairExecEntries } from './lib/kubeconfig-repair.mjs';
 import {
   createKubectl, positional, spawnBin, collectChild, commandExists, resolveBinSync, loginShellPath,
-  hasKubectl, kubectlMissingError, isSpawnMissing, KUBECTL_REQUIRED_MESSAGE,
+  hasKubectl, kubectlMissingError, isSpawnMissing,
 } from './lib/kubectl.mjs';
 import {
   restMappingFor, restartPatch, restartTarget, scaleTarget, scalePatch, argoSyncPatch, argoRefreshPatch,
   dropFinalizersPatch, parseApplyDocuments, validateApplyDocument, requestOptions, patchOptions, PatchStrategy, applyDocuments, applyDocumentsEach,
-  deleteResource, execInPod, resourceLabel, labelSelectorFor,
+  deleteResource, execInPod, openPodShell, resourceLabel, labelSelectorFor, discoverResource, serverSideApply,
 } from './lib/k8s-ops.mjs';
 import { eksEntryFor as eksEntryForKc, sameEksCluster, eksClusterStatus as eksClusterStatusKc } from './lib/eks-kubeconfig.mjs';
 import { createUpdates, registerUpdateRoutes } from './lib/updater/routes.mjs';
 import { localShellAllowed, pinnedKubeconfig, helmShellEnv, helmShellCommand, helmShellBanner, helmDirOf, shq, agentPromptArg } from './lib/helm-shell.mjs';
 import { childEnv } from './lib/child-env.mjs';
+import { endpointKind, networkFailure, shortReason, unreachableMessage } from './lib/cluster-network.mjs';
 import { createSsoLogin, adoptSsoLogin, refreshSsoToken, profileSsoInfo, sessionsForProfiles, sessionTokenState, awsConfigPath } from './lib/aws-sso.mjs';
 
 // node-pty powers the pod terminal (a real PTY bridged to `kubectl exec`). Load
@@ -741,7 +742,10 @@ app.get('/api/config/capabilities', async (req, res) => {
   const kubectl = await hasKubectl({ refresh: req.query.refresh === '1' || req.query.refresh === 'true' });
   res.json({
     kubectl,
-    terminal: kubectl.available && !!pty,
+    // The pod terminal works without kubectl: `kubectl exec -it` when kubectl
+    // and node-pty are present, otherwise over the Kubernetes API.
+    terminal: true,
+    terminalVia: kubectl.available && pty ? 'kubectl' : 'api',
     portForward: kubectl.available,
   });
 });
@@ -1375,8 +1379,16 @@ const classifyClusterError = (error, { exec, repaired = false } = {}) => {
   if (code && tlsCodes.includes(code)) {
     return { ok: false, reason: 'tls', message: `TLS certificate error (${code}) contacting the cluster API server.` };
   }
-  if (code && ['ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT', 'EHOSTUNREACH', 'ENETUNREACH', 'EAI_AGAIN', 'ECONNRESET'].includes(code)) {
-    return { ok: false, reason: 'unreachable', message: `Cannot reach the cluster API server (${code}). Check the server URL, your VPN/network, or that the cluster is running.` };
+  // Network failures (fetch reports them all as "fetch failed"; the code is in
+  // the cause chain). checkClusterAuth adds which endpoint was tried.
+  const network = httpStatus === undefined ? networkFailure(error) : null;
+  if (network) {
+    return {
+      ok: false, reason: 'unreachable',
+      network: { failure: network.failure },
+      message: unreachableMessage({ failure: network.failure }),
+      detail: `${msg} (${network.code})`,
+    };
   }
   if (code === 'ENOENT' || /exec plugin|no such file|ENOENT|not found|credential plugin/i.test(msg)) {
     return {
@@ -1417,6 +1429,13 @@ const checkClusterAuth = async () => {
     if (classified.reason === 'sso-expired') {
       const aws = awsSignInInfo();
       if (aws) classified = { ...classified, aws };
+    }
+    if (classified.reason === 'unreachable' && server) {
+      // Private (VPC, over Tailscale/VPN) or public endpoint — the category
+      // only, never the address.
+      const endpoint = await endpointKind(server);
+      const network = { ...classified.network, endpoint };
+      classified = { ...classified, network, message: unreachableMessage(network) };
     }
     return { ...classified, currentContext, server };
   }
@@ -1473,7 +1492,7 @@ const fanOut = async (calls) => {
   settled.forEach((r, i) => {
     const key = entries[i][0];
     if (r.status === 'fulfilled') items[key] = r.value?.items || [];
-    else { items[key] = []; errors.push({ kind: key, error: firstLine(r.reason?.body?.message || r.reason?.message || String(r.reason)) }); }
+    else { items[key] = []; errors.push({ kind: key, error: shortReason(r.reason) }); }
   });
   if (errors.length && errors.length === entries.length) throw settled[0].reason;
   return { items, errors };
@@ -2617,6 +2636,39 @@ app.get('/api/customresource/:group/:version/:plural/:name', async (req, res) =>
   }
 });
 
+// Save an edited custom resource (Custom Resources → instance → Apply).
+// Body: { yaml }. The document must be this very object — same group/version,
+// a kind that discovery maps to this plural, same name and namespace — and is
+// server-side applied exactly like the built-in YAML editor (PUT /api/yaml).
+// The resourceVersion in the edited YAML makes it a conditional update: if the
+// object changed since it was loaded, the API server answers 409.
+app.put('/api/customresource/:group/:version/:plural/:name', mcpWriteGate, async (req, res) => {
+  try {
+    if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
+    const { group, version, plural, name } = req.params;
+    const query = req.query.namespace !== undefined ? String(req.query.namespace) : undefined;
+    if (query !== undefined && !isNamespace(query)) return bad(res, 'namespace');
+    const namespace = query && query !== '-' && query !== 'all' ? query : undefined;
+    const docs = parseApplyDocuments(req.body?.yaml);
+    if (docs.length !== 1) throw badRequest('Exactly one YAML document is expected', 'invalid_yaml');
+    const doc = docs[0];
+    const apiVersion = `${group}/${version}`;
+    if (doc.apiVersion !== apiVersion) throw badRequest(`YAML apiVersion "${doc.apiVersion || ''}" does not match this resource (${apiVersion})`, 'yaml_mismatch');
+    if (doc.metadata?.name !== name) throw badRequest(`YAML metadata.name "${doc.metadata?.name || ''}" does not match this resource (${name})`, 'yaml_mismatch');
+    const m = await discoverResource(kubeConfig, apiVersion, String(doc.kind || ''), { scope: discoveryScope() });
+    if (m.plural !== plural) throw badRequest(`YAML kind "${doc.kind || ''}" is not a ${plural} resource`, 'yaml_mismatch');
+    if (m.namespaced) {
+      if (!namespace) throw badRequest(`${m.kind} is namespaced: the namespace is required`, 'invalid_param');
+      if ((doc.metadata.namespace || namespace) !== namespace) throw badRequest(`YAML metadata.namespace "${doc.metadata.namespace}" does not match this resource (${namespace})`, 'yaml_mismatch');
+    }
+    const result = await serverSideApply(kubeConfig, doc, { scope: discoveryScope(), defaultNamespace: namespace });
+    cache.clear();
+    res.json({ success: true, message: result.message });
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
 // ------------------------------------------------------------------
 // ArgoCD (GitOps). Detected via the applications.argoproj.io CRD; if present the
 // UI shows an ArgoCD view. Applications are plain CRs, so we read them with
@@ -3343,7 +3395,7 @@ app.get('/api/cluster/summary', async (req, res) => {
     // Nodes (reuse existing helpers)
     let nodes = [];
     try { nodes = (await fetchNodes()).map(formatNode); }
-    catch (e) { errors.push({ kind: 'nodes', error: firstLine(e.body?.message || e.message) }); }
+    catch (e) { errors.push({ kind: 'nodes', error: shortReason(e) }); }
     const nodeSummary = {
       total: nodes.length,
       ready: nodes.filter(n => n.status === 'Ready').length,
@@ -3384,14 +3436,14 @@ app.get('/api/cluster/summary', async (req, res) => {
         _continue = resp.metadata?._continue;
         if (!_continue) break;
       }
-    } catch (e) { errors.push({ kind: 'pods', error: firstLine(e.body?.message || e.message) }); }
+    } catch (e) { errors.push({ kind: 'pods', error: shortReason(e) }); }
 
     // Namespace count
     let namespaceCount = 0;
     try {
       const resp = await kubeConfig.makeApiClient(k8s.CoreV1Api).listNamespace({}, requestOptions(8000));
       namespaceCount = (resp.items || []).length;
-    } catch (e) { errors.push({ kind: 'namespaces', error: firstLine(e.body?.message || e.message) }); }
+    } catch (e) { errors.push({ kind: 'namespaces', error: shortReason(e) }); }
 
     // Everything failed → the cluster is unreachable/unauthorized: report it.
     if (errors.length === 3) return res.status(502).json({ error: errors[0].error, code: 'upstream_error', errors });
@@ -4076,6 +4128,21 @@ const terminals = new Set(); // live PTYs (for the cap and for shutdown)
 // environment. Cloud exec-credential plugins need their SDK variables.
 const PTY_ENV_KEYS = ['PATH', 'HOME', 'USERPROFILE', 'KUBECONFIG', 'TERM', 'LANG', 'SHELL', 'SystemRoot', 'TEMP', 'TMP',
   'APPDATA', 'LOCALAPPDATA', 'HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY', 'https_proxy', 'http_proxy', 'no_proxy'];
+// Why a pod shell over the API couldn't open, as one plain sentence — no
+// hostnames or addresses (the WebSocket upgrade reports "Unexpected server
+// response: <status>"; network failures carry a code in their cause chain).
+const podShellError = (err) => {
+  const network = networkFailure(err);
+  if (network) return unreachableMessage({ failure: network.failure });
+  const msg = String(err?.body?.message || err?.message || err);
+  const status = Number(msg.match(/Unexpected server response: (\d{3})/)?.[1]) || (typeof err?.code === 'number' ? err.code : undefined);
+  if (status === 401) return 'The cluster rejected your credentials (HTTP 401).';
+  if (status === 403) return "Your user isn't allowed to open a shell in this pod (HTTP 403 — it needs the pods/exec permission).";
+  if (status === 404) return 'The pod or container no longer exists (HTTP 404).';
+  if (status) return `The cluster refused the session (HTTP ${status}).`;
+  return msg.replace(/[a-z][a-z0-9+.-]*:\/\/\S+/gi, '<API server>').replace(/\b\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?\b/g, '<address>');
+};
+
 // KUBE* covers KUBECACHEDIR, KUBECTL_* and kubelogin settings, but not
 // KUBEPILOT_* (the API token) — childEnv() drops KubePilot's secrets as well.
 const ptyEnv = () => {
@@ -4132,13 +4199,8 @@ server.on('upgrade', async (req, socket, head) => {
   if ((q('shell') !== null || q('agent')) && !localShellAllowed() && !demoActive()) {
     return rejectUpgrade(socket, 403, { error: LOCAL_SHELL_DISABLED_MESSAGE, code: 'local_shell_disabled' });
   }
-  // The pod terminal is a real PTY around `kubectl exec -it`: without kubectl
-  // (and outside demo mode) answer with the actionable JSON error up front.
-  if (!q('agent') && q('shell') === null && !demoActive()) {
-    let kubectl;
-    try { kubectl = await hasKubectl(); } catch { kubectl = { available: false }; }
-    if (!kubectl.available) return rejectUpgrade(socket, 501, { error: KUBECTL_REQUIRED_MESSAGE, code: 'kubectl_required' });
-  }
+  // The pod terminal needs no kubectl: without it (or without node-pty) the
+  // session goes over the Kubernetes API instead (see the connection handler).
   if (terminals.size >= MAX_TERMINALS) return rejectUpgrade(socket, 429, { error: `At most ${MAX_TERMINALS} terminals may be open at once`, code: 'too_many_terminals' });
   if (shuttingDown) return rejectUpgrade(socket, 503, { error: 'Server is shutting down', code: 'shutting_down' });
   wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
@@ -4177,14 +4239,20 @@ wss.on('connection', async (browserWs, req) => {
   }
 
   const send = (data) => { if (browserWs.readyState === 1) browserWs.send(data); };
-  if (!pty) {
+  const agentId = url.searchParams.get('agent');
+  const shellKind = url.searchParams.get('shell');
+  // The Helm and agent terminals are local shells (node-pty); the pod
+  // terminal can fall back to the API when node-pty is missing.
+  if (!pty && (agentId || shellKind !== null)) {
     send('\r\n\x1b[31mTerminal is unavailable on this server (node-pty failed to load).\x1b[0m\r\n');
     browserWs.close();
     return;
   }
-
-  const agentId = url.searchParams.get('agent');
-  const shellKind = url.searchParams.get('shell');
+  // Keystrokes / resizes that arrive while the session is still opening (the
+  // API fallback takes a moment) are replayed once it is ready.
+  const early = [];
+  const holdEarly = (raw) => early.push(raw);
+  browserWs.on('message', holdEarly);
   let term, cleanup = () => {};
 
   if (shellKind === 'helm') {
@@ -4269,20 +4337,33 @@ wss.on('connection', async (browserWs, req) => {
     const namespace = url.searchParams.get('namespace');
     const pod = url.searchParams.get('pod');
     const container = url.searchParams.get('container') || undefined;
-    const args = [
-      ...(currentContext ? [`--context=${currentContext}`] : []),
-      'exec', '-it', `--namespace=${namespace}`, ...(container ? [`--container=${container}`] : []),
-      pod, '--', 'sh', '-c', 'exec $(command -v bash || command -v sh || echo /bin/sh)',
-    ];
-    const kubectlBin = resolveBinSync('kubectl');
-    try {
-      term = pty.spawn(kubectlBin, args, { name: 'xterm-256color', cols: 80, rows: 24, cwd: process.env.HOME || os.homedir(), env: ptyEnv() });
-    } catch (err) {
-      const missing = kubectlBin === 'kubectl' || isSpawnMissing(err) || /ENOENT/.test(String(err?.message || ''));
-      const text = missing ? KUBECTL_REQUIRED_MESSAGE : `Failed to start shell: ${err.message}`;
-      send(`\r\n\x1b[31m${text}\x1b[0m\r\n`);
-      browserWs.close();
-      return;
+    const shellCmd = ['sh', '-c', 'exec $(command -v bash || command -v sh || echo /bin/sh)'];
+    let kubectl;
+    try { kubectl = await hasKubectl(); } catch { kubectl = { available: false }; }
+    if (kubectl.available && pty) {
+      const args = [
+        ...(currentContext ? [`--context=${currentContext}`] : []),
+        'exec', '-it', `--namespace=${namespace}`, ...(container ? [`--container=${container}`] : []),
+        pod, '--', ...shellCmd,
+      ];
+      try {
+        term = pty.spawn(kubectl.path, args, { name: 'xterm-256color', cols: 80, rows: 24, cwd: process.env.HOME || os.homedir(), env: ptyEnv() });
+      } catch (err) {
+        send(`\r\n\x1b[31mFailed to start shell: ${err.message}\x1b[0m\r\n`);
+        browserWs.close();
+        return;
+      }
+    } else {
+      // No kubectl on this machine: the same session over the Kubernetes API.
+      send('\x1b[90mkubectl isn’t installed — connecting through KubePilot’s built-in Kubernetes client.\x1b[0m\r\n');
+      try {
+        term = await openPodShell(kubeConfig, { namespace, pod, container, command: shellCmd });
+      } catch (err) {
+        send(`\r\n\x1b[31mCould not open a shell in ${pod}: ${podShellError(err)}\x1b[0m\r\n`);
+        browserWs.close();
+        return;
+      }
+      if (browserWs.readyState !== 1) { term.kill(); return; } // the tab was closed while connecting
     }
   }
 
@@ -4294,7 +4375,7 @@ wss.on('connection', async (browserWs, req) => {
     try { browserWs.close(); } catch (e) { /* ignore */ }
   });
 
-  browserWs.on('message', (raw) => {
+  const onMessage = (raw) => {
     let msg;
     try { msg = JSON.parse(raw.toString()); } catch (e) { return; }
     if (msg.type === 'data') {
@@ -4303,7 +4384,10 @@ wss.on('connection', async (browserWs, req) => {
     } else if (msg.type === 'resize' && isIntInRange(msg.cols, 1, 1000) && isIntInRange(msg.rows, 1, 1000)) {
       try { term.resize(Number(msg.cols), Number(msg.rows)); } catch (e) { /* ignore */ }
     }
-  });
+  };
+  browserWs.off('message', holdEarly);
+  browserWs.on('message', onMessage);
+  for (const raw of early.splice(0)) onMessage(raw);
 
   browserWs.on('close', () => {
     terminals.delete(term);

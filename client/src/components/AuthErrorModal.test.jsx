@@ -32,6 +32,23 @@ describe('AuthErrorModal classify — backend helper reasons', () => {
     expect(classify({ reason: 'unreachable', server: 'https://abc.hcp.westeurope.azmk8s.io:443' }).provider).toBe('azure');
     expect(classify({ reason: 'unreachable', server: 'https://10.0.0.1:6443' }).provider).toBeNull();
   });
+
+  it('unreachable: the hint follows the endpoint the backend saw (public / private / DNS / local)', () => {
+    const at = (network) => classify({ reason: 'unreachable', message: 'm', network, server: 'https://x.gr7.eu-west-1.eks.amazonaws.com' });
+    const pub = at({ endpoint: 'public', failure: 'timeout' });
+    expect(pub.title).toBe('Cluster unreachable');
+    expect(pub.provider).toBe('aws');
+    expect(pub.fix.note).toMatch(/resolves to its public endpoint.*Tailscale or a VPN.*split DNS.*allowed public-access IP ranges/);
+    expect(at({ endpoint: 'private', failure: 'timeout' }).fix.note).toMatch(/private endpoint.*Connect to Tailscale or the VPN/);
+    expect(at({ endpoint: 'unknown', failure: 'dns' }).fix.note).toMatch(/only reachable over Tailscale or a VPN/);
+    expect(at({ endpoint: 'local', failure: 'refused' }).fix.note).toMatch(/Start the local cluster/);
+    expect(at(undefined).fix.note).toMatch(/Check your network or VPN/);
+  });
+
+  it('an older backend\'s bare "fetch failed" still reads as unreachable, not as an AWS sign-in problem', () => {
+    const c = classify({ reason: 'error', message: 'fetch failed', server: 'https://x.gr7.eu-west-1.eks.amazonaws.com' });
+    expect(c.title).toBe('Cluster unreachable');
+  });
 });
 
 const CONTEXTS = ['dev-env-cluster', 'qa-cluster', 'aks-prod', 'kind-local'];
@@ -80,6 +97,34 @@ describe('AuthErrorModal rendering', () => {
     }
     // The command is shown masked but copied in full, so it still works.
     expect(screen.getByText('aws sso login --profile sso-••••8296')).toBeInTheDocument();
+  });
+
+  it('unreachable public endpoint: says so on the card, explains Tailscale/VPN, shows no hostname or address', () => {
+    const auth = {
+      reason: 'unreachable',
+      message: "The cluster's public endpoint didn't answer (connection timed out).",
+      detail: 'fetch failed (UND_ERR_CONNECT_TIMEOUT)',
+      network: { endpoint: 'public', failure: 'timeout' },
+      server: 'https://49B8A64035E12DFA22A9C44C3ABF0985.gr7.eu-west-1.eks.amazonaws.com',
+      currentContext: 'tr-prod-cashierbackend',
+    };
+    const { container } = render(<AuthErrorModal auth={auth} onRetry={() => {}} contexts={['tr-prod-cashierbackend', 'dev-env-cluster']} contextsInfo={[{ name: 'tr-prod-cashierbackend', provider: 'aws' }, { name: 'dev-env-cluster', provider: 'aws' }]} currentContext="tr-prod-cashierbackend" onSwitchContext={() => {}} />);
+    expect(screen.getByText('Cluster unreachable')).toBeInTheDocument();
+    expect(screen.getByText("The cluster's public endpoint didn't answer (connection timed out).")).toBeInTheDocument();
+    const card = screen.getByRole('region', { name: 'tr-prod-cashierbackend connection' });
+    expect(card).toHaveTextContent('AWS EKS · Public endpoint');
+    expect(card).toHaveTextContent(/Tailscale or a VPN/);
+    expect(screen.getByText('fetch failed (UND_ERR_CONNECT_TIMEOUT)')).toBeInTheDocument(); // Technical details
+    const text = container.ownerDocument.body.textContent;
+    expect(text).not.toContain('49B8A64035E12DFA22A9C44C3ABF0985');
+    expect(text).not.toContain('eks.amazonaws.com');
+  });
+
+  it('unreachable private endpoint: "Private endpoint" on the card and a connect-your-VPN hint', () => {
+    render(<AuthErrorModal auth={{ reason: 'unreachable', message: "The cluster's private endpoint didn't answer (connection timed out).", network: { endpoint: 'private', failure: 'timeout' }, server: 'https://x.gr7.eu-west-1.eks.amazonaws.com', currentContext: 'dev-env-cluster' }} onRetry={() => {}} contextsInfo={INFO} currentContext="dev-env-cluster" />);
+    const card = screen.getByRole('region', { name: 'dev-env-cluster connection' });
+    expect(card).toHaveTextContent('AWS EKS · Private endpoint');
+    expect(card).toHaveTextContent(/Connect to Tailscale or the VPN that routes to that network/);
   });
 
   it('signs in right here: browser step, then reconnects automatically', async () => {

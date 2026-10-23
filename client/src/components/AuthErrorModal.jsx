@@ -28,6 +28,24 @@ const TITLES = {
 const extractAzLogin = (raw) => (raw.match(/az login\b[^\n]*?--scope\s+"[^"]*"/i) || raw.match(/az login\b[^\n."]*/i) || [])[0]?.trim() || null;
 const extractAwsSso = (raw) => (raw.match(/aws sso login(?:\s+--profile\s+\S+)?/i) || [])[0]?.trim() || null;
 
+// "Public endpoint" / "Private endpoint" for the cluster card.
+export const ENDPOINT_LABEL = { public: 'Public endpoint', private: 'Private endpoint', local: 'Local' };
+
+// What to try, given which endpoint this machine reached and how it failed.
+export function unreachableHint({ endpoint, failure } = {}) {
+  if (failure === 'dns') {
+    return 'Check your internet connection. If this cluster is only reachable over Tailscale or a VPN, connect it first — the cluster’s name may only resolve there.';
+  }
+  if (endpoint === 'private') {
+    return 'This cluster uses a private endpoint, reachable only from its own network. Connect to Tailscale or the VPN that routes to that network, then retry.';
+  }
+  if (endpoint === 'public' && failure !== 'refused') {
+    return 'On this computer the cluster’s name resolves to its public endpoint. If you normally reach it through Tailscale or a VPN, connect it and make sure its DNS resolves the cluster to the private endpoint (split DNS). Otherwise this network may not be on the cluster’s allowed public-access IP ranges.';
+  }
+  if (endpoint === 'local') return 'Start the local cluster (Docker Desktop, kind, minikube…), then retry.';
+  return 'Check your network or VPN, and that the cluster is running.';
+}
+
 // Classify the failure into { title, summary, fix } where fix describes the
 // remediation (a one-click cloud sign-in and/or a copyable CLI command).
 export function classify(auth) {
@@ -66,6 +84,15 @@ function classifyRaw(auth) {
       fix: { kind: 'note', note: 'Stale helper entries are repaired automatically — click Retry. If it keeps failing, re-import the cluster from Add cluster.' },
     };
   }
+  // The backend has classified the network failure and which endpoint (private
+  // or public) this machine reached — no address is ever included.
+  if (reason === 'unreachable') {
+    return {
+      title: 'Cluster unreachable',
+      summary: raw || "The cluster's API server can't be reached.",
+      fix: { kind: 'note', note: unreachableHint(auth?.network) },
+    };
+  }
 
   if (/aadsts|azureclicredential|az login\b/.test(s) || (provider === 'azure' && /token|expired|credential|refresh/.test(s))) {
     const cli = /azurecli|kubelogin/.test(s);
@@ -93,7 +120,7 @@ function classifyRaw(auth) {
   if (reason === 'tls' || /x509|certificate|tls handshake/.test(s)) {
     return { title: 'TLS certificate error', summary: "The API server's TLS certificate could not be verified. Check that your kubeconfig trusts the right CA.", fix: null };
   }
-  if (reason === 'unreachable' || /dial tcp|no such host|i\/o timeout|connection refused|network is unreachable|timeout/.test(s)) {
+  if (/dial tcp|no such host|i\/o timeout|connection refused|network is unreachable|timeout|fetch failed/.test(s)) {
     return { title: 'Cluster unreachable', summary: "The cluster's API server can't be reached. Check your VPN and network, and that the cluster is running.", fix: null };
   }
   if (/forbidden|is not allowed|cannot list|\b403\b/.test(s)) {
@@ -156,6 +183,7 @@ export default function AuthErrorModal({ open = true, auth, onRetry, onChangeCon
     prov.label,
     aws?.accountId && `Account ${maskAccountId(aws.accountId)}`,
     aws?.roleName,
+    ENDPOINT_LABEL[auth?.network?.endpoint],
   ].filter(Boolean).join(' · ');
   const ended = aws ? fmtEnded(aws.expiredAt) : null;
 

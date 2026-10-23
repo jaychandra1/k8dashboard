@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **Edit custom resources.** A custom resource instance (Custom Resources → group → kind → instance) now opens in the same YAML editor as built-in resources. Edit it, then Apply (⌘S / Ctrl+S, after a confirmation) and it is server-side applied like the built-in editor (`kubectl apply --server-side`). The YAML must be the same object (apiVersion, a kind of that resource type, name and namespace), so a paste can't change something else. AI agents can edit only while MCP write access is on. New route: `PUT /api/customresource/:group/:version/:plural/:name`.
+
+### Fixed
+- **The pod terminal works without kubectl.** On a machine without kubectl it closed at once, with only "disconnected", because the server refused the session and a browser can't show why. It now opens the same interactive shell through KubePilot's built-in Kubernetes client: typing, colours, resizing, exit codes and the pod's default container all work. kubectl is still used when it's installed. If a session can't open, the terminal says why in plain words ("the pod or container no longer exists", "your user isn't allowed to open a shell in this pod (needs pods/exec)", "the cluster's API server didn't answer"), without hostnames or addresses.
+- "Some kinds could not be loaded: deployments (fetch failed)" now gives the reason ("connection timed out", "DNS lookup failed", …).
+- The YAML editor reloads the stored object after a successful Apply, so a second edit in a row is no longer refused as a conflict. An edit made while the resource changed in the cluster now says so ("Reload, then apply again") instead of showing a generic upstream error. The server answers 409 `conflict` for it, where it used to answer 502.
+
 ## [1.7.0] – 2026-10-21
 
 ### Security
@@ -32,6 +40,7 @@ All notable changes to this project are documented here. The format follows
 - **Sign-in screens no longer show environment details.** The session-expired dialog and the sign-in panel drop the API server URL and the AWS access portal host, and show AWS account IDs as `••••8296`. Technical details, error messages and suggested commands are masked the same way (cluster endpoints, portal hosts, private hostnames, IP addresses, tenant/subscription IDs and tokens), while Copy still copies the real command. Public documentation links and version numbers are left as they are.
 
 ### Fixed
+- **"Could not connect to the cluster — fetch failed" now says what went wrong.** A cluster that can't be reached shows **Cluster unreachable**, with the actual failure (connection timed out, refused, DNS lookup failed…). It also says whether this computer was trying the cluster's **public** or **private** endpoint: shown on the cluster card ("AWS EKS · Public endpoint"), plus a matching hint. For example, a cluster you normally reach over Tailscale or a VPN whose name resolves to its public endpoint points you to split DNS or the cluster's allowed public IP ranges. No hostname or address is shown; the underlying error code is under Technical details. Previously a connect timeout (`UND_ERR_CONNECT_TIMEOUT`) wasn't recognised at all.
 - The browser page shown after signing in to AWS was a white card with light text in dark mode, and left the one-time authorization code in the address bar. It now follows the system light/dark theme, and the sign-in redirect moves to a clean `/oauth/complete` address so the code is not kept in the URL or browser history. The page sends `no-store`, `no-referrer` and a strict Content-Security-Policy, and the one-time listener shuts down after the page loads (or after 30 seconds).
 
 ## [1.5.1] – 2026-10-16

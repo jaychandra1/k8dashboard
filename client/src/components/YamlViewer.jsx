@@ -19,6 +19,7 @@ const applyErrorText = (err) => {
     case 'upstream_error': return `The cluster rejected the change: ${msg}`;
     case 'payload_too_large': return 'The document is too large to apply.';
     case 'forbidden': return `Not allowed: ${msg}`;
+    case 'conflict': return 'This resource changed in the cluster since you loaded it. Copy your edits, click Reload, then apply them again.';
     default: return msg;
   }
 };
@@ -36,24 +37,31 @@ const applyErrorText = (err) => {
  * App.css (.yaml-code / .yaml-code code / .yaml-textarea).
  *
  * <YamlViewer namespace kind="deployment" name onClose onApplied />
+ *
+ * `apiPath` loads (GET → { yaml }) and saves (PUT { yaml }) somewhere other
+ * than /api/yaml/<ns>/<kind>/<name> — custom resources use
+ * /api/customresource/<group>/<version>/<plural>/<name>?namespace=….
  */
-export default function YamlViewer({ namespace, kind, name, onClose, onApplied, resource, resourceType }) {
+export default function YamlViewer({ namespace, kind, name, onClose, onApplied, resource, resourceType, apiPath }) {
   const toast = useToast();
   const uid = useId();
   const k = kind || resourceType;
   const n = name || resource?.name;
   const ns = namespace || resource?.namespace || '';
+  const path = apiPath || p('api', 'yaml', ns || '-', k, n);
   const [yaml, setYaml] = useState('');
   const [original, setOriginal] = useState('');
   const [applying, setApplying] = useState(false);
   const [applyError, setApplyError] = useState(null);
   const [confirm, setConfirm] = useState(null); // 'apply' | 'discard'
   const taRef = useRef(null);
+  const yamlRef = useRef(yaml);
+  yamlRef.current = yaml;
 
   const { error: loadError, loading, refetch } = useRequest(
-    ({ signal }) => getJson(p('api', 'yaml', ns || '-', k, n), { signal }),
+    ({ signal }) => getJson(path, { signal }),
     {
-      deps: [ns, k, n],
+      deps: [path],
       enabled: !!k && !!n,
       keepPreviousData: false,
       onSuccess: (d) => { const y = d?.yaml || ''; setYaml(y); setOriginal(y); setApplyError(null); },
@@ -75,11 +83,22 @@ export default function YamlViewer({ namespace, kind, name, onClose, onApplied, 
     setApplying(true);
     setApplyError(null);
     try {
-      const data = await putJson(p('api', 'yaml', ns || '-', k, n), { yaml });
+      const data = await putJson(path, { yaml });
       toast.success(data?.message || 'Applied', { title: n });
       setOriginal(yaml);
       setConfirm(null);
       onApplied?.({ kind: k, namespace: ns, name: n });
+      // Quietly reload the stored object — its new resourceVersion and any
+      // defaults the API server filled in — or the next Apply from this
+      // editor would be refused as a conflict. Skipped if typing resumed.
+      const applied = yaml;
+      getJson(path)
+        .then((d) => {
+          if (typeof d?.yaml !== 'string' || yamlRef.current !== applied) return;
+          setYaml(d.yaml);
+          setOriginal(d.yaml);
+        })
+        .catch(() => { /* the next Apply reports any conflict */ });
     } catch (err) {
       setApplyError(applyErrorText(err));
       setConfirm(null);
