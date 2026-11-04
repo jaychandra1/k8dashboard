@@ -80,7 +80,7 @@ function classifyRaw(auth) {
   if (reason === 'exec-helper') {
     return {
       title: 'Cluster auth helper failed',
-      summary: raw || "k8Board's kubeconfig auth helper for this cluster could not produce a token.",
+      summary: raw || "K8Board's kubeconfig auth helper for this cluster could not produce a token.",
       fix: { kind: 'note', note: 'Stale helper entries are repaired automatically — click Retry. If it keeps failing, re-import the cluster from Add cluster.' },
     };
   }

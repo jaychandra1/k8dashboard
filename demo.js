@@ -3,7 +3,7 @@
 //
 // When the active context is DEMO_CONTEXT, server.js routes every /api/* data
 // and mutation request through handle() below instead of talking to a real
-// cluster. The whole point is that k8Board is fully explorable with no
+// cluster. The whole point is that K8Board is fully explorable with no
 // kubeconfig, no cluster, and no kubectl.
 //
 // The JSON returned here is shaped to EXACTLY match what the corresponding real
@@ -1628,7 +1628,7 @@ export function shellSession(ws, meta = {}) {
     '\r\n\x1b[90mTry: helm list -A, helm version, helm repo add, helm install, kubectl config current-context\x1b[0m\r\n\r\n',
   ].join('') : [
     '\r\n\x1b[1;36m╭──────────────────────────────────────────────╮\x1b[0m',
-    '\r\n\x1b[1;36m│\x1b[0m  k8Board demo shell (synthetic pod)           \x1b[1;36m│\x1b[0m',
+    '\r\n\x1b[1;36m│\x1b[0m  K8Board demo shell (synthetic pod)           \x1b[1;36m│\x1b[0m',
     '\r\n\x1b[1;36m╰──────────────────────────────────────────────╯\x1b[0m',
     `\r\n\x1b[90mConnected to ${meta.namespace || 'shop'}/${meta.pod || 'pod'}${meta.container ? ' [' + meta.container + ']' : ''}. This is a demo — no real cluster.\x1b[0m`,
     "\r\n\x1b[90mTry: ls, pwd, whoami, cat <file>, env, help, clear, exit\x1b[0m\r\n\r\n",

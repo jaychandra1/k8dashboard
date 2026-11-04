@@ -34,7 +34,7 @@ describe('Navigation', () => {
     expect(within(nav).queryByText(/^Context$/)).toBeNull();
     expect(nav.querySelector('.nav-context-selector, .nav-cluster, .ctx-search, .cluster-switcher')).toBeNull();
     const header = nav.querySelector('.nav-header');
-    expect(header).toHaveTextContent('k8Board');
+    expect(header).toHaveTextContent('K8Board');
     expect(within(header).getByRole('button', { name: 'Preferences' })).toBeInTheDocument();
     // Only the brand block lives in the header.
     expect(header.children).toHaveLength(1);
@@ -54,6 +54,32 @@ describe('Navigation', () => {
     await user.click(network);
     expect(network).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByRole('link', { name: 'Services' })).toHaveAttribute('href', '#/service?ns=default');
+  });
+
+  it('groups the sidebar under Overview / Resources / Operations / Integrations headings', () => {
+    render(<Navigation view="pod" onNavigate={() => {}} argocdInstalled onOpenPreferences={() => {}} />);
+    const nav = screen.getByRole('navigation', { name: 'Primary' });
+    const headings = [...nav.querySelectorAll('.nav-group-label')];
+    expect(headings.map((h) => h.textContent)).toEqual(['Overview', 'Resources', 'Operations', 'Integrations']);
+    headings.forEach((h) => expect(h).toHaveAttribute('aria-hidden', 'true'));
+    // Each heading sits directly above its first item.
+    const after = (h) => h.nextElementSibling;
+    expect(within(after(headings[0])).getAllByRole('link')[0]).toHaveTextContent('Dashboard');
+    expect(within(after(headings[1])).getByRole('button', { name: 'Workloads' })).toBeInTheDocument();
+    expect(within(after(headings[2])).getAllByRole('link')[0]).toHaveTextContent('Events');
+    expect(within(after(headings[3])).getByRole('button', { name: 'Argo CD' })).toBeInTheDocument();
+    expect(nav.textContent).not.toMatch(/Cluster/);
+  });
+
+  it('labels the #/cluster item "Dashboard", keeping its route and active state', () => {
+    render(<Navigation view="cluster" onNavigate={() => {}} onOpenPreferences={() => {}} />);
+    const dashboard = screen.getByRole('link', { name: 'Dashboard' });
+    expect(dashboard).toHaveAttribute('href', '#/cluster');
+    expect(dashboard).toHaveAttribute('aria-current', 'page');
+    // Without Argo CD the Integrations heading still leads Security Center.
+    const integrations = [...document.querySelectorAll('.nav-group-label')].pop();
+    expect(integrations).toHaveTextContent('Integrations');
+    expect(within(integrations.nextElementSibling).getByRole('button', { name: 'Security Center' })).toBeInTheDocument();
   });
 
   it('marks argo / security sub-views active from subView', () => {

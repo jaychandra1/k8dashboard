@@ -132,8 +132,8 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 # links the package to its GitHub repo. docker/metadata-action overrides
 # source/revision/created automatically.
 # ------------------------------------------------------------------
-ARG APP_VERSION="1.7.4"
-LABEL org.opencontainers.image.title="k8Board" \
+ARG APP_VERSION="1.7.5"
+LABEL org.opencontainers.image.title="K8Board" \
       org.opencontainers.image.description="Browse and operate Kubernetes clusters — workloads, nodes, events, logs, in-browser exec/terminal, service port-forwarding, Helm releases, RBAC and CRDs. Reads your kubeconfig and serves the UI + token-protected REST API on port 3001." \
       org.opencontainers.image.version="${APP_VERSION}" \
       org.opencontainers.image.source="https://github.com/jaychandra1/KubePilot" \

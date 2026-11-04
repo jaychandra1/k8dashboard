@@ -1,4 +1,4 @@
-// k8Board was called KubePilot. Users see the new name everywhere, but these
+// K8Board was called KubePilot. Users see the new name everywhere, but these
 // identifiers keep the old one on purpose — installed copies depend on them to
 // update in place and keep their clusters, settings and secrets. A test fails
 // if one of them is "renamed" by accident.
@@ -14,11 +14,11 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const pkg = JSON.parse(read('package.json'));
 
-describe('k8Board rename: what keeps its KubePilot identity', () => {
-  test('users see k8Board', () => {
-    assert.equal(pkg.build.productName, 'k8Board');
-    assert.equal(pkg.build.appx.displayName, 'k8Board');
-    assert.match(read('client/index.html'), /<title>k8Board<\/title>/);
+describe('K8Board rename: what keeps its KubePilot identity', () => {
+  test('users see K8Board', () => {
+    assert.equal(pkg.build.productName, 'K8Board');
+    assert.equal(pkg.build.appx.displayName, 'K8Board');
+    assert.match(read('client/index.html'), /<title>K8Board<\/title>/);
   });
 
   test('updates: the signed text, the app ID and the Linux package name are unchanged', () => {
@@ -34,7 +34,7 @@ describe('k8Board rename: what keeps its KubePilot identity', () => {
 
   test('releases also publish KubePilot-named copies for the KubePilot updaters', () => {
     const wf = read('.github/workflows/release.yml');
-    assert.match(wf, /cp -- "\$f" "KubePilot-\$\{f#k8Board-\}"/);
+    assert.match(wf, /cp -- "\$f" "KubePilot-\$\{f#K8Board-\}"/);
     // …before the checksums are generated and signed.
     assert.ok(wf.indexOf('Legacy-named copies for KubePilot updaters') < wf.indexOf('Generate SHA256SUMS.txt'));
   });

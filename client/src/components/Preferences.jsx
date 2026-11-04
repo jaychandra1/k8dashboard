@@ -10,6 +10,7 @@ import {
   getAiConfig, setAiConfig, getAiExternalTerminal, setAiExternalTerminal,
 } from '../aiConfig';
 
+import Brand from './ui/Brand';
 // Full-page Preferences view: a left sub-nav of sections and a content pane.
 // The active section comes from the route (`#/preferences/<section>`).
 
@@ -377,7 +378,7 @@ function McpSection() {
     <div className="prefs-section">
       <h1 className="prefs-h2">MCP Server</h1>
       <p className="prefs-lead">
-        k8Board is a <a className="prefs-link" href="https://modelcontextprotocol.io" target="_blank" rel="noopener noreferrer">Model Context Protocol</a> server,
+        <Brand /> is a <a className="prefs-link" href="https://modelcontextprotocol.io" target="_blank" rel="noopener noreferrer">Model Context Protocol</a> server,
         so any MCP-compatible agent (Claude Code, Claude Desktop, Cursor…) can inspect and operate the
         <strong> currently selected cluster</strong>. The server runs while the app is open. Every request needs the MCP token below.
       </p>
@@ -386,7 +387,7 @@ function McpSection() {
 
       {info && (
         <>
-          <Field label="MCP token" hint="A token just for AI agents, sent as a Bearer token. It can't open terminals or change k8Board settings, and it stays the same across restarts. Masked by default — reveal or copy it into your client config.">
+          <Field label="MCP token" hint="A token just for AI agents, sent as a Bearer token. It can't open terminals or change K8Board settings, and it stays the same across restarts. Masked by default — reveal or copy it into your client config.">
             <div className="prefs-inline">
               <code className="prefs-code" aria-label={reveal ? `Token ${token}` : 'Token hidden'}>{shownToken}</code>
               <Button variant="secondary" size="sm" icon={reveal ? 'eyeOff' : 'eye'} aria-pressed={reveal} onClick={() => setReveal((r) => !r)}>{reveal ? 'Hide' : 'Reveal'}</Button>
@@ -473,7 +474,7 @@ function AboutSection() {
   return (
     <div className="prefs-section">
       <h1 className="prefs-h2">About</h1>
-      <Field label="k8Board">{version ? <span className="prefs-muted">Version {version}</span> : null}</Field>
+      <Field label={<Brand />}>{version ? <span className="prefs-muted">Version {version}</span> : null}</Field>
       <p className="prefs-lead">A native Kubernetes management app — cluster overview, resources, topology, ArgoCD, one-click AKS/EKS, terminals and bring-your-own AI agents.</p>
     </div>
   );

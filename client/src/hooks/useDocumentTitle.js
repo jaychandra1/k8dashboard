@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
 
-const BASE = 'k8Board';
+const BASE = 'K8Board';
 
-/** Sets document.title to "<title> · k8Board" while mounted; restores on unmount. */
+/** Sets document.title to "<title> · K8Board" while mounted; restores on unmount. */
 export default function useDocumentTitle(title, { suffix = true } = {}) {
   useEffect(() => {
     if (typeof document === 'undefined') return undefined;

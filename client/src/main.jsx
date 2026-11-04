@@ -12,7 +12,7 @@ bootstrapTokenFromHash();
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <ErrorBoundary title="k8Board hit an unexpected error">
+    <ErrorBoundary title="K8Board hit an unexpected error">
       <ToastProvider>
         <App />
       </ToastProvider>

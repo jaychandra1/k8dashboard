@@ -64,7 +64,7 @@ describe('App routing', () => {
     expect(screen.getByRole('banner')).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Cluster' })).toBeInTheDocument());
     expect(screen.queryByTestId('overview')).toBeNull();
-    expect(document.title).toMatch(/^Cluster · test-cluster — k8Board$/);
+    expect(document.title).toMatch(/^Cluster · test-cluster — K8Board$/);
     // The cluster switcher and, right beside it, the Back/Forward arrows open the
     // top bar (its `lead` slot); the sidebar holds neither.
     const nav = screen.getByRole('navigation', { name: 'Primary' });
@@ -88,7 +88,7 @@ describe('App routing', () => {
     expect(window.location.hash).toBe('#/pod');
     await waitFor(() => expect(screen.getByTestId('rv')).toHaveAttribute('data-type', 'pod'));
     expect(screen.getByRole('link', { name: 'Pods' })).toHaveAttribute('aria-current', 'page');
-    expect(document.title).toMatch(/^Pods · all namespaces · test-cluster — k8Board$/);
+    expect(document.title).toMatch(/^Pods · all namespaces · test-cluster — K8Board$/);
 
     // Back arrow in the top bar → previous view.
     await user.click(screen.getByRole('button', { name: 'Back' }));
@@ -102,7 +102,7 @@ describe('App routing', () => {
     window.location.hash = '#/overview';
     renderApp();
     await waitFor(() => expect(screen.getByTestId('overview')).toHaveAttribute('data-pods', '2'));
-    expect(document.title).toMatch(/^Overview · all namespaces · test-cluster — k8Board$/);
+    expect(document.title).toMatch(/^Overview · all namespaces · test-cluster — K8Board$/);
   });
 
   it('switching cluster from the sidebar menu lands on the Cluster overview behind the branded loading screen', async () => {
@@ -155,7 +155,7 @@ describe('App routing', () => {
     renderApp();
     await waitFor(() => expect(screen.getByTestId('rv')).toHaveAttribute('data-selected', 'web-1'));
     expect(screen.getByTestId('rv')).toHaveAttribute('data-count', '1');
-    expect(document.title).toMatch(/^Pods · default · test-cluster — k8Board$/);
+    expect(document.title).toMatch(/^Pods · default · test-cluster — K8Board$/);
     // Partial results from the backend surface as a non-blocking toast.
     window.location.hash = '#/pod';
     await settle();

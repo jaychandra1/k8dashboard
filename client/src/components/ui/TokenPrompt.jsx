@@ -4,6 +4,7 @@ import Button from './Button';
 import Icon from '../Icons';
 import { getJson, setToken, getToken, clearToken, onUnauthorized, resetUnauthorized, errorMessage } from '../../lib/api';
 
+import Brand from './Brand';
 /**
  * Shown when no token exists at boot or any request returns 401. Verifies the
  * pasted token against GET /api/config/status, stores it, then calls onSuccess.
@@ -61,7 +62,7 @@ export default function TokenPrompt({ open: controlledOpen, onSuccess, onClose, 
       showClose={!!onClose}
       closeOnBackdrop={false}
       closeOnEscape={!!onClose}
-      title={reason === 'rejected' ? 'Session token rejected' : 'Connect to k8Board'}
+      title={reason === 'rejected' ? 'Session token rejected' : <>Connect to <Brand /></>}
       icon="shield"
       size="sm"
       className="token-prompt"

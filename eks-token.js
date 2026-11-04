@@ -7,7 +7,7 @@
 // aws binary or a local credential chain beyond what the SDK reads itself.
 //
 // Usage: node eks-token.js --cluster <name> --region <region> [--profile <p>]
-//   (packaged desktop app: `k8Board --token-helper eks --cluster …`, which
+//   (packaged desktop app: `K8Board --token-helper eks --cluster …`, which
 //   electron/main.cjs routes to run() below)
 // Credentials come from --profile (SDK fromNodeProviderChain honours ~/.aws and
 // assume-role) or, if no profile, the ambient AWS_* environment variables.

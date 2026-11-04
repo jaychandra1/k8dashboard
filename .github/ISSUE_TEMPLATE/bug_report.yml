@@ -9,7 +9,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: k8Board version
+      label: K8Board version
       description: Preferences → About, or `GET /api/version`.
       placeholder: 1.2.0
     validations:

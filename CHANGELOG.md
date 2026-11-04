@@ -7,7 +7,8 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
-- **KubePilot is now k8Board, with a new icon.** The new name appears in:
+- **Clearer sidebar sections.** The sidebar now reads **Overview** (Dashboard, Nodes, Namespaces, Topology), **Resources** (Workloads, Network, Storage, Config), **Operations** (Events, Helm, Access Control) and **Integrations** (Argo CD, Security Center). The "Cluster" item is now **Dashboard**, in the sidebar and the command palette; its URL (`#/cluster`), icon and page are unchanged. Labels live in `client/src/lib/kinds.js` (`NAV_HEADINGS`, `navLabel`).
+- **KubePilot is now K8Board, with a new icon.** In the app and on the website the name is shown as a wordmark: "K", a small "8", "Board" (`client/src/components/ui/Brand.jsx`). It still reads and copies as "K8Board"; plain text (window titles, messages, files) uses "K8Board". The new name appears in:
   - the app, its window and menus;
   - the installers, Start menu and Dock;
   - the MCP setup snippets (`claude mcp add … k8board`);

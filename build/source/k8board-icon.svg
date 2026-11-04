@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <!-- k8Board app icon: a glass tile with a glowing cluster of cubes (a node
+  <!-- K8Board app icon: a glass tile with a glowing cluster of cubes (a node
        and its workloads) on an orbit. Master artwork; the small sizes use
        k8board-icon-small.svg. -->
   <defs>

@@ -1,5 +1,5 @@
-// Host-level hardening: k8Board's own secrets never reach the processes it
-// starts, terminals that run on the k8Board host are desktop-only, the AI
+// Host-level hardening: K8Board's own secrets never reach the processes it
+// starts, terminals that run on the K8Board host are desktop-only, the AI
 // agent terminal sees only the selected cluster, cluster-controlled prompt
 // text can't run as shell code, the token stays out of production logs, and
 // WebSocket frames are size-capped.
@@ -48,7 +48,7 @@ function openWs(port, query) {
 }
 
 describe('child process environment', () => {
-  test("childEnv drops k8Board's secrets (any case) and keeps everything else", () => {
+  test("childEnv drops K8Board's secrets (any case) and keeps everything else", () => {
     const env = childEnv({
       KUBEPILOT_TOKEN: 't', kubepilot_token: 't', K8DASHBOARD_TOKEN: 't', K8SIGHT_TOKEN: 't',
       KUBEPILOT_SECRET_KEY: 'k', KUBEPILOT_MCP_TOKEN: 'm', MCP_API_TOKEN: 'm', LLM_API_KEY: 'l',
@@ -179,7 +179,7 @@ process.stdout.write('AG' + 'ENT:' + JSON.stringify({
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  test('pinned to the selected cluster, no k8Board token, prompt passed as inert text; oversized frames refused', async () => {
+  test('pinned to the selected cluster, no K8Board token, prompt passed as inert text; oversized frames refused', async () => {
     const prompt = 'why is it "Degraded"? $(echo pwned) %PATH% & echo x';
     const r = await openWs(srv.port, `agent=opencode&prompt=${encodeURIComponent(prompt)}`);
     assert.equal(r.status, 101, JSON.stringify(r));
@@ -195,7 +195,7 @@ process.stdout.write('AG' + 'ENT:' + JSON.stringify({
     assert.equal(seen.context, 'dev');
     assert.equal(seen.dev, true);
     assert.equal(seen.prod, false, 'the agent must not see other clusters');
-    assert.equal(seen.token, false, 'the agent must not see the k8Board token');
+    assert.equal(seen.token, false, 'the agent must not see the K8Board token');
     assert.equal(seen.args.length, 1, JSON.stringify(seen.args));
     if (isWin) assert.equal(seen.args[0], 'why is it  Degraded ?  (echo pwned)  PATH    echo x');
     else assert.equal(seen.args[0], prompt);

@@ -12,7 +12,7 @@
 // azure-auth.json, instead of az's MSAL cache.
 //
 // Usage: node azure-token.js --server-id <aad-server-app-id> [--tenant <tenant>]
-//   (packaged desktop app: `k8Board --token-helper azure --server-id …`,
+//   (packaged desktop app: `K8Board --token-helper azure --server-id …`,
 //   which electron/main.cjs routes to run() below)
 import fs from 'fs';
 import { pathToFileURL } from 'url';
@@ -49,12 +49,12 @@ export function saveRefreshToken(store, refreshToken) {
 export function readStoredRefreshToken() {
   let store;
   try { store = JSON.parse(fs.readFileSync(AUTH_FILE, 'utf-8')); }
-  catch { throw new Error('Not signed in to Azure — open k8Board and sign in to Azure.'); }
+  catch { throw new Error('Not signed in to Azure — open K8Board and sign in to Azure.'); }
   const refreshToken = unseal(store?.refreshToken, PURPOSE.azureRefreshToken);
   if (!refreshToken) {
     throw new Error(isSealed(store?.refreshToken)
-      ? 'The saved Azure sign-in can\'t be opened on this machine or account — sign in to Azure in k8Board again.'
-      : 'No Azure session — sign in to Azure in k8Board.');
+      ? 'The saved Azure sign-in can\'t be opened on this machine or account — sign in to Azure in K8Board again.'
+      : 'No Azure session — sign in to Azure in K8Board.');
   }
   return { store, refreshToken };
 }

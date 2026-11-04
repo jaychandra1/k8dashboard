@@ -16,7 +16,7 @@ const { spawn } = require('child_process');
 const { pathToFileURL } = require('url');
 
 const MARKER = 'pending-install.json';
-const log = (...a) => console.log('[k8Board] update:', ...a);
+const log = (...a) => console.log('[K8Board] update:', ...a);
 
 /**
  * Download directory, in the OS cache location (as electron-updater uses):
@@ -115,7 +115,7 @@ async function createUpdateHost({
     if (typeof file !== 'string' || !insideDir(file))
       throw new HostError(
         'install_failed',
-        'The update installer is not where k8Board downloaded it, so it was not run.'
+        'The update installer is not where K8Board downloaded it, so it was not run.'
       );
     let st;
     try {
@@ -131,7 +131,7 @@ async function createUpdateHost({
       fs.rmSync(file, { force: true });
       throw new HostError(
         'verification_failed',
-        'The downloaded k8Board update could not be verified and will not be installed.'
+        'The downloaded K8Board update could not be verified and will not be installed.'
       );
     }
   }
@@ -150,7 +150,7 @@ async function createUpdateHost({
     if (p.kind !== install.kind)
       throw new HostError(
         'install_failed',
-        'The downloaded update is for a different kind of k8Board installation.'
+        'The downloaded update is for a different kind of K8Board installation.'
       );
     await checkFile(p);
 
@@ -162,7 +162,7 @@ async function createUpdateHost({
           version: p.version,
           args: lib.nsisArgs({ relaunch: false }),
         };
-        log(`v${p.version} will install when k8Board quits`);
+        log(`v${p.version} will install when K8Board quits`);
         return { scheduled: true, dryRun };
       }
       if (dryRun) {
@@ -179,7 +179,7 @@ async function createUpdateHost({
         throw err;
       }
       launched = true;
-      log(`installer for v${p.version} started; quitting so it can replace k8Board`);
+      log(`installer for v${p.version} started; quitting so it can replace K8Board`);
       setTimeout(() => app.quit(), 300); // let the reply reach the backend first
       return { restarting: true };
     }
@@ -250,7 +250,7 @@ async function createUpdateHost({
       }
     },
 
-    /** Windows "Later": start the installer (no relaunch) as k8Board quits. */
+    /** Windows "Later": start the installer (no relaunch) as K8Board quits. */
     onWillQuit() {
       if (!scheduled || launched) return;
       launched = true;

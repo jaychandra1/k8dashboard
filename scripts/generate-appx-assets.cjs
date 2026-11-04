@@ -1,6 +1,6 @@
 // Generates the Microsoft Store (AppX/MSIX) logo assets in build/appx/ from
 // build/icon.png — the same artwork as the Windows .exe icon — so the Store
-// listing, Start menu and taskbar show k8Board's own icon instead of
+// listing, Start menu and taskbar show K8Board's own icon instead of
 // electron-builder's placeholders. Run after changing the icon:
 //
 //   npx electron scripts/generate-appx-assets.cjs

@@ -1,4 +1,4 @@
-// Generates every k8Board icon from the two SVG masters in build/source/:
+// Generates every K8Board icon from the two SVG masters in build/source/:
 //   k8board-icon.svg        the full artwork (64 px and up)
 //   k8board-icon-small.svg  the simplified mark (16–48 px: taskbar, tray, tabs)
 //
@@ -77,7 +77,14 @@ app.whenReady().then(async () => {
     halo.addColorStop(0, 'rgba(59,130,246,0.35)'); halo.addColorStop(1, 'rgba(59,130,246,0)');
     g.fillStyle = halo; g.fillRect(0, 0, 1200, 630);
     g.drawImage(img, 110, 95, 440, 440);
-    g.fillStyle = '#f5f7fb'; g.font = '700 96px "Segoe UI", system-ui, sans-serif'; g.fillText('k8Board', 600, 300);
+    // The wordmark: "K", a small "8" on the baseline, "Board" (as in the app).
+    const big = '700 96px "Segoe UI", system-ui, sans-serif';
+    const small = '700 63px "Segoe UI", system-ui, sans-serif';
+    g.fillStyle = '#f5f7fb';
+    let x = 600;
+    g.font = big; g.fillText('K', x, 300); x += g.measureText('K').width + 2;
+    g.font = small; g.fillText('8', x, 300); x += g.measureText('8').width + 3;
+    g.font = big; g.fillText('Board', x, 300);
     g.fillStyle = '#9aa7bd'; g.font = '400 34px "Segoe UI", system-ui, sans-serif';
     g.fillText('The Kubernetes desktop for', 604, 362); g.fillText('macOS, Windows and Linux', 604, 408);
   `));

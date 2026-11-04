@@ -1,9 +1,10 @@
 import React, { forwardRef, useCallback, useEffect, useMemo, useState } from 'react';
 import Icon from './Icons';
 import CustomResourceTree from './CustomResourceTree';
-import { NAV_GROUPS, byKey, typesInGroup } from '../lib/kinds';
+import { NAV_GROUPS, NAV_HEADINGS, byKey, typesInGroup } from '../lib/kinds';
 import { buildHash } from '../hooks/useHashRoute';
 
+import Brand from './ui/Brand';
 // Sub-views of the Argo CD / Security Center views (mirrored as sidebar items).
 export const ARGO_ITEMS = [
   { key: 'dashboard', label: 'Dashboard', icon: 'overview' },
@@ -94,7 +95,7 @@ const Navigation = forwardRef(function Navigation({
           onClick={(e) => go(e, t.key, params)}
         >
           <Icon name={t.icon} size={simple ? 16 : 15} className="nav-lead-icon" />
-          {t.label}
+          {t.navLabel || t.label}
         </a>
       </li>
     );
@@ -141,7 +142,7 @@ const Navigation = forwardRef(function Navigation({
             <img className="nav-brand-img" src="/logo-mark.png" alt="" width="30" height="30" decoding="async" />
           </div>
           <div className="nav-brand-text">
-            <span className="nav-brand-title">k8Board</span>
+            <span className="nav-brand-title"><Brand /></span>
             {typeof __APP_VERSION__ !== 'undefined' && (
               <span className="nav-brand-sub">
                 <span className="nav-brand-version">v{__APP_VERSION__}</span>
@@ -161,18 +162,20 @@ const Navigation = forwardRef(function Navigation({
       </div>
 
       <div className="nav-sections">
+        <div className="nav-group-label" aria-hidden="true">{NAV_HEADINGS.overview}</div>
         <ul className="nav-list">
           {groups.cluster.map((t) => renderLink(t, { simple: true }))}
         </ul>
 
-        <div className="nav-group-label" aria-hidden="true">Workloads</div>
+        <div className="nav-group-label" aria-hidden="true">{NAV_HEADINGS.resources}</div>
         {groups.collapsible.map((g) => renderSection(g.key, g.label, g.items.map((t) => renderLink(t))))}
 
-        <div className="nav-group-label" aria-hidden="true">Cluster</div>
+        <div className="nav-group-label" aria-hidden="true">{NAV_HEADINGS.operations}</div>
         <ul className="nav-list">
           {groups.other.map((t) => renderLink(t, { simple: true }))}
         </ul>
 
+        <div className="nav-group-label" aria-hidden="true">{NAV_HEADINGS.integrations}</div>
         {argocdInstalled && renderSection('argocd', 'Argo CD', subItems('argocd', ARGO_ITEMS), {
           icon: 'argocd',
           extra: (

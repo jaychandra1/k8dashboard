@@ -4,12 +4,13 @@ import Button from './ui/Button';
 import { getJson, postJson, errorMessage } from '../lib/api';
 import { redactSensitive } from '../lib/redact';
 
+import Brand from './ui/Brand';
 // AWS IAM Identity Center sign-in, used by the "AWS session expired" dialog
 // and the AWS add-cluster wizard. The server (lib/aws-sso.mjs) runs the flow:
 //   browser (desktop app) — AWS's sign-in page opens in the system browser and
-//     returns to k8Board through a one-time 127.0.0.1 redirect; nothing to type.
+//     returns to K8Board through a one-time 127.0.0.1 redirect; nothing to type.
 //   device code — the fallback ("Use a sign-in code instead"), and the only
-//     option when k8Board runs on a server.
+//     option when K8Board runs on a server.
 // A finished sign-in is stored as a refreshable AWS session, so it renews on
 // its own until the Identity Center session ends.
 
@@ -211,7 +212,7 @@ export function SsoSignInPanel({
         </div>
         <div className="sso-wait-text" role="status" aria-live="polite">
           <strong>Finish signing in in your browser</strong>
-          <span>Approve the request on your AWS access portal. k8Board reconnects on its own.</span>
+          <span>Approve the request on your AWS access portal. <Brand /> reconnects on its own.</span>
           {state.expiresAt && <Countdown expiresAt={state.expiresAt} prefix="Waiting · expires in" />}
         </div>
         <div className="sso-actions">

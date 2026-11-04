@@ -237,7 +237,7 @@ app.use('/api', (req, res, next) => {
 });
 
 // MCP write gate: requests made with the MCP token (or carrying
-// `X-k8Board-Source: mcp`) are refused on every mutating route while the UI
+// `X-K8Board-Source: mcp`) are refused on every mutating route while the UI
 // toggle is off — see isMcpSource() in lib/paths.mjs.
 const mcpWriteGate = (req, res, next) => {
   if (isMcpSource(req) && !mcpAllowWrite) {
@@ -889,7 +889,7 @@ function nativizeAksExec(kcYaml) {
     const getArg = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
     const serverId = getArg('--server-id') || AKS_AAD_SERVER_ID;
     const tenant = getArg('--tenant-id') || getArg('--tenant') || azure.getTenant() || 'organizations';
-    // Packaged app: `k8Board --token-helper azure …`; source/Docker:
+    // Packaged app: `K8Board --token-helper azure …`; source/Docker:
     // `node azure-token.js …` (lib/paths.mjs execEntry decides).
     const helper = execEntry('azure', ['--server-id', serverId, '--tenant', tenant]);
     u.user.exec = {
@@ -1248,7 +1248,7 @@ const TEMP_KUBECONFIG_TTL_MS = 12 * 60 * 60 * 1000;
 const scheduleTempUnlink = (p) => setTimeout(() => fs.unlink(p, () => {}), TEMP_KUBECONFIG_TTL_MS).unref();
 // Terminals that run on this server's own host (Helm, AI agents) are for the
 // desktop app, where that host is the user's machine (lib/helm-shell.mjs).
-const LOCAL_SHELL_DISABLED_MESSAGE = 'This terminal runs on the k8Board host, so it is only available in the k8Board desktop app (set KUBEPILOT_LOCAL_SHELL=1 to allow it on a server).';
+const LOCAL_SHELL_DISABLED_MESSAGE = 'This terminal runs on the K8Board host, so it is only available in the K8Board desktop app (set KUBEPILOT_LOCAL_SHELL=1 to allow it on a server).';
 app.get('/api/ai-agents', async (req, res) => {
   const agents = await Promise.all(AI_AGENTS.map(async (a) => ({ id: a.id, name: a.name, command: a.command, desc: a.desc, install: a.install, installed: await commandExists(a.command) })));
   res.json({ agents });
@@ -4307,7 +4307,7 @@ const podShellError = (err) => {
 };
 
 // KUBE* covers KUBECACHEDIR, KUBECTL_* and kubelogin settings, but not
-// KUBEPILOT_* (the API token) — childEnv() drops k8Board's secrets as well.
+// KUBEPILOT_* (the API token) — childEnv() drops K8Board's secrets as well.
 const ptyEnv = () => {
   const env = {};
   for (const [k, v] of Object.entries(childEnv())) {
@@ -4456,7 +4456,7 @@ wss.on('connection', async (browserWs, req) => {
     // app's current context (like the Helm terminal), then launch the chosen
     // agent CLI. Only a known agent id is accepted, and only where local
     // shells are allowed (both checked at upgrade). The shell gets the user's
-    // environment — agent CLIs need their own API keys — minus k8Board's
+    // environment — agent CLIs need their own API keys — minus K8Board's
     // secrets. ----
     const info = AI_AGENTS.find((a) => a.id === agentId);
     if (!info) { send('\r\n\x1b[31mUnknown AI agent.\x1b[0m\r\n'); browserWs.close(); return; }
@@ -4518,7 +4518,7 @@ wss.on('connection', async (browserWs, req) => {
       }
     } else {
       // No kubectl on this machine: the same session over the Kubernetes API.
-      send('\x1b[90mkubectl isn’t installed — connecting through k8Board’s built-in Kubernetes client.\x1b[0m\r\n');
+      send('\x1b[90mkubectl isn’t installed — connecting through K8Board’s built-in Kubernetes client.\x1b[0m\r\n');
       try {
         term = await openPodShell(kubeConfig, { namespace, pod, container, command: shellCmd });
       } catch (err) {
@@ -4625,9 +4625,9 @@ server.listen(PORT, HOST, () => {
   // non-expiring credential; scripts/login-url.mjs prints it on demand.
   // KUBEPILOT_PRINT_LOGIN_URL=1 restores the old line.
   if (process.stdout.isTTY || process.env.NODE_ENV !== 'production' || envFlag('PRINT_LOGIN_URL')) {
-    log.raw(`k8Board listening on ${base}  —  open ${base}/#token=${getAuthToken()}`);
+    log.raw(`K8Board listening on ${base}  —  open ${base}/#token=${getAuthToken()}`);
   } else {
-    log.raw(`k8Board listening on ${base}  —  print the sign-in link with: node scripts/login-url.mjs (Docker: docker exec <container> node scripts/login-url.mjs --base <the URL you open>)`);
+    log.raw(`K8Board listening on ${base}  —  print the sign-in link with: node scripts/login-url.mjs (Docker: docker exec <container> node scripts/login-url.mjs --base <the URL you open>)`);
   }
   log.info('listening', { host: HOST, port: PORT, bound: HOST === '0.0.0.0' ? '0.0.0.0' : HOST });
 });

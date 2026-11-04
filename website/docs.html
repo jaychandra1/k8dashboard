@@ -7,20 +7,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
 <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
-<title>k8Board — Documentation</title>
-<meta name="description" content="k8Board documentation — connect your AWS EKS and Azure AKS clusters with no CLI required." />
+<title>K8Board — Documentation</title>
+<meta name="description" content="K8Board documentation — connect your AWS EKS and Azure AKS clusters with no CLI required." />
 <link rel="canonical" href="https://k8dashboard.in/docs" />
 <meta property="og:type" content="website" />
-<meta property="og:site_name" content="k8Board" />
+<meta property="og:site_name" content="K8Board" />
 <meta property="og:url" content="https://k8dashboard.in/docs" />
-<meta property="og:title" content="k8Board — Documentation" />
+<meta property="og:title" content="K8Board — Documentation" />
 <meta property="og:description" content="Connect your AWS EKS and Azure AKS clusters with no CLI required." />
 <meta property="og:image" content="https://k8dashboard.in/assets/og-image.png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
-<meta property="og:image:alt" content="k8Board — a beautiful native desktop UI for your Kubernetes clusters" />
+<meta property="og:image:alt" content="K8Board — a beautiful native desktop UI for your Kubernetes clusters" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="k8Board — Documentation" />
+<meta name="twitter:title" content="K8Board — Documentation" />
 <meta name="twitter:description" content="Connect your AWS EKS and Azure AKS clusters with no CLI required." />
 <meta name="twitter:image" content="https://k8dashboard.in/assets/og-image.png" />
 <link rel="icon" href="assets/icon.png" type="image/png" />
@@ -250,8 +250,8 @@
   <div class="wrap">
     <nav>
       <a class="brand" href="index.html">
-        <img class="logo" src="assets/icon.png" width="26" height="26" alt="k8Board logo" />
-        <span>k8Board<small>KUBERNETES DASHBOARD</small></span>
+        <img class="logo" src="assets/icon.png" width="26" height="26" alt="K8Board logo" />
+        <span><span class="brand-word" style="white-space:nowrap">K<span style="font-size:.66em">8</span>Board</span><small>KUBERNETES DASHBOARD</small></span>
       </a>
       <div class="nav-right">
         <div class="nav-links" id="navLinks">
@@ -259,7 +259,7 @@
           <a href="index.html#cloud">Cloud</a>
           <a href="docs.html" class="current">Docs</a>
           <a href="index.html#download">Download</a>
-          <a class="nav-cta" href="index.html#download">Get k8Board</a>
+          <a class="nav-cta" href="index.html#download">Get K8Board</a>
         </div>
         <button class="theme-btn" id="themeBtn" aria-label="Toggle light and dark theme">
           <svg aria-hidden="true" focusable="false" class="ic-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/></svg>
@@ -276,7 +276,7 @@
 <section class="docs-hero">
   <div class="wrap">
     <div class="eyebrow">Documentation</div>
-    <h1>k8Board docs</h1>
+    <h1>K8Board docs</h1>
     <p>A native Kubernetes UI for your clusters — installed in seconds, no CLI required. Everything you need to install it, connect your clusters, and get productive.</p>
   </div>
 </section>
@@ -288,7 +288,7 @@
     <nav>
       <a href="#overview" data-sect>Overview</a>
       <a href="#install" data-sect>Install</a>
-      <a href="#run" data-sect>Running k8Board</a>
+      <a href="#run" data-sect>Running K8Board</a>
     </nav>
     <div class="side-group">Connect clusters</div>
     <nav>
@@ -296,7 +296,7 @@
       <a href="#azure" data-sect>Azure AKS</a>
       <a href="#local" data-sect>Local &amp; other</a>
     </nav>
-    <div class="side-group">Using k8Board</div>
+    <div class="side-group">Using K8Board</div>
     <nav>
       <a href="#workloads" data-sect>Overview &amp; workloads</a>
       <a href="#topology" data-sect>Topology</a>
@@ -331,7 +331,7 @@
     <article id="overview">
       <h2>Overview</h2>
       <div class="tagline">A native desktop &amp; web UI for Kubernetes — no CLI required.</div>
-      <p><strong>k8Board</strong> is a fast Kubernetes management app: a native desktop build for <strong>macOS, Windows and Linux</strong>, plus a Docker image you can run anywhere. It reads your kubeconfig and gives you a live dashboard, resource browsing and editing, topology, logs, an in-pod terminal, ArgoCD, and one-click cloud onboarding — all without leaving the app.</p>
+      <p><strong>K8Board</strong> is a fast Kubernetes management app: a native desktop build for <strong>macOS, Windows and Linux</strong>, plus a Docker image you can run anywhere. It reads your kubeconfig and gives you a live dashboard, resource browsing and editing, topology, logs, an in-pod terminal, ArgoCD, and one-click cloud onboarding — all without leaving the app.</p>
       <h3>Highlights</h3>
       <ul>
         <li><strong>One-click cloud clusters</strong> — import AWS EKS and Azure AKS straight from your account, with <strong>no <code>aws</code>/<code>az</code> CLI required</strong>, at import <em>or</em> runtime.</li>
@@ -344,7 +344,7 @@
       </ul>
       <div class="callout tip">
         <span class="cico"><svg aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></span>
-        <p>New here? <a href="#install">Install k8Board</a>, then jump to your cloud: <a href="#aws">AWS</a> or <a href="#azure">Azure</a>. For local clusters (Docker Desktop, kind, minikube), see <a href="#local">Local &amp; other</a>.</p>
+        <p>New here? <a href="#install">Install K8Board</a>, then jump to your cloud: <a href="#aws">AWS</a> or <a href="#azure">Azure</a>. For local clusters (Docker Desktop, kind, minikube), see <a href="#local">Local &amp; other</a>.</p>
       </div>
     </article>
 
@@ -362,7 +362,7 @@
       <p>Every API request needs a <strong>bearer token</strong>. The container generates one at first boot and keeps it out of its log; print the sign-in link with <code>docker exec &lt;container&gt; node scripts/login-url.mjs --base http://localhost:8080</code> (your published port, not 3001) and open it. Or pick the token yourself with <code>-e KUBEPILOT_TOKEN=&lt;secret&gt;</code>. Images are published for <code>linux/amd64</code> and <code>linux/arm64</code> with tags <code>latest</code>, <code>1.2</code> and <code>v1.2.0</code>.</p>
       <h3>From source</h3>
       <pre><code>git clone https://github.com/jaychandra1/KubePilot
-cd k8Board
+cd K8Board
 npm install &amp;&amp; (cd client &amp;&amp; npm install)
 npm run build
 npm start          # http://localhost:3001</code></pre>
@@ -371,7 +371,7 @@ npm start          # http://localhost:3001</code></pre>
 
     <!-- ============ Running ============ -->
     <article id="run">
-      <h2>Running k8Board</h2>
+      <h2>Running K8Board</h2>
       <div class="tagline">Desktop, single-port web server, or Docker.</div>
       <ul>
         <li><strong>Desktop app</strong> — launch it like any app; it runs the backend internally and serves the UI. Best for local clusters that listen on <code>127.0.0.1</code>.</li>
@@ -379,7 +379,7 @@ npm start          # http://localhost:3001</code></pre>
         <li><strong>Dev (hot reload)</strong> — <code>npm run dev</code> runs the API on 3001 and Vite on <strong>3000</strong> (which proxies <code>/api</code> and <code>/ws</code>).</li>
         <li><strong>Docker</strong> — see <a href="#install">Install</a>; the image bundles Node, <code>kubectl</code> and <code>kubelogin</code>.</li>
       </ul>
-      <p>k8Board reads the kubeconfig at <code>KUBECONFIG</code> or <code>~/.kube/config</code>, and you switch the active cluster from the context picker, the ⌘K palette, or a pinned rail. By default the backend binds <strong>loopback only</strong> — see <a href="#security">Security</a>.</p>
+      <p>K8Board reads the kubeconfig at <code>KUBECONFIG</code> or <code>~/.kube/config</code>, and you switch the active cluster from the context picker, the ⌘K palette, or a pinned rail. By default the backend binds <strong>loopback only</strong> — see <a href="#security">Security</a>.</p>
     </article>
 
     <!-- ============ AWS EKS ============ -->
@@ -392,12 +392,12 @@ npm start          # http://localhost:3001</code></pre>
       </div>
       <div class="tagline">Connect your Amazon EKS clusters — no <code>aws</code> CLI required.</div>
 
-      <p>k8Board imports <strong>Amazon EKS</strong> clusters with <strong>no <code>aws</code> CLI required</strong>. It's built on the AWS SDK, so sign-in, discovery, and even auth-token generation run in-process. There is <strong>nothing for a maintainer to register</strong> — you sign in with your own AWS identity.</p>
+      <p>K8Board imports <strong>Amazon EKS</strong> clusters with <strong>no <code>aws</code> CLI required</strong>. It's built on the AWS SDK, so sign-in, discovery, and even auth-token generation run in-process. There is <strong>nothing for a maintainer to register</strong> — you sign in with your own AWS identity.</p>
 
       <div class="method-grid">
         <div class="method">
           <h4>AWS SSO (IAM Identity Center) <span class="rec">Recommended</span></h4>
-          <p>Enter your <strong>start URL</strong> (e.g. <code>https://my-org.awsapps.com/start</code>) or pick an existing profile; k8Board runs the device-authorization flow, then lets you choose an <strong>account + role</strong>.</p>
+          <p>Enter your <strong>start URL</strong> (e.g. <code>https://my-org.awsapps.com/start</code>) or pick an existing profile; K8Board runs the device-authorization flow, then lets you choose an <strong>account + role</strong>.</p>
         </div>
         <div class="method">
           <h4>Access keys (IAM user)</h4>
@@ -409,7 +409,7 @@ npm start          # http://localhost:3001</code></pre>
         </div>
       </div>
 
-      <p>k8Board then discovers <strong>every EKS cluster across your accounts and regions</strong> and writes the ones you pick into your kubeconfig. Cluster auth is generated natively (the bundled <code>eks-token.js</code> signs an STS request), so <strong>using</strong> the clusters needs no <code>aws</code> binary either.</p>
+      <p>K8Board then discovers <strong>every EKS cluster across your accounts and regions</strong> and writes the ones you pick into your kubeconfig. Cluster auth is generated natively (the bundled <code>eks-token.js</code> signs an STS request), so <strong>using</strong> the clusters needs no <code>aws</code> binary either.</p>
 
       <h3>Use it</h3>
       <p><strong>Preferences → Cloud Integrations → Add AWS clusters</strong>, or the <strong>Add AWS</strong> button in the context dropdown.</p>
@@ -421,7 +421,7 @@ npm start          # http://localhost:3001</code></pre>
             <li><strong>IAM role</strong> → enter the role ARN + source profile (open <em>Advanced options</em>).</li>
           </ul>
         </li>
-        <li>k8Board lists your EKS clusters across regions.</li>
+        <li>K8Board lists your EKS clusters across regions.</li>
         <li>Select clusters → <strong>Add</strong> → they're written to your kubeconfig.</li>
       </ol>
       <p>An <strong>Add AWS</strong> option also appears on the "couldn't connect" screen for quick re-auth.</p>
@@ -472,7 +472,7 @@ npm start          # http://localhost:3001</code></pre>
       </div>
       <div class="tagline">Connect your Azure AKS clusters — no <code>az</code> CLI required.</div>
 
-      <p>k8Board imports <strong>Azure AKS</strong> clusters with <strong>no <code>az</code> CLI required</strong> (though you can use it if you prefer). There is <strong>nothing for a maintainer to register</strong> — the browser flow reuses the Azure CLI's well-known <strong>public</strong> client id, so it works with no setup.</p>
+      <p>K8Board imports <strong>Azure AKS</strong> clusters with <strong>no <code>az</code> CLI required</strong> (though you can use it if you prefer). There is <strong>nothing for a maintainer to register</strong> — the browser flow reuses the Azure CLI's well-known <strong>public</strong> client id, so it works with no setup.</p>
 
       <div class="method-grid">
         <div class="method">
@@ -481,18 +481,18 @@ npm start          # http://localhost:3001</code></pre>
         </div>
         <div class="method">
           <h4>Azure CLI (<code>az</code>)</h4>
-          <p>If <code>az</code> is installed and you're already logged in (<code>az login</code>), k8Board can drive it instead. Useful if the browser flow is blocked.</p>
+          <p>If <code>az</code> is installed and you're already logged in (<code>az login</code>), K8Board can drive it instead. Useful if the browser flow is blocked.</p>
         </div>
       </div>
 
-      <p>Either way k8Board discovers <strong>every AKS cluster you can access across all subscriptions</strong> and writes the ones you pick into your kubeconfig.</p>
+      <p>Either way K8Board discovers <strong>every AKS cluster you can access across all subscriptions</strong> and writes the ones you pick into your kubeconfig.</p>
 
       <h3>Use it</h3>
       <p><strong>Preferences → Cloud Integrations → Add Azure clusters</strong>, or the <strong>Add Azure</strong> button in the context dropdown.</p>
       <ol>
         <li>Click <strong>Sign in with browser</strong> (or <em>Use the Azure CLI</em> if you prefer).</li>
         <li>Pick your account and complete sign-in in the browser.</li>
-        <li>k8Board lists your AKS clusters across all subscriptions.</li>
+        <li>K8Board lists your AKS clusters across all subscriptions.</li>
         <li>Select clusters → <strong>Add</strong> → they're written to your kubeconfig and appear in the context switcher.</li>
       </ol>
       <p>An <strong>Add Azure</strong> option also appears on the "couldn't connect" screen, so an expired Azure session is one click from re-auth.</p>
@@ -507,7 +507,7 @@ npm start          # http://localhost:3001</code></pre>
       <p>Then, in-cluster, your Kubernetes RBAC still applies as usual.</p>
 
       <h3>AAD-integrated clusters</h3>
-      <p>If the AKS cluster uses <strong>Azure AD integration</strong> (no local accounts), the user kubeconfig it hands back authenticates via an exec plugin (<code>kubelogin</code>). k8Board merges that entry; <strong>using</strong> such a cluster then needs <code>kubelogin</code> on your <code>PATH</code> (or pick <strong>admin credentials</strong>, which use certs and need no plugin). Clusters with local accounts enabled work with no extra tooling.</p>
+      <p>If the AKS cluster uses <strong>Azure AD integration</strong> (no local accounts), the user kubeconfig it hands back authenticates via an exec plugin (<code>kubelogin</code>). K8Board merges that entry; <strong>using</strong> such a cluster then needs <code>kubelogin</code> on your <code>PATH</code> (or pick <strong>admin credentials</strong>, which use certs and need no plugin). Clusters with local accounts enabled work with no extra tooling.</p>
 
       <h3>How auth works</h3>
       <ul>
@@ -536,11 +536,11 @@ npm start          # http://localhost:3001</code></pre>
       </div>
       <div class="tagline">Connect your GKE clusters — browser sign-in or a service-account key.</div>
 
-      <p>k8Board can import <strong>Google GKE</strong> clusters two ways:</p>
+      <p>K8Board can import <strong>Google GKE</strong> clusters two ways:</p>
       <div class="method-grid">
         <div class="method">
           <h4>Browser sign-in <span class="rec">Recommended</span></h4>
-          <p>Click <em>Sign in with browser</em>, authenticate with your own Google account, and k8Board stores a refresh token and mints access tokens for the kubeconfig. <strong>No service-account key, no <code>gcloud</code>.</strong> This is the Azure/AWS-style experience.</p>
+          <p>Click <em>Sign in with browser</em>, authenticate with your own Google account, and K8Board stores a refresh token and mints access tokens for the kubeconfig. <strong>No service-account key, no <code>gcloud</code>.</strong> This is the Azure/AWS-style experience.</p>
         </div>
         <div class="method">
           <h4>Service-account key</h4>
@@ -553,7 +553,7 @@ npm start          # http://localhost:3001</code></pre>
       <ol>
         <li>Click <strong>Sign in with browser</strong> → your browser opens Google sign-in. (Or paste a service-account key JSON.)</li>
         <li>Pick your account and approve.</li>
-        <li>k8Board discovers your GKE clusters across all accessible projects.</li>
+        <li>K8Board discovers your GKE clusters across all accessible projects.</li>
         <li>Select clusters → <strong>Add</strong> → they're written to your kubeconfig.</li>
       </ol>
       <p>Using the clusters needs no <code>gcloud</code>/<code>gke-gcloud-auth-plugin</code>: the bundled <code>gke-token.js</code> mints a fresh access token from the stored refresh token whenever <code>kubectl</code> / the app authenticates.</p>
@@ -568,7 +568,7 @@ npm start          # http://localhost:3001</code></pre>
       <h3>How auth works</h3>
       <ul>
         <li>Sign-in uses <strong>OAuth 2.0 authorization code + PKCE</strong> with a <strong>loopback</strong> redirect — Google's recommended flow for installed apps.</li>
-        <li>k8Board stores credentials at <code>~/.config/kubepilot/gke/credentials.json</code> (mode <code>600</code>): browser sign-in → <code>{ type: 'authorized_user', … }</code>; service-account key → the key JSON.</li>
+        <li>K8Board stores credentials at <code>~/.config/kubepilot/gke/credentials.json</code> (mode <code>600</code>): browser sign-in → <code>{ type: 'authorized_user', … }</code>; service-account key → the key JSON.</li>
         <li>The kubeconfig <code>user</code> runs an <code>exec</code> credential plugin: <code>gke-token.js --credentials &lt;path&gt;</code>, which prints an <code>ExecCredential</code> with a short-lived access token. Clients refresh automatically.</li>
         <li>Users only ever get the access <strong>their own Google IAM allows</strong> — the shipped OAuth client is just the app's identity, not an authorization grant.</li>
       </ul>
@@ -587,7 +587,7 @@ npm start          # http://localhost:3001</code></pre>
     <article id="local">
       <h2>Local &amp; other clusters</h2>
       <div class="tagline">Any kubeconfig context works — Docker Desktop, kind, minikube, on-prem.</div>
-      <p>k8Board uses your existing kubeconfig, so <strong>any context already in <code>~/.kube/config</code> just shows up</strong> — no import step. Switch between them from the context picker or the ⌘K palette. Clusters that authenticate with a client certificate or a static token need no extra tooling; ones that use an exec credential plugin (OIDC/<code>kubelogin</code>, cloud CLIs) need that helper on your <code>PATH</code>.</p>
+      <p>K8Board uses your existing kubeconfig, so <strong>any context already in <code>~/.kube/config</code> just shows up</strong> — no import step. Switch between them from the context picker or the ⌘K palette. Clusters that authenticate with a client certificate or a static token need no extra tooling; ones that use an exec credential plugin (OIDC/<code>kubelogin</code>, cloud CLIs) need that helper on your <code>PATH</code>.</p>
       <h3>Local clusters in Docker</h3>
       <p>Local clusters (Docker Desktop, kind, minikube) listen on <code>127.0.0.1</code>, which <em>inside a container</em> points at the container itself — so the config loads but the connection fails. Either use the <strong>native desktop app</strong> / <code>npm start</code> (simplest), or reach the host from the container:</p>
       <pre><code>docker run --rm -p 127.0.0.1:8080:3001 \
@@ -602,11 +602,11 @@ npm start          # http://localhost:3001</code></pre>
     <!-- ============ GKE OAuth setup (self-builders) — hidden for now ============ -->
     <article id="gke-setup" hidden>
       <h2>GKE browser sign-in — one-time OAuth setup</h2>
-      <div class="tagline">For maintainers building their own k8Board — enable browser sign-in.</div>
+      <div class="tagline">For maintainers building their own K8Board — enable browser sign-in.</div>
 
       <div class="callout tip">
         <span class="cico"><svg aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></span>
-        <p>Most people can skip this. It's only needed if you build k8Board yourself and want <strong>browser sign-in</strong> on by default. The service-account-key option needs none of this.</p>
+        <p>Most people can skip this. It's only needed if you build K8Board yourself and want <strong>browser sign-in</strong> on by default. The service-account-key option needs none of this.</p>
       </div>
 
       <p>Browser sign-in needs a Google <strong>OAuth "Desktop app" client</strong>. You register <strong>one</strong> client (in a GCP project you own) and ship it with the app — then <em>every</em> user just signs in. This is exactly how <code>gcloud</code> and other desktop tools work, and Google explicitly treats desktop-app client secrets as <strong>non-confidential</strong>, so it is safe to embed. Takes ~5 minutes, once per app.</p>
@@ -634,19 +634,19 @@ npm start          # http://localhost:3001</code></pre>
       <p><strong>APIs &amp; Services → Credentials → Create credentials → OAuth client ID</strong></p>
       <ul>
         <li><strong>Application type:</strong> <strong>Desktop app</strong></li>
-        <li>Name it (e.g. <code>k8Board desktop</code>)</li>
+        <li>Name it (e.g. <code>K8Board desktop</code>)</li>
         <li>Click <strong>Create</strong>, then copy the <strong>Client ID</strong> and <strong>Client secret</strong>.</li>
       </ul>
       <div class="callout tip">
         <span class="cico"><svg aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></span>
-        <p>Desktop-app clients use a loopback redirect (<code>http://127.0.0.1:&lt;random-port&gt;/callback</code>) that k8Board opens automatically — you don't configure redirect URIs.</p>
+        <p>Desktop-app clients use a loopback redirect (<code>http://127.0.0.1:&lt;random-port&gt;/callback</code>) that K8Board opens automatically — you don't configure redirect URIs.</p>
       </div>
 
-      <h3>5. Give it to k8Board at build time</h3>
+      <h3>5. Give it to K8Board at build time</h3>
       <p>Set the client id and secret as environment variables before building. The build step writes them into the bundled app; they are never committed to git.</p>
       <pre><code>export GOOGLE_CLIENT_ID='1234567890-abc.apps.googleusercontent.com'
 export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
-      <p>Restart k8Board after building, then use <strong>Preferences → Cloud Integrations → Add GKE clusters</strong> as described above.</p>
+      <p>Restart K8Board after building, then use <strong>Preferences → Cloud Integrations → Add GKE clusters</strong> as described above.</p>
     </article>
 
     <!-- ============ Overview & workloads ============ -->
@@ -675,7 +675,7 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
     <article id="argocd">
       <h2>ArgoCD</h2>
       <div class="tagline">A GitOps dashboard — auto-detected when ArgoCD is installed.</div>
-      <p>When the ArgoCD CRDs are present, k8Board surfaces a full <strong>GitOps dashboard</strong>: a fleet-health status bar, summary cards, a "Needs attention" panel, and recent activity — plus <strong>Applications, View, ApplicationSets, Projects</strong> and <strong>Settings → Repositories / Clusters</strong>, with an "Open Argo CD UI" link.</p>
+      <p>When the ArgoCD CRDs are present, K8Board surfaces a full <strong>GitOps dashboard</strong>: a fleet-health status bar, summary cards, a "Needs attention" panel, and recent activity — plus <strong>Applications, View, ApplicationSets, Projects</strong> and <strong>Settings → Repositories / Clusters</strong>, with an "Open Argo CD UI" link.</p>
       <h3>The View tab</h3>
       <p>A Topology-style, pan/zoom <strong>resource graph</strong>: pick a namespace + application to see the Application and all of its managed resources as an interactive tree (Deployment → ReplicaSet → Pod inferred), colour-coded by sync/health — one screen for tracking a single app.</p>
       <h3>Sync, refresh &amp; more</h3>
@@ -718,14 +718,14 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
     <article id="agents">
       <h2>Docked coding agents</h2>
       <div class="tagline">Run your installed CLI agent beside the pod terminal.</div>
-      <p>k8Board detects <strong>Claude Code, GitHub Copilot CLI, Gemini CLI, Codex and opencode</strong> on your <code>PATH</code> and opens the one you pick in a panel beside the pod terminal — with the app's current cluster context loaded, so the agent can operate on the cluster you're viewing. Choose your agent under <strong>Preferences → External Tools</strong> (or a custom command). "Ask AI" actions route to whichever agent you've selected.</p>
+      <p>K8Board detects <strong>Claude Code, GitHub Copilot CLI, Gemini CLI, Codex and opencode</strong> on your <code>PATH</code> and opens the one you pick in a panel beside the pod terminal — with the app's current cluster context loaded, so the agent can operate on the cluster you're viewing. Choose your agent under <strong>Preferences → External Tools</strong> (or a custom command). "Ask AI" actions route to whichever agent you've selected.</p>
     </article>
 
     <!-- ============ MCP ============ -->
     <article id="mcp">
       <h2>MCP server</h2>
       <div class="tagline">Let any MCP-compatible agent drive your connected cluster.</div>
-      <p>k8Board is also an <strong>MCP server</strong>: it exposes its Kubernetes capabilities as tools so any MCP client (Claude Code, Claude Desktop, Cursor, …) can operate the cluster it's connected to — same kubeconfig, same selected context. It's served over <strong>Streamable HTTP</strong> at <code>/mcp</code> and over <strong>stdio</strong>.</p>
+      <p>K8Board is also an <strong>MCP server</strong>: it exposes its Kubernetes capabilities as tools so any MCP client (Claude Code, Claude Desktop, Cursor, …) can operate the cluster it's connected to — same kubeconfig, same selected context. It's served over <strong>Streamable HTTP</strong> at <code>/mcp</code> and over <strong>stdio</strong>.</p>
       <p>Add it to Claude Code:</p>
       <pre><code>claude mcp add --transport http kubepilot http://localhost:3001/mcp \
   --header "Authorization: Bearer $(cat ~/.config/kubepilot/token)"</code></pre>
@@ -736,13 +736,13 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
     <!-- ============ Security ============ -->
     <article id="compare">
       <h2>How it compares</h2>
-      <div class="tagline">Where k8Board fits next to Rancher, Lens and k9s.</div>
-      <p>k8Board is a <strong>desktop UI for clusters you already have</strong> — closest in spirit to <strong>Lens</strong> and <strong>k9s</strong>, not to a management <em>platform</em> like <strong>Rancher</strong>. Rancher runs <em>inside</em> your clusters to provision and govern a whole fleet for a team; k8Board runs on your laptop, reads your kubeconfig, and needs nothing installed in-cluster.</p>
+      <div class="tagline">Where K8Board fits next to Rancher, Lens and k9s.</div>
+      <p>K8Board is a <strong>desktop UI for clusters you already have</strong> — closest in spirit to <strong>Lens</strong> and <strong>k9s</strong>, not to a management <em>platform</em> like <strong>Rancher</strong>. Rancher runs <em>inside</em> your clusters to provision and govern a whole fleet for a team; K8Board runs on your laptop, reads your kubeconfig, and needs nothing installed in-cluster.</p>
       <div class="cmp-wrap">
         <table class="cmp">
           <colgroup><col><col class="pick"><col><col></colgroup>
           <thead>
-            <tr><th></th><th class="pick" scope="col">k8Board</th><th scope="col">Rancher</th><th scope="col">Lens / k9s</th></tr>
+            <tr><th></th><th class="pick" scope="col">K8Board</th><th scope="col">Rancher</th><th scope="col">Lens / k9s</th></tr>
           </thead>
           <tbody>
             <tr><th scope="row">Category</th><td class="pickcol">Native desktop UI</td><td>Multi-cluster platform</td><td>Desktop / terminal UI</td></tr>
@@ -759,7 +759,7 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
       </div>
       <div class="callout tip">
         <span class="cico"><svg aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></span>
-        <p>Reach for <strong>Rancher</strong> to provision and govern a fleet of clusters for a team. Reach for <strong>k8Board</strong> as a fast local cockpit for clusters you already have — dashboards, logs, shell, topology, security scans and an AI assistant, with nothing to deploy. They coexist happily.</p>
+        <p>Reach for <strong>Rancher</strong> to provision and govern a fleet of clusters for a team. Reach for <strong>K8Board</strong> as a fast local cockpit for clusters you already have — dashboards, logs, shell, topology, security scans and an AI assistant, with nothing to deploy. They coexist happily.</p>
       </div>
     </article>
 
@@ -805,11 +805,11 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
       <h2>Troubleshooting</h2>
       <div class="tagline">Common connection issues.</div>
       <ul>
-        <li><strong>"Could not connect to the cluster"</strong> — the modal names the cause and offers a one-click fix. For an expired cloud sign-in, use the <strong>Sign in</strong> button (or the copyable command) and retry; k8Board auto-refreshes and reconnects the selected context when it can.</li>
+        <li><strong>"Could not connect to the cluster"</strong> — the modal names the cause and offers a one-click fix. For an expired cloud sign-in, use the <strong>Sign in</strong> button (or the copyable command) and retry; K8Board auto-refreshes and reconnects the selected context when it can.</li>
         <li><strong>EKS: imports but everything is <code>forbidden</code></strong> — your IAM principal isn't mapped to Kubernetes RBAC. Add an EKS access entry or an <code>aws-auth</code> mapping — see <a href="#aws">AWS EKS</a>.</li>
-        <li><strong>AKS: exec error after import</strong> — an AAD cluster needing <code>kubelogin</code>; clusters added <em>through k8Board's browser flow</em> need no <code>kubelogin</code>. See <a href="#azure">Azure AKS</a>.</li>
+        <li><strong>AKS: exec error after import</strong> — an AAD cluster needing <code>kubelogin</code>; clusters added <em>through K8Board's browser flow</em> need no <code>kubelogin</code>. See <a href="#azure">Azure AKS</a>.</li>
         <li><strong>Local cluster loads but won't connect (in Docker)</strong> — the API server is on <code>127.0.0.1</code>; reach the host or use the desktop app. See <a href="#local">Local &amp; other</a>.</li>
-        <li><strong>kubectl version-skew warning</strong> — that's your local <code>kubectl</code> vs the cluster, not k8Board. Install a kubectl within one minor of the cluster to silence it.</li>
+        <li><strong>kubectl version-skew warning</strong> — that's your local <code>kubectl</code> vs the cluster, not K8Board. Install a kubectl within one minor of the cluster to silence it.</li>
       </ul>
       <p>Still stuck? Open an issue on <a href="https://github.com/jaychandra1/KubePilot/issues" target="_blank" rel="noopener">GitHub</a>.</p>
     </article>
@@ -820,7 +820,7 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
       <div class="tagline">What's new in each version. Installers for every release are on the <a href="https://github.com/jaychandra1/KubePilot/releases" target="_blank" rel="noopener">Releases</a> page.</div>
 
       <h3>v1.2.0 <span class="rel-date">Sep 23, 2026</span> — First public release</h3>
-      <p>k8Board is a native desktop UI for Kubernetes — live dashboards, logs, an in-pod shell, topology, Helm, Argo CD, a Security Center and one-click cloud onboarding.</p>
+      <p>K8Board is a native desktop UI for Kubernetes — live dashboards, logs, an in-pod shell, topology, Helm, Argo CD, a Security Center and one-click cloud onboarding.</p>
       <ul>
         <li><strong>Desktop + Docker</strong> — macOS (Apple Silicon), Windows, Linux, and a multi-arch image.</li>
         <li><strong>Security Center</strong> — image CVEs, configuration audit, RBAC risk and exposed secrets.</li>
@@ -836,7 +836,7 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
   <div class="wrap">
     <a class="brand" href="index.html">
       <img class="logo" src="assets/icon.png" width="26" height="26" alt="" />
-      <span>k8Board<small>© 2026 · MIT open source</small></span>
+      <span><span class="brand-word" style="white-space:nowrap">K<span style="font-size:.66em">8</span>Board</span><small>© 2026 · MIT open source</small></span>
     </a>
     <div class="links">
       <a href="index.html">Home</a>

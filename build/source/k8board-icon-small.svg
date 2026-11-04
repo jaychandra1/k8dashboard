@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
-  <!-- k8Board icon for 16–48 px (taskbar, tray, favicon, small tiles): the same
+  <!-- K8Board icon for 16–48 px (taskbar, tray, favicon, small tiles): the same
        tile and cube, without the glow, orbit and satellites that blur at this
        size. -->
   <defs>

@@ -309,10 +309,10 @@ function App() {
   // ---- document title -------------------------------------------------------
   // View label, the namespace scope for namespaced views, and the current context.
   const title = useMemo(() => {
-    const label = byKey[view]?.label || 'k8Board';
+    const label = byKey[view]?.label || 'K8Board';
     const nsLabel = selectedNamespaces.includes(ALL) ? 'all namespaces' : selectedNamespaces.join(', ');
     const scoped = isResourceView(view) || view === 'overview' || view === 'events';
-    return [label, scoped ? nsLabel : null, configStatus.currentContext].filter(Boolean).join(' · ') + ' — k8Board';
+    return [label, scoped ? nsLabel : null, configStatus.currentContext].filter(Boolean).join(' · ') + ' — K8Board';
   }, [view, selectedNamespaces, configStatus.currentContext]);
   useDocumentTitle(title, { suffix: false });
 

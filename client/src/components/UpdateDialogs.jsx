@@ -6,6 +6,7 @@ import Markdown from './Markdown';
 import { useToast } from './Toast';
 import { getJson, postJson, errorMessage } from '../lib/api';
 
+import Brand from './ui/Brand';
 // Help → Show Release Notes / Check for Updates (the desktop app's native Help
 // menu). The Electron main process dispatches
 //   window.dispatchEvent(new CustomEvent('kubepilot:host', { detail }))
@@ -54,7 +55,7 @@ export default function UpdateDialogs() {
       else if (d.type === 'check-updates') setUpdateOpen(true);
       else if (d.type === 'update-result') {
         if (d.status === 'installed')
-          toast.success(`k8Board was updated to ${v(d.version)}.`, { title: 'Update installed' });
+          toast.success(`K8Board was updated to ${v(d.version)}.`, { title: 'Update installed' });
         else if (d.status === 'failed') setResult(d);
       }
     };
@@ -94,7 +95,7 @@ export default function UpdateDialogs() {
         }
       >
         <p className="update-text">
-          The update to k8Board {v(result?.version)} did not complete. Your existing k8Board installation
+          The update to <Brand /> {v(result?.version)} did not complete. Your existing <Brand /> installation
           {result?.from ? ` (${v(result.from)})` : ''} has not been modified.
         </p>
       </Modal>
@@ -117,7 +118,7 @@ export function ReleaseNotesDialog({ open, onClose }) {
         setSt({
           loading: false,
           release: null,
-          error: errorMessage(err, 'k8Board could not load the release notes.'),
+          error: errorMessage(err, 'K8Board could not load the release notes.'),
         });
     }
   }, []);
@@ -131,7 +132,7 @@ export function ReleaseNotesDialog({ open, onClose }) {
     <Modal
       open={open}
       onClose={onClose}
-      title="k8Board Release Notes"
+      title={<><Brand /> Release Notes</>}
       icon="details"
       size="lg"
       className="release-notes-modal"
@@ -185,7 +186,7 @@ function failureView(err) {
     return { title: 'No compatible installer', action: 'release' };
   if (code === 'verification_failed' || code === 'verification_unavailable')
     return { title: 'Update verification failed', action: null };
-  if (code === 'unsupported') return { title: "k8Board can't install this update", action: 'release' };
+  if (code === 'unsupported') return { title: <><Brand /> {"can't install this update"}</>, action: 'release' };
   if (stage === 'check' || !stage) return { title: 'Unable to check for updates', action: 'check' };
   if (stage === 'download') return { title: 'Download failed', action: 'download' };
   if (stage === 'restart') return { title: 'Restart failed', action: null };
@@ -208,7 +209,7 @@ export function UpdateDialog({ open, onClose, onShowNotes }) {
     } catch (err) {
       setReqError({
         code: err?.code || 'error',
-        message: errorMessage(err, 'k8Board could not reach its update service.'),
+        message: errorMessage(err, 'K8Board could not reach its update service.'),
       });
       return null;
     } finally {
@@ -280,7 +281,7 @@ export function UpdateDialog({ open, onClose, onShowNotes }) {
       <div className="update-alert" role="alert">
         <p>{err.message}</p>
         {(err.code === 'install_failed' || err.code === 'installer_launch_failed') && (
-          <p className="update-muted">Your existing k8Board installation has not been modified.</p>
+          <p className="update-muted">Your existing <Brand /> installation has not been modified.</p>
         )}
       </div>
     );
@@ -310,7 +311,7 @@ export function UpdateDialog({ open, onClose, onShowNotes }) {
       </>
     );
   } else if (phase === 'up-to-date') {
-    title = 'k8Board is up to date';
+    title = <><Brand /> is up to date</>;
     icon = 'check';
     body = (
       <p className="update-text">
@@ -323,12 +324,12 @@ export function UpdateDialog({ open, onClose, onShowNotes }) {
       </Button>
     );
   } else if (phase === 'available') {
-    title = 'k8Board Update Available';
+    title = <><Brand /> Update Available</>;
     icon = 'download';
     const released = fmtDate(latest?.publishedAt);
     body = (
       <>
-        <p className="update-text">A new version of k8Board is available.</p>
+        <p className="update-text">A new version of <Brand /> is available.</p>
         <dl className="update-versions">
           <dt>Installed version</dt>
           <dd>{v(current)}</dd>
@@ -385,14 +386,14 @@ export function UpdateDialog({ open, onClose, onShowNotes }) {
       </>
     );
   } else if (phase === 'downloading' || phase === 'verifying' || phase === 'installing') {
-    title = 'Updating k8Board';
+    title = <>Updating <Brand /></>;
     icon = 'download';
     const total = s.progress?.total || s.asset?.size || 0;
     const received = s.progress?.received || 0;
     const pct = phase === 'downloading' && total ? Math.min(100, Math.floor((received / total) * 100)) : null;
     const label =
       phase === 'downloading'
-        ? `Downloading k8Board ${v(latest?.version)}…`
+        ? `Downloading K8Board ${v(latest?.version)}…`
         : phase === 'verifying'
           ? 'Verifying update…'
           : 'Installing update…';
@@ -440,10 +441,10 @@ export function UpdateDialog({ open, onClose, onShowNotes }) {
     icon = 'download';
     body = (
       <>
-        <p className="update-text">k8Board {v(latest?.version)} has been downloaded and verified.</p>
+        <p className="update-text"><Brand /> {v(latest?.version)} has been downloaded and verified.</p>
         <p className="update-text">
-          To install it, k8Board closes, installs the update and opens again automatically. Choose{' '}
-          <b>Later</b> to install it the next time you quit k8Board.
+          To install it, <Brand /> closes, installs the update and opens again automatically. Choose{' '}
+          <b>Later</b> to install it the next time you quit <Brand />.
         </p>
       </>
     );
@@ -454,7 +455,7 @@ export function UpdateDialog({ open, onClose, onShowNotes }) {
           onClick={async () => {
             const st = await call('post', '/api/app/update/install', { when: 'on-quit' });
             if (st?.phase === 'scheduled') {
-              toast.info(`k8Board ${v(latest?.version)} will be installed when you quit k8Board.`);
+              toast.info(`K8Board ${v(latest?.version)} will be installed when you quit K8Board.`);
               onClose();
             }
           }}
@@ -476,7 +477,7 @@ export function UpdateDialog({ open, onClose, onShowNotes }) {
     icon = 'check';
     body = (
       <p className="update-text">
-        k8Board {v(latest?.version)} will be installed the next time you quit k8Board.
+        <Brand /> {v(latest?.version)} will be installed the next time you quit <Brand />.
       </p>
     );
     footer = (
@@ -489,8 +490,8 @@ export function UpdateDialog({ open, onClose, onShowNotes }) {
     icon = 'check';
     body = (
       <>
-        <p className="update-text">k8Board {v(latest?.version)} has been installed successfully.</p>
-        <p className="update-text">Restart k8Board to complete the update.</p>
+        <p className="update-text"><Brand /> {v(latest?.version)} has been installed successfully.</p>
+        <p className="update-text">Restart <Brand /> to complete the update.</p>
         {s.dryRun && (
           <p className="update-note" role="note">
             Dry run: nothing was actually installed.
@@ -512,11 +513,11 @@ export function UpdateDialog({ open, onClose, onShowNotes }) {
       </>
     );
   } else if (phase === 'restarting') {
-    title = s.dryRun ? 'Dry run complete' : 'Restarting k8Board';
+    title = s.dryRun ? 'Dry run complete' : <>Restarting <Brand /></>;
     icon = 'refresh';
     body = s.dryRun ? (
       <p className="update-text">
-        Dry run: k8Board {v(latest?.version)} was verified, but nothing was installed and k8Board will not
+        Dry run: <Brand /> {v(latest?.version)} was verified, but nothing was installed and <Brand /> will not
         restart.
       </p>
     ) : (
@@ -524,8 +525,8 @@ export function UpdateDialog({ open, onClose, onShowNotes }) {
         inline
         label={
           s.installMode === 'on-restart'
-            ? 'k8Board is closing to install the update and will open again automatically…'
-            : 'Restarting k8Board…'
+            ? 'K8Board is closing to install the update and will open again automatically…'
+            : 'Restarting K8Board…'
         }
       />
     );

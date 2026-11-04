@@ -8,7 +8,7 @@
 // it at a non-default address with MCP_API_BASE. Every API call is sent with
 // `Authorization: Bearer <token>` — MCP_API_TOKEN, else the MCP token
 // (KUBEPILOT_MCP_TOKEN or ~/.config/kubepilot/mcp-token, shown in Preferences →
-// MCP), else the API token for older setups — and `X-k8Board-Source: mcp`.
+// MCP), else the API token for older setups — and `X-K8Board-Source: mcp`.
 //
 // MCP_ALLOW_WRITE=1 only decides which tools this bridge *offers* by default —
 // the app's server is the authority and refuses MCP-sourced mutations unless
@@ -29,7 +29,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { createMcpServer, readApiToken } from './mcp.js';
 
 const token = String(process.env.MCP_API_TOKEN || '').trim() || readApiToken();
-if (!token) console.error('[k8Board MCP] no token found (set MCP_API_TOKEN to the MCP token from Preferences → MCP, or start the app once to create ~/.config/kubepilot/mcp-token)');
+if (!token) console.error('[K8Board MCP] no token found (set MCP_API_TOKEN to the MCP token from Preferences → MCP, or start the app once to create ~/.config/kubepilot/mcp-token)');
 
 const server = createMcpServer({
   apiBase: process.env.MCP_API_BASE || undefined,
@@ -39,4 +39,4 @@ const server = createMcpServer({
 const transport = new StdioServerTransport();
 await server.connect(transport);
 // stderr is safe for logs (stdout is the JSON-RPC channel).
-console.error('[k8Board MCP] stdio server ready');
+console.error('[K8Board MCP] stdio server ready');

@@ -1,9 +1,9 @@
 {
   "name": "kubepilot",
-  "version": "1.7.4",
+  "version": "1.7.5",
   "description": "A native desktop UI for browsing and operating Kubernetes clusters",
   "author": {
-    "name": "k8Board Program",
+    "name": "K8Board Program",
     "email": "kubepilot.dashboard@gmail.com"
   },
   "license": "MIT",
@@ -72,7 +72,7 @@
   },
   "build": {
     "appId": "com.kubepilot.desktop",
-    "productName": "k8Board",
+    "productName": "K8Board",
     "asar": false,
     "npmRebuild": false,
     "afterPack": "electron/after-pack.cjs",
@@ -121,9 +121,9 @@
       "category": "Development",
       "icon": "build/icon.png",
       "synopsis": "A desktop UI for browsing and operating Kubernetes clusters",
-      "description": "k8Board is a native desktop app for browsing and operating any Kubernetes cluster from your local kubeconfig — live dashboards, logs, an in-pod shell, topology, Helm, Argo CD, a Security Center and one-click EKS/AKS onboarding.",
-      "maintainer": "k8Board Program <kubepilot.dashboard@gmail.com>",
-      "vendor": "k8Board Program",
+      "description": "K8Board is a native desktop app for browsing and operating any Kubernetes cluster from your local kubeconfig — live dashboards, logs, an in-pod shell, topology, Helm, Argo CD, a Security Center and one-click EKS/AKS onboarding.",
+      "maintainer": "K8Board Program <kubepilot.dashboard@gmail.com>",
+      "vendor": "K8Board Program",
       "syncDesktopName": true,
       "artifactName": "${productName}-linux.${ext}",
       "target": [
@@ -140,11 +140,11 @@
       ]
     },
     "appx": {
-      "identityName": "k8Board.Desktop",
-      "publisher": "CN=k8Board",
-      "publisherDisplayName": "k8Board Program",
-      "applicationId": "k8Board",
-      "displayName": "k8Board",
+      "identityName": "K8Board.Desktop",
+      "publisher": "CN=K8Board",
+      "publisherDisplayName": "K8Board Program",
+      "applicationId": "K8Board",
+      "displayName": "K8Board",
       "backgroundColor": "#0b1220",
       "showNameOnTiles": true,
       "languages": [
@@ -156,8 +156,8 @@
       "artifactName": "${productName}-windows-store.${ext}"
     },
     "nsis": {
-      "shortcutName": "k8Board",
-      "uninstallDisplayName": "k8Board",
+      "shortcutName": "K8Board",
+      "uninstallDisplayName": "K8Board",
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
       "installerHeaderIcon": "build/icon.ico"

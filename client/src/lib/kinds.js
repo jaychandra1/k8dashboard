@@ -4,9 +4,11 @@
 // CommandPalette.jsx, RESOURCE_LABELS in ResourceViewer.jsx, and the three
 // KIND_ICON copies (ResourceDrawer / Topology / ArgoCD).
 //
-// Shape: { key, label, singular, plural, apiKind, icon, group, clusterScoped, standalone }
+// Shape: { key, label, navLabel, singular, plural, apiKind, icon, group, clusterScoped, standalone }
 //   key          camelCase view key used in state / routes ('statefulSet')
 //   label        sidebar / heading label ('StatefulSets')
+//   navLabel     the sidebar + command-palette label; defaults to `label`.
+//                Page headings and window titles keep using `label`.
 //   singular     'StatefulSet'
 //   plural       key under which the list lives in allResources ('statefulSets')
 //   apiKind      Kubernetes Kind ('StatefulSet') — null for non-k8s views
@@ -21,12 +23,13 @@ const T = (key, label, singular, apiKind, icon, group, extra = {}) => ({
   clusterScoped: !!extra.clusterScoped,
   standalone: !!extra.standalone,
   hidden: !!extra.hidden,
+  navLabel: extra.navLabel || label,
 });
 
 export const RESOURCE_TYPES = [
   // App-level / cluster views
   T('overview', 'Overview', 'Overview', null, 'overview', 'cluster', { standalone: false }),
-  T('cluster', 'Cluster', 'Cluster', null, 'cluster', 'cluster', { standalone: true }),
+  T('cluster', 'Cluster', 'Cluster', null, 'cluster', 'cluster', { standalone: true, navLabel: 'Dashboard' }),
   T('nodes', 'Nodes', 'Node', 'Node', 'nodes', 'cluster', { standalone: true, clusterScoped: true, plural: 'nodes' }),
   T('namespaces', 'Namespaces', 'Namespace', 'Namespace', 'namespace', 'cluster', { standalone: true, clusterScoped: true, plural: 'namespaces' }),
   T('topology', 'Topology', 'Topology', null, 'topology', 'cluster', { standalone: true }),
@@ -102,7 +105,15 @@ export function typesInGroup(group) {
   return RESOURCE_TYPES.filter((t) => t.group === group && !t.hidden);
 }
 
-/** Sidebar groups in display order. */
+/** Sidebar section headings, top to bottom (CSS shows them uppercase). */
+export const NAV_HEADINGS = {
+  overview: 'Overview', // Dashboard, Nodes, Namespaces, Topology
+  resources: 'Resources', // Workloads, Network, Storage, Config
+  operations: 'Operations', // Events, Helm, Access Control
+  integrations: 'Integrations', // Argo CD, Security Center
+};
+
+/** Resource groups in display order: the collapsible sidebar sections, and the command palette's groups. */
 export const NAV_GROUPS = [
   { key: 'cluster', label: 'Cluster' },
   { key: 'workloads', label: 'Workloads' },

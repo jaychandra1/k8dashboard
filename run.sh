@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# k8Board — install & run helper
+# K8Board — install & run helper
 #
 # Usage:
 #   ./run.sh                 Install deps (first run), build the UI, start the app (production)
@@ -328,7 +328,7 @@ warn_if_busy() {
 # ------------------------------------------------------------------
 run_prod() {
   warn_if_busy "$BACKEND_PORT" "backend + UI"
-  info "Starting k8Board (production)"
+  info "Starting K8Board (production)"
   printf '%s\n' "${DIM}The server prints a login URL with your access token — open that URL, not the bare port. Ctrl+C to stop.${RESET}"
   exec node server.js
 }
@@ -336,7 +336,7 @@ run_prod() {
 run_dev() {
   warn_if_busy "$BACKEND_PORT" "backend/API"
   warn_if_busy "$DEV_UI_PORT" "Vite dev server"
-  info "Starting k8Board (dev — hot reload)"
+  info "Starting K8Board (dev — hot reload)"
   printf '%s\n' "${DIM}UI: ${RESET}${BOLD}http://localhost:${DEV_UI_PORT}${RESET}${DIM}  (API proxied to :${BACKEND_PORT}; append the #token=… fragment printed by the server) — Ctrl+C to stop.${RESET}"
   exec npm run dev
 }

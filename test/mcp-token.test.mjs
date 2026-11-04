@@ -133,7 +133,7 @@ contexts:
     assert.equal(agent.metadata.annotations.team, 'core');
 
     // Older bridges: the UI token + the MCP header is an MCP request too.
-    const legacy = await (await as(TOKEN, '/api/resource/apps/Secret/db', { headers: { 'X-k8Board-Source': 'mcp' } })).json();
+    const legacy = await (await as(TOKEN, '/api/resource/apps/Secret/db', { headers: { 'X-K8Board-Source': 'mcp' } })).json();
     assert.equal(legacy.data.password, '<redacted>');
 
     const yamlText = (await (await as(mcpToken, '/api/yaml/apps/secret/db')).json()).yaml;

@@ -13,9 +13,9 @@ const kc = {
     { name: 'shared-name', user: 'u-cert' },
   ],
   users: [
-    { name: 'u-dev', exec: { command: 'k8Board.exe', args: ['--token-helper', 'eks', '--cluster', 'dev-env-cluster', '--region', 'eu-west-1', '--profile', 'sso-111122223333'] } },
-    { name: 'u-pix', exec: { command: 'k8Board.exe', args: ['--token-helper', 'eks', '--cluster=pixdora-tech', '--region=eu-west-1', '--profile=sso-111122223333'] } },
-    { name: 'u-legacy', exec: { command: 'k8Board.exe', args: ['--token-helper', 'eks', '--cluster', 'legacy', '--region', 'eu-west-1', '--profile', 'old-static'] } },
+    { name: 'u-dev', exec: { command: 'K8Board.exe', args: ['--token-helper', 'eks', '--cluster', 'dev-env-cluster', '--region', 'eu-west-1', '--profile', 'sso-111122223333'] } },
+    { name: 'u-pix', exec: { command: 'K8Board.exe', args: ['--token-helper', 'eks', '--cluster=pixdora-tech', '--region=eu-west-1', '--profile=sso-111122223333'] } },
+    { name: 'u-legacy', exec: { command: 'K8Board.exe', args: ['--token-helper', 'eks', '--cluster', 'legacy', '--region', 'eu-west-1', '--profile', 'old-static'] } },
     { name: 'u-cli', exec: { command: 'aws', args: ['--region', 'us-east-1', 'eks', 'get-token', '--cluster-name', 'prod'], env: [{ name: 'AWS_PROFILE', value: 'team' }] } },
     { name: 'u-cert', certData: 'x', keyData: 'y' },
   ],

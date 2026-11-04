@@ -39,6 +39,19 @@ describe('CommandPalette', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it('offers #/cluster under its sidebar name, "Dashboard"', async () => {
+    const user = userEvent.setup();
+    const onNavigate = vi.fn();
+    render(<CommandPalette open onClose={() => {}} onNavigate={onNavigate} contexts={[]} onSwitchContext={() => {}} />);
+    await tick();
+    await user.keyboard('dashboard');
+    const options = screen.getAllByRole('option');
+    expect(options).toHaveLength(1);
+    expect(options[0]).toHaveTextContent('Dashboard');
+    await user.keyboard('{Enter}');
+    expect(onNavigate).toHaveBeenCalledWith('cluster');
+  });
+
   it('arrow keys change the active option and Escape closes', async () => {
     const user = userEvent.setup();
     const onNavigate = vi.fn();

@@ -77,9 +77,9 @@ Mutations: `await postJson(p('api','pods',ns,name,'scale'), { replicas })` then 
 
 ## lib/kinds.js — resource registry (replaces PLURAL_KEY / CLUSTER_SCOPED / STANDALONE_RESOURCE_TYPES / nav lists / KIND_ICON copies)
 
-`RESOURCE_TYPES[]` `{ key, label, singular, plural, apiKind, icon, group, clusterScoped, standalone, hidden }` ·
+`RESOURCE_TYPES[]` `{ key, label, navLabel, singular, plural, apiKind, icon, group, clusterScoped, standalone, hidden }` (`navLabel`: the sidebar / palette name, defaults to `label`) ·
 `byKey[key]` · `byApiKind[Kind]` · `KEYS` · `pluralKey(key)` · `isClusterScoped(key)` · `isStandalone(key)` ·
-`STANDALONE_KEYS` · `CLUSTER_SCOPED_KEYS` · `labelFor(key)` → `{label, icon, singular}` · `typesInGroup(group)` · `NAV_GROUPS` ·
+`STANDALONE_KEYS` · `CLUSTER_SCOPED_KEYS` · `labelFor(key)` → `{label, icon, singular}` · `typesInGroup(group)` · `NAV_GROUPS` · `NAV_HEADINGS` (sidebar section headings) ·
 `KIND_ICON` / `kindIcon(kind)` (merged superset; unknown → `'box'`) · `KIND_TYPE` / `kindType(kind)` (was `lib/kind.js`, still exported there) · `AGENT_ICON`.
 
 Navigation / CommandPalette: build their lists from `typesInGroup('workloads')` etc.
@@ -103,7 +103,7 @@ Delete `import hljs from 'highlight.js'` and `import 'highlight.js/styles/atom-o
 
 - `useHashRoute()` → `{ route: { view, params[], query{} }, hash, navigate(view, params?, query?, { replace }), back, forward, canBack, canForward, setQuery(patch), isSame(route) }`. Pure helpers `parseHash(hash)`, `buildHash(view, params, query)`; `navigateTo()` for non-React code.
   **App.jsx adoption (App owner):** replace `resourceType` state + the `history` stack with `const { route, navigate, back, forward, canBack, canForward } = useHashRoute()`; `resourceType = route.view`; `setResourceType(k)` → `navigate(k)`; the `ClusterSwitcher` and the Back/Forward buttons (`back`/`canBack`, `.topbar-hist`) are rendered by App and passed to `TopBar` as its `lead` slot (left end of the bar; the switcher fills the column above the sidebar); Navigation has no cluster logic; drawer selection → `navigate(route.view, [ns, name])`; namespace filter → `setQuery({ ns })`; Preferences → `navigate('preferences', [section])` (it's `hidden` in the registry so it stays out of nav). Views that own sub-views (argocd/security) use `route.params[0]`.
-- `useDocumentTitle('Pods')` → `Pods · k8Board`, restored on unmount.
+- `useDocumentTitle('Pods')` → `Pods · K8Board`, restored on unmount.
 - `useFocusTrap(ref, active, { initialFocusRef?, getInitialFocus?(root), restoreFocus=true })`.
 - `useVisibility()` → bool.
 - `useRequest`, `useRequestRef` — above.
