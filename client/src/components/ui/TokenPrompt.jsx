@@ -61,7 +61,7 @@ export default function TokenPrompt({ open: controlledOpen, onSuccess, onClose, 
       showClose={!!onClose}
       closeOnBackdrop={false}
       closeOnEscape={!!onClose}
-      title={reason === 'rejected' ? 'Session token rejected' : 'Connect to KubePilot'}
+      title={reason === 'rejected' ? 'Session token rejected' : 'Connect to k8Board'}
       icon="shield"
       size="sm"
       className="token-prompt"

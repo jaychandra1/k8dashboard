@@ -191,7 +191,7 @@ describe('sign-in manager', () => {
     assert.equal(snap.method, 'browser');
     const reg = oidc.calls.find((c) => c.name === 'RegisterClientCommand').input;
     assert.deepEqual(reg, {
-      clientName: 'kubepilot',
+      clientName: 'k8board',
       clientType: 'public',
       grantTypes: ['authorization_code', 'refresh_token'],
       redirectUris: [REGISTERED_REDIRECT_URI],

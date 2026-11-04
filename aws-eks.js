@@ -208,7 +208,7 @@ export async function writeCluster({ credentials, region, name, alias, profile }
 
   const { p, doc } = loadKube();
   upsert(doc.clusters, ctxName, { name: ctxName, cluster: { server, 'certificate-authority-data': caData } });
-  // Packaged app: `KubePilot --token-helper eks …`; source/Docker: `node eks-token.js …`
+  // Packaged app: `k8Board --token-helper eks …`; source/Docker: `node eks-token.js …`
   // (lib/paths.mjs execEntry decides; lib/kubeconfig-repair.mjs fixes stale ones).
   const helper = execEntry('eks', ['--cluster', name, '--region', region, ...(profile ? ['--profile', profile] : [])]);
   upsert(doc.users, ctxName, {

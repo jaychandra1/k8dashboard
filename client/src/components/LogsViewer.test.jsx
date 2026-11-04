@@ -117,8 +117,11 @@ describe('LogsViewer', () => {
       const viewer = container.querySelector('.logs-viewer');
       // A details drawer is open: the panel ends at its edge (CSS) instead of under it.
       expect(panel).toHaveClass('beside-drawer');
-      // The logs toolbar button maximizes the panel, not just the viewer.
-      await user.click(screen.getByRole('button', { name: 'Show logs full screen' }));
+      // In the panel the logs toolbar has no full-screen / close of its own
+      // (the tab strip has them); the strip's button maximizes the panel.
+      expect(screen.queryByRole('button', { name: 'Show logs full screen' })).toBeNull();
+      expect(screen.queryByRole('button', { name: /^Close logs for/ })).toBeNull();
+      await user.click(screen.getByRole('button', { name: 'Show panel full screen' }));
       expect(panel).toHaveClass('is-fullscreen');
       expect(panel.style.top).toBe('70px');
       expect(panel.style.left).toBe('232px');
@@ -128,8 +131,7 @@ describe('LogsViewer', () => {
       // The tab strip (first) is still there, with both tabs.
       expect(panel.firstElementChild).toHaveClass('bottom-panel-tabs');
       expect(screen.getAllByRole('tab')).toHaveLength(2);
-      // Both buttons reflect the shared state; the strip's button minimizes.
-      expect(screen.getByRole('button', { name: 'Minimize logs (exit full screen)' })).toBeInTheDocument();
+      // The strip's button minimizes.
       await user.click(screen.getByRole('button', { name: 'Minimize panel (exit full screen)' }));
       expect(panel).not.toHaveClass('is-fullscreen');
       expect(screen.getByRole('button', { name: 'Show panel full screen' })).toBeInTheDocument();

@@ -151,15 +151,19 @@ export default function YamlViewer({ namespace, kind, name, onClose, onApplied, 
           <button type="button" className="yaml-btn primary" onClick={requestApply} disabled={!dirty || applying || loading} aria-describedby={hintId} aria-busy={applying || undefined}>
             <Icon name="check" size={14} /> {applying ? 'Applying…' : 'Apply'}
           </button>
-          <button
-            type="button"
-            className={`yaml-btn icon${fullscreen.on ? ' on' : ''}`}
-            onClick={fullscreen.toggle}
-            aria-label={fullscreen.on ? 'Minimize YAML (exit full screen)' : 'Show YAML full screen'}
-            title={fullscreen.on ? 'Minimize (Esc)' : 'Full screen'}
-          >
-            <Icon name={fullscreen.on ? 'minimize' : 'maximize'} size={14} />
-          </button>
+          {/* In the bottom panel the tab strip has full screen already. Close stays:
+              it asks before discarding unsaved edits. */}
+          {!fullscreen.inPanel && (
+            <button
+              type="button"
+              className={`yaml-btn icon${fullscreen.on ? ' on' : ''}`}
+              onClick={fullscreen.toggle}
+              aria-label={fullscreen.on ? 'Minimize YAML (exit full screen)' : 'Show YAML full screen'}
+              title={fullscreen.on ? 'Minimize (Esc)' : 'Full screen'}
+            >
+              <Icon name={fullscreen.on ? 'minimize' : 'maximize'} size={14} />
+            </button>
+          )}
           {onClose && (
             <button type="button" className="yaml-btn" onClick={requestClose} aria-label={`Close YAML editor for ${n}`}>
               <Icon name="close" size={13} /> Close

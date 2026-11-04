@@ -9,7 +9,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: KubePilot version
+      label: k8Board version
       description: Preferences → About, or `GET /api/version`.
       placeholder: 1.2.0
     validations:

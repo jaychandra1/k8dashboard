@@ -60,8 +60,8 @@ export default function Dashboard({
                 <button type="button" className="argo-mini-row" onClick={() => onOpenApp(a)}>
                   <span className="argo-mini-name">{a.name}</span>
                   <span className="argo-mini-ns">{a.destNamespace || a.namespace}</span>
-                  <Badge tone={syncTone(a.syncStatus)}>{a.syncStatus}</Badge>
-                  <Badge tone={healthTone(a.healthStatus)}>{a.healthStatus}</Badge>
+                  <span className="argo-mini-cell"><Badge tone={syncTone(a.syncStatus)}>{a.syncStatus}</Badge></span>
+                  <span className="argo-mini-cell"><Badge tone={healthTone(a.healthStatus)}>{a.healthStatus}</Badge></span>
                 </button>
               </li>
             ))}

@@ -41,14 +41,17 @@ import {
 import {
   restMappingFor, restartPatch, restartTarget, scaleTarget, scalePatch, argoSyncPatch, argoRefreshPatch,
   dropFinalizersPatch, parseApplyDocuments, validateApplyDocument, requestOptions, patchOptions, PatchStrategy, applyDocumentsEach,
-  deleteResource, execInPod, openPodShell, resourceLabel, labelSelectorFor, discoverResource, replaceDocument,
+  deleteResource, execInPod, openPodShell, resourceLabel, labelSelectorFor, discoverResource, replaceDocument, apiRequest, resourcePath,
 } from './lib/k8s-ops.mjs';
 import { eksEntryFor as eksEntryForKc, sameEksCluster, eksClusterStatus as eksClusterStatusKc } from './lib/eks-kubeconfig.mjs';
 import { createUpdates, registerUpdateRoutes } from './lib/updater/routes.mjs';
 import { localShellAllowed, pinnedKubeconfig, helmShellEnv, helmShellCommand, helmShellBanner, helmDirOf, shq, agentPromptArg } from './lib/helm-shell.mjs';
 import { childEnv } from './lib/child-env.mjs';
 import { endpointKind, networkFailure, shortReason, unreachableMessage } from './lib/cluster-network.mjs';
-import { failureHints, operatorLogErrors, remediationFor, reportTarget, scanCoverage, scanUnits } from './lib/security-insights.mjs';
+import { formatResource } from './lib/resource-format.mjs';
+import { capacityTotals, nodeUsage } from './lib/capacity.mjs';
+import { filterEvents, parseWorkload, workloadScope } from './lib/event-scope.mjs';
+import { failureHints, operatorLogErrors, remediationFor, reportTarget, revisionChanges, runningReportCheck, scanCoverage, scanUnits, severityCounts } from './lib/security-insights.mjs';
 import { createSsoLogin, adoptSsoLogin, refreshSsoToken, profileSsoInfo, sessionsForProfiles, sessionTokenState, awsConfigPath } from './lib/aws-sso.mjs';
 
 // node-pty powers the pod terminal (a real PTY bridged to `kubectl exec`). Load
@@ -234,7 +237,7 @@ app.use('/api', (req, res, next) => {
 });
 
 // MCP write gate: requests made with the MCP token (or carrying
-// `X-KubePilot-Source: mcp`) are refused on every mutating route while the UI
+// `X-k8Board-Source: mcp`) are refused on every mutating route while the UI
 // toggle is off — see isMcpSource() in lib/paths.mjs.
 const mcpWriteGate = (req, res, next) => {
   if (isMcpSource(req) && !mcpAllowWrite) {
@@ -886,7 +889,7 @@ function nativizeAksExec(kcYaml) {
     const getArg = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
     const serverId = getArg('--server-id') || AKS_AAD_SERVER_ID;
     const tenant = getArg('--tenant-id') || getArg('--tenant') || azure.getTenant() || 'organizations';
-    // Packaged app: `KubePilot --token-helper azure …`; source/Docker:
+    // Packaged app: `k8Board --token-helper azure …`; source/Docker:
     // `node azure-token.js …` (lib/paths.mjs execEntry decides).
     const helper = execEntry('azure', ['--server-id', serverId, '--tenant', tenant]);
     u.user.exec = {
@@ -1245,7 +1248,7 @@ const TEMP_KUBECONFIG_TTL_MS = 12 * 60 * 60 * 1000;
 const scheduleTempUnlink = (p) => setTimeout(() => fs.unlink(p, () => {}), TEMP_KUBECONFIG_TTL_MS).unref();
 // Terminals that run on this server's own host (Helm, AI agents) are for the
 // desktop app, where that host is the user's machine (lib/helm-shell.mjs).
-const LOCAL_SHELL_DISABLED_MESSAGE = 'This terminal runs on the KubePilot host, so it is only available in the KubePilot desktop app (set KUBEPILOT_LOCAL_SHELL=1 to allow it on a server).';
+const LOCAL_SHELL_DISABLED_MESSAGE = 'This terminal runs on the k8Board host, so it is only available in the k8Board desktop app (set KUBEPILOT_LOCAL_SHELL=1 to allow it on a server).';
 app.get('/api/ai-agents', async (req, res) => {
   const agents = await Promise.all(AI_AGENTS.map(async (a) => ({ id: a.id, name: a.name, command: a.command, desc: a.desc, install: a.install, installed: await commandExists(a.command) })));
   res.json({ agents });
@@ -1516,15 +1519,21 @@ app.get('/api/resources/:namespace', async (req, res) => {
 
     const coreApi = kubeConfig.makeApiClient(k8s.CoreV1Api);
     const appsApi = kubeConfig.makeApiClient(k8s.AppsV1Api);
+    const batchApi = kubeConfig.makeApiClient(k8s.BatchV1Api);
     const netApi = kubeConfig.makeApiClient(k8s.NetworkingV1Api);
 
-    // All in-process API calls (no kubectl process spawn), fetched in parallel
+    // All in-process API calls (no kubectl process spawn), fetched in parallel.
+    // One key per namespaced view of the UI (client/src/lib/kinds.js plural).
     const { items: r, errors } = await fanOut({
       pods: () => coreApi.listNamespacedPod({ namespace }),
       services: () => coreApi.listNamespacedService({ namespace }),
       deployments: () => appsApi.listNamespacedDeployment({ namespace }),
       statefulSets: () => appsApi.listNamespacedStatefulSet({ namespace }),
       daemonSets: () => appsApi.listNamespacedDaemonSet({ namespace }),
+      replicaSets: () => appsApi.listNamespacedReplicaSet({ namespace }),
+      replicationControllers: () => coreApi.listNamespacedReplicationController({ namespace }),
+      jobs: () => batchApi.listNamespacedJob({ namespace }),
+      cronJobs: () => batchApi.listNamespacedCronJob({ namespace }),
       configMaps: () => coreApi.listNamespacedConfigMap({ namespace }),
       secrets: () => coreApi.listNamespacedSecret({ namespace }),
       serviceAccounts: () => coreApi.listNamespacedServiceAccount({ namespace }),
@@ -1539,6 +1548,10 @@ app.get('/api/resources/:namespace', async (req, res) => {
       deployments: r.deployments.map(item => formatResource(item, 'Deployment')),
       statefulSets: r.statefulSets.map(item => formatResource(item, 'StatefulSet')),
       daemonSets: r.daemonSets.map(item => formatResource(item, 'DaemonSet')),
+      replicaSets: r.replicaSets.map(item => formatResource(item, 'ReplicaSet')),
+      replicationControllers: r.replicationControllers.map(item => formatResource(item, 'ReplicationController')),
+      jobs: r.jobs.map(item => formatResource(item, 'Job')),
+      cronJobs: r.cronJobs.map(item => formatResource(item, 'CronJob')),
       configMaps: r.configMaps.map(item => formatResource(item, 'ConfigMap')),
       secrets: r.secrets.map(item => formatResource(item, 'Secret')),
       serviceAccounts: r.serviceAccounts.map(item => formatResource(item, 'ServiceAccount')),
@@ -1644,6 +1657,16 @@ app.get('/api/rbac', async (req, res) => {
   }
 });
 
+// Kinds without a typed case in the details / YAML routes below (ReplicaSet,
+// ReplicationController, Job, CronJob, …): read through the REST mapping,
+// authenticated like the typed clients. null when the kind isn't known.
+const readByMapping = async (kind, namespace, name) => {
+  const m = restMappingFor(kind);
+  if (!m) return null;
+  const ns = m.namespaced && namespace && namespace !== '-' ? namespace : undefined;
+  return apiRequest(kubeConfig, { path: resourcePath(m, { namespace: ns, name }), timeoutMs: 15000 });
+};
+
 app.get('/api/resource/:namespace/:kind/:name', async (req, res) => {
   try {
     if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
@@ -1705,7 +1728,8 @@ app.get('/api/resource/:namespace/:kind/:name', async (req, res) => {
           resource = await kubeConfig.makeApiClient(k8s.StorageV1Api).readStorageClass({ name });
           break;
         default:
-          return res.status(400).json({ error: 'Unsupported resource kind' });
+          resource = await readByMapping(kind, namespace, name);
+          if (!resource) return res.status(400).json({ error: 'Unsupported resource kind' });
       }
     } catch (apiError) {
       // K8s 404 → 404; 401/403 → 403 forbidden; anything else → 502 upstream_error
@@ -1764,7 +1788,7 @@ app.get('/api/logs/:namespace/:pod', async (req, res) => {
 // `kubectl logs deploy/<name>`), for the deployment logs view: the client
 // reads one replica or all of them merged. Running pods first, newest first.
 const DEPLOYMENT_PODS_MAX = 50;
-const podRank = (p) => (p.status === 'Running' ? 0 : p.status === 'Pending' ? 1 : 2);
+const podRank = (p) => (p.status === 'Running' ? 0 : (p.phase || p.status) === 'Running' ? 1 : (p.phase || p.status) === 'Pending' ? 2 : 3);
 app.get('/api/deployments/:namespace/:name/pods', async (req, res) => {
   const { namespace, name } = req.params;
   try {
@@ -2007,7 +2031,8 @@ app.get('/api/yaml/:namespace/:kind/:name', async (req, res) => {
           resource = await kubeConfig.makeApiClient(k8s.StorageV1Api).readStorageClass({ name });
           break;
         default:
-          return res.status(400).json({ error: 'Unsupported resource kind' });
+          resource = await readByMapping(kind, namespace, name);
+          if (!resource) return res.status(400).json({ error: 'Unsupported resource kind' });
       }
     } catch (apiError) {
       return fail(res, apiError, undefined, 'Failed to read resource');
@@ -2183,6 +2208,29 @@ app.post('/api/restart/:namespace/:kind/:name', mcpWriteGate, async (req, res) =
 // events API, last/first for core v1) — otherwise `age` was NaN.
 const eventTime = (e) => e.eventTime || e.lastTimestamp || e.firstTimestamp || e.metadata?.creationTimestamp || null;
 
+// The objects of one namespace that a workload's events can be about
+// (lib/event-scope.mjs): its ReplicaSets / Jobs / Pods and autoscaler. Each
+// list is best-effort — without one, its objects are still matched by their
+// generated names.
+async function loadWorkloadScope(namespace, workload) {
+  const opts = requestOptions(15000);
+  const items = (promise) => promise.then((r) => r.items || []).catch(() => []);
+  const { kind } = workload;
+  const [replicaSets, pods, jobs, hpas] = await Promise.all([
+    kind === 'Deployment' ? items(kubeConfig.makeApiClient(k8s.AppsV1Api).listNamespacedReplicaSet({ namespace }, opts)) : [],
+    kind !== 'Pod' ? items(kubeConfig.makeApiClient(k8s.CoreV1Api).listNamespacedPod({ namespace }, opts)) : [],
+    kind === 'CronJob' ? items(kubeConfig.makeApiClient(k8s.BatchV1Api).listNamespacedJob({ namespace }, opts)) : [],
+    kind === 'Deployment' || kind === 'StatefulSet'
+      ? items(kubeConfig.makeApiClient(k8s.AutoscalingV2Api).listNamespacedHorizontalPodAutoscaler({ namespace }, opts)) : [],
+  ]);
+  return workloadScope(workload, { replicaSets, pods, jobs, hpas });
+}
+
+// Events, newest first. Filters apply before paging, so a filter searches all
+// the events, not just the page on screen:
+//   ?type=Warning|Normal  ?q=text (message, reason, object, namespace, source)
+//   ?workload=Deployment/frontend  (needs a namespace; its ReplicaSets, Pods…)
+//   ?namespaces=a,b  (several namespaces, with the "all" path)
 app.get('/api/events/:namespace?', async (req, res) => {
   try {
     if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
@@ -2192,7 +2240,21 @@ app.get('/api/events/:namespace?', async (req, res) => {
     if (req.query.limit !== undefined && !isIntInRange(req.query.limit, 1, 100)) return bad(res, 'limit');
     const page = Number(req.query.page) || 1;
     const limit = Number(req.query.limit) || 50; // Max 100 per page
-    const cacheKey = getCacheKey('events', { namespace, page, limit });
+    const single = namespace && namespace !== 'all' && namespace !== '-' ? namespace : null;
+    const type = req.query.type || '';
+    if (type && type !== 'Warning' && type !== 'Normal') return bad(res, 'type', 'type must be Warning or Normal');
+    const q = typeof req.query.q === 'string' ? req.query.q : '';
+    if (q.length > 200) return bad(res, 'q', 'search text is limited to 200 characters');
+    let workload = null;
+    if (req.query.workload) {
+      workload = parseWorkload(req.query.workload);
+      if (!workload) return bad(res, 'workload', 'workload must be Kind/name, e.g. Deployment/frontend');
+      if (!single) return bad(res, 'workload', 'a workload filter needs a single namespace');
+    }
+    const namespaces = !single && typeof req.query.namespaces === 'string' && req.query.namespaces
+      ? req.query.namespaces.split(',') : null;
+    if (namespaces && (namespaces.length > 100 || !namespaces.every(isDnsLabel))) return bad(res, 'namespaces');
+    const cacheKey = getCacheKey('events', { namespace, page, limit, type, q, workload: req.query.workload || '', namespaces: namespaces?.join(',') || '' });
 
     // Check cache
     const cachedData = getCache(cacheKey);
@@ -2231,10 +2293,12 @@ app.get('/api/events/:namespace?', async (req, res) => {
     // Sort by lastTimestamp descending (newest first)
     events.sort((a, b) => (new Date(b.lastTimestamp).getTime() || 0) - (new Date(a.lastTimestamp).getTime() || 0));
 
-    // Pagination
-    const total = events.length;
+    // Filters, then pagination.
+    const scope = workload ? await loadWorkloadScope(single, workload) : null;
+    const filtered = filterEvents(events, { type, q, namespaces, scope });
+    const total = filtered.length;
     const start = (page - 1) * limit;
-    const paginatedEvents = events.slice(start, start + limit);
+    const paginatedEvents = filtered.slice(start, start + limit);
 
     const result = {
       events: paginatedEvents,
@@ -2243,7 +2307,10 @@ app.get('/api/events/:namespace?', async (req, res) => {
         limit,
         total,
         pages: Math.ceil(total / limit)
-      }
+      },
+      // Before the filters, for "12 of 340 events".
+      unfiltered: events.length,
+      ...(workload ? { workload: `${workload.kind}/${workload.name}` } : {}),
     };
 
     setCache(cacheKey, result, CACHE_TTL.events);
@@ -2813,82 +2880,153 @@ app.get('/api/security/status', async (req, res) => {
 });
 
 // Image vulnerability reports → grouped by image, with severity + CVE detail.
+// Only images running now are counted: a Deployment keeps its old ReplicaSets
+// (scaled to 0) for rollback and the operator keeps their reports, so an image
+// a developer already replaced would otherwise still show its vulnerabilities.
+// Those come back with `active: false` (the UI's "no longer running" toggle),
+// and each running image says what changed since the previous image of its
+// Deployment — vulnerabilities resolved and introduced.
+const trivyImageOf = (rep = {}) => {
+  const art = rep.artifact || {};
+  const reg = rep.registry?.server || '';
+  return `${reg ? reg + '/' : ''}${art.repository || '?'}${art.tag ? ':' + art.tag : (art.digest ? '@' + String(art.digest).slice(0, 19) : '')}`;
+};
+const trivyVuln = (v) => ({
+  id: v.vulnerabilityID, severity: sev(v.severity), pkg: v.resource || '',
+  installedVersion: v.installedVersion || '', fixedVersion: v.fixedVersion || '',
+  title: v.title || '', link: v.primaryLink || (v.links || [])[0] || '', score: v.score,
+  // os-pkgs (base image) vs lang-pkgs (application dependency) + where.
+  class: v.class || '', packageType: v.packageType || '', packagePath: v.packagePath || '', target: v.target || '',
+});
+// Deployment revisions: { namespace, name, deployment, revision } per ReplicaSet.
+const listDeploymentRevisions = async () => {
+  const { items } = await kubeConfig.makeApiClient(k8s.AppsV1Api).listReplicaSetForAllNamespaces({}, requestOptions(20000));
+  return (items || []).map((rs) => {
+    const owner = (rs.metadata?.ownerReferences || []).find((o) => o.controller && o.kind === 'Deployment');
+    return {
+      namespace: rs.metadata?.namespace, name: rs.metadata?.name, deployment: owner?.name || null,
+      revision: Number(rs.metadata?.annotations?.['deployment.kubernetes.io/revision']),
+    };
+  });
+};
+const SEV_ORDER = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3, UNKNOWN: 4 };
+
 app.get('/api/security/vulnerabilities', async (req, res) => {
   try {
     const items = await listTrivy('vulnerabilityreports');
     if (items === null) return res.json({ installed: false, images: [], summary: emptySummary() });
     const ns = req.query.namespace && req.query.namespace !== 'all' ? req.query.namespace : null;
-    const total = emptySummary();
+    // What runs now (pods), scans in flight (jobs) and Deployment revisions
+    // (ReplicaSets) — each best-effort: without pod access everything counts.
+    const [pods, jobs, revisions] = await Promise.all([
+      listAllPods().catch(() => null), listScanJobs().catch(() => []), listDeploymentRevisions().catch(() => []),
+    ]);
+    const isRunning = pods ? runningReportCheck(scanUnits(pods)) : () => true;
+    const mine = nsReports(items, ns);
+    const changes = revisionChanges(mine, revisions, {
+      vulnsOf: (r) => (r.report?.vulnerabilities || []).map(trivyVuln),
+      imageOf: (r) => trivyImageOf(r.report),
+    });
+
     const byImage = new Map();
-    for (const r of items) {
+    const addVulns = (bucket, rep) => {
+      for (const v of (rep.vulnerabilities || [])) {
+        const key = v.vulnerabilityID + '|' + v.resource + '|' + v.installedVersion;
+        if (bucket.seen.has(key)) continue;
+        bucket.seen.add(key);
+        bucket.list.push(trivyVuln(v));
+      }
+    };
+    for (const r of mine) {
       const owner = trivyOwner(r);
-      if (ns && owner.namespace !== ns) continue;
       const rep = r.report || {};
       const art = rep.artifact || {};
-      const reg = rep.registry?.server || '';
-      const image = `${reg ? reg + '/' : ''}${art.repository || '?'}${art.tag ? ':' + art.tag : (art.digest ? '@' + String(art.digest).slice(0, 19) : '')}`;
-      addSummary(total, rep.summary);
+      const image = trivyImageOf(rep);
+      const running = isRunning(r);
       const scannedAt = rep.updateTimestamp || r.metadata?.creationTimestamp || '';
       if (!byImage.has(image)) byImage.set(image, {
         image, repository: art.repository || '', tag: art.tag || '',
-        digest: art.digest || '', registry: reg,
+        digest: art.digest || '', registry: rep.registry?.server || '',
         os: `${rep.os?.family || ''} ${rep.os?.name || ''}`.trim(),
-        namespace: owner.namespace, status: 'Scanned',
+        namespace: owner.namespace, active: false,
         scanner: [rep.scanner?.name, rep.scanner?.version].filter(Boolean).join(' '),
-        scannedAt, summary: emptySummary(), workloads: [], vulnerabilities: [], secrets: 0, _seen: new Set(),
+        scannedAt, workloads: [], changes: [], secrets: 0,
+        _all: { seen: new Set(), list: [] }, _running: { seen: new Set(), list: [] },
       });
       const g = byImage.get(image);
+      if (running) {
+        g.active = true;
+        // A re-pushed tag (same name, new digest) keeps one row: show the
+        // digest that runs.
+        if (art.digest) g.digest = art.digest;
+      }
       if (scannedAt > g.scannedAt) g.scannedAt = scannedAt;
-      addSummary(g.summary, rep.summary);
-      g.workloads.push({ kind: owner.kind, name: owner.name, namespace: owner.namespace, container: owner.container });
-      for (const v of (rep.vulnerabilities || [])) {
-        const key = v.vulnerabilityID + '|' + v.resource + '|' + v.installedVersion;
-        if (g._seen.has(key)) continue; g._seen.add(key);
-        g.vulnerabilities.push({
-          id: v.vulnerabilityID, severity: sev(v.severity), pkg: v.resource || '',
-          installedVersion: v.installedVersion || '', fixedVersion: v.fixedVersion || '',
-          title: v.title || '', link: v.primaryLink || (v.links || [])[0] || '', score: v.score,
-          // os-pkgs (base image) vs lang-pkgs (application dependency) + where.
-          class: v.class || '', packageType: v.packageType || '', packagePath: v.packagePath || '', target: v.target || '',
+      g.workloads.push({ kind: owner.kind, name: owner.name, namespace: owner.namespace, container: owner.container, running });
+      const change = running && changes.get(r);
+      if (change) {
+        g.changes.push({
+          ...change, namespace: owner.namespace,
+          resolvedBySeverity: severityCounts(change.resolved),
+          introducedBySeverity: severityCounts(change.introduced),
         });
       }
+      addVulns(g._all, rep);
+      if (running) addVulns(g._running, rep);
     }
     // Merge exposed-secret counts (a separate Trivy Operator report) by image.
     const secretItems = await listTrivy('exposedsecretreports');
-    for (const r of (secretItems || [])) {
-      const owner = trivyOwner(r);
-      if (ns && owner.namespace !== ns) continue;
+    for (const r of nsReports(secretItems || [], ns)) {
       const rep = r.report || {};
-      const art = rep.artifact || {};
-      const reg = rep.registry?.server || '';
-      const image = `${reg ? reg + '/' : ''}${art.repository || '?'}${art.tag ? ':' + art.tag : (art.digest ? '@' + String(art.digest).slice(0, 19) : '')}`;
-      const g = byImage.get(image);
+      const g = byImage.get(trivyImageOf(rep));
       if (g) g.secrets = (g.secrets || 0) + (rep.summary ? sevTotalOf({ CRITICAL: rep.summary.criticalCount, HIGH: rep.summary.highCount, MEDIUM: rep.summary.mediumCount, LOW: rep.summary.lowCount }) : (rep.secrets || []).length);
     }
 
-    const order = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3, UNKNOWN: 4 };
     const images = [...byImage.values()].map((g) => {
-      delete g._seen;
+      // A running image's findings come from the reports of what runs (an
+      // older digest of the same tag may still have a report).
+      g.vulnerabilities = (g.active ? g._running : g._all).list;
+      delete g._all; delete g._running;
       g.platform = g.platform || g.os;
+      // Counted from the deduplicated list: summing the operator's per-report
+      // summaries counted an image once per workload using it.
+      g.summary = severityCounts(g.vulnerabilities);
       g.criticalCount = g.summary.CRITICAL;
-      g.vulnerabilities.sort((a, b) => order[a.severity] - order[b.severity] || (b.score || 0) - (a.score || 0));
+      g.status = g.active ? 'Scanned' : 'Not running';
+      g.vulnerabilities.sort((a, b) => SEV_ORDER[a.severity] - SEV_ORDER[b.severity] || (b.score || 0) - (a.score || 0));
       g.remediation = remediationFor(g.vulnerabilities);
       return g;
-    }).sort((a, b) => (b.summary.CRITICAL - a.summary.CRITICAL) || (b.summary.HIGH - a.summary.HIGH));
-    // Results donut: images with any finding vs clean.
-    const vulnerable = images.filter((g) => sevTotalOf(g.summary) > 0).length;
-    const results = { vulnerable, ok: images.length - vulnerable };
+    }).sort((a, b) => (b.active - a.active) || (b.summary.CRITICAL - a.summary.CRITICAL) || (b.summary.HIGH - a.summary.HIGH));
+    const active = images.filter((g) => g.active);
+    const total = emptySummary();
+    for (const g of active) for (const k of Object.keys(total)) total[k] += g.summary[k];
+    // Results donut: running images with any finding vs clean.
+    const vulnerable = active.filter((g) => sevTotalOf(g.summary) > 0).length;
+    const results = { vulnerable, ok: active.length - vulnerable };
+    // Resolved by the latest image of each Deployment + container (once each,
+    // though several images rows can't share one — guard anyway).
+    const resolvedBySeverity = emptySummary();
+    const introducedBySeverity = emptySummary();
+    const counted = new Set();
+    for (const g of active) {
+      for (const c of g.changes) {
+        const key = `${c.namespace}|${c.workload}|${c.container}`;
+        if (counted.has(key)) continue;
+        counted.add(key);
+        for (const k of Object.keys(resolvedBySeverity)) {
+          resolvedBySeverity[k] += c.resolvedBySeverity[k] || 0;
+          introducedBySeverity[k] += c.introducedBySeverity[k] || 0;
+        }
+      }
+    }
     // Status donut: the images running in the cluster that have a report vs
     // not yet — per (workload, container), the way the operator scans.
-    // Best-effort: without pod access the donut falls back to the reports.
-    let coverage = null;
-    try {
-      const [pods, jobs] = await Promise.all([listAllPods(), listScanJobs().catch(() => [])]);
-      coverage = scanCoverage(nsUnits(pods, ns), nsReports(items, ns), jobs);
-    } catch { /* best-effort */ }
+    const coverage = pods ? scanCoverage(nsUnits(pods, ns), mine, jobs) : null;
     res.json({
       installed: true, images, summary: total, reportCount: items.length, results,
-      scanned: coverage ? coverage.scanned : images.length,
+      inactive: images.length - active.length,
+      resolved: { total: sevTotalOf(resolvedBySeverity), bySeverity: resolvedBySeverity, deployments: counted.size },
+      introduced: { total: sevTotalOf(introducedBySeverity), bySeverity: introducedBySeverity },
+      scanned: coverage ? coverage.scanned : active.length,
       notScanned: coverage ? coverage.notScanned : null,
       pending: coverage ? coverage.pending : [],
     });
@@ -3506,8 +3644,14 @@ app.get('/api/cluster/summary', async (req, res) => {
 
     // Nodes (reuse existing helpers)
     let nodes = [];
-    try { nodes = (await fetchNodes()).map(formatNode); }
-    catch (e) { errors.push({ kind: 'nodes', error: shortReason(e) }); }
+    // Requests / limits of the scheduled pods against the nodes' allocatable
+    // (lib/capacity.mjs) — the room actually left, like `kubectl describe node`.
+    const reserved = capacityTotals();
+    try {
+      const raw = await fetchNodes();
+      raw.forEach(reserved.addNode);
+      nodes = raw.map(formatNode);
+    } catch (e) { errors.push({ kind: 'nodes', error: shortReason(e) }); }
     const nodeSummary = {
       total: nodes.length,
       ready: nodes.filter(n => n.status === 'Ready').length,
@@ -3544,6 +3688,7 @@ app.get('/api/cluster/summary', async (req, res) => {
           const p = pod.status?.phase || 'Unknown';
           podPhases[p] = (podPhases[p] || 0) + 1;
           podTotal++;
+          reserved.addPod(pod);
         }
         _continue = resp.metadata?._continue;
         if (!_continue) break;
@@ -3560,6 +3705,13 @@ app.get('/api/cluster/summary', async (req, res) => {
     // Everything failed → the cluster is unreachable/unauthorized: report it.
     if (errors.length === 3) return res.status(502).json({ error: errors[0].error, code: 'upstream_error', errors });
 
+    // What the nodes use right now — only with metrics-server installed.
+    let usage = { available: false };
+    try {
+      const m = await fetchMetrics({ plural: 'nodes' });
+      usage = { available: true, ...nodeUsage(m.items) };
+    } catch { /* metrics-server not installed or not allowed */ }
+
     const result = {
       currentContext: currentContext,
       serverVersion,
@@ -3572,7 +3724,9 @@ app.get('/api/cluster/summary', async (req, res) => {
         cpuCapacity: +cpuCapacity.toFixed(1),
         cpuAllocatable: +cpuAllocatable.toFixed(1),
         memCapacityBytes: memCapacity,
-        memAllocatableBytes: memAllocatable
+        memAllocatableBytes: memAllocatable,
+        ...reserved.result(),
+        usage,
       },
       versions: Array.from(versions),
       osImages: Array.from(osImages),
@@ -4018,109 +4172,6 @@ app.get('/api/topology/:namespace', async (req, res) => {
   }
 });
 
-// Derive a simple status for a single container from its containerStatus.
-// running -> 'running', waiting(bad reason)/terminated(non-zero) -> 'failed',
-// waiting(other) -> 'pending', missing status -> 'unknown'
-function containerState(cs) {
-  if (!cs || !cs.state) return 'unknown';
-  if (cs.state.running) return 'running';
-  if (cs.state.terminated) {
-    return cs.state.terminated.exitCode === 0 ? 'running' : 'failed';
-  }
-  if (cs.state.waiting) {
-    const reason = cs.state.waiting.reason || '';
-    const bad = /CrashLoopBackOff|Error|ImagePull|InvalidImageName|CreateContainer|RunContainer|CreateContainerConfigError/i.test(reason);
-    return bad ? 'failed' : 'pending';
-  }
-  return 'unknown';
-}
-
-function formatResource(item, kind) {
-  const resolvedKind = kind || item.kind;
-  const out = {
-    name: item.metadata.name,
-    namespace: item.metadata.namespace,
-    kind: resolvedKind,
-    createdAt: item.metadata.creationTimestamp,
-    status: getResourceStatus(item, resolvedKind)
-  };
-  if (resolvedKind === 'Pod') {
-    out.node = item.spec?.nodeName || null;
-    out.containerNames = (item.spec?.containers || []).map(c => c.name);
-    const cs = item.status?.containerStatuses || [];
-    const byName = {};
-    cs.forEach(c => { byName[c.name] = c; });
-    out.containerStates = (item.spec?.containers || []).map(c => ({
-      name: c.name,
-      status: containerState(byName[c.name])
-    }));
-    out.containers = out.containerNames.length || cs.length;
-    out.restarts = cs.reduce((s, c) => s + (c.restartCount || 0), 0);
-  }
-  if (resolvedKind === 'ConfigMap') {
-    out.dataKeys = Object.keys(item.data || {}).length + Object.keys(item.binaryData || {}).length;
-  }
-  if (resolvedKind === 'Secret') {
-    out.secretType = item.type || 'Opaque';
-    out.dataKeys = Object.keys(item.data || {}).length;
-  }
-  if (resolvedKind === 'ServiceAccount') {
-    out.saSecrets = (item.secrets || []).length;
-  }
-  if (resolvedKind === 'NetworkPolicy') {
-    out.policyTypes = (item.spec?.policyTypes || []).join(', ') || '-';
-  }
-  if (resolvedKind === 'Ingress') {
-    out.ingressClass = item.spec?.ingressClassName || '-';
-    out.hosts = (item.spec?.rules || []).map(r => r.host).filter(Boolean).join(', ') || '-';
-  }
-  if (resolvedKind === 'PersistentVolumeClaim') {
-    out.capacity = item.status?.capacity?.storage || item.spec?.resources?.requests?.storage || '-';
-    out.storageClass = item.spec?.storageClassName || '-';
-    out.volume = item.spec?.volumeName || '-';
-    out.accessModes = (item.spec?.accessModes || []).join(',') || '-';
-  }
-  if (resolvedKind === 'PersistentVolume') {
-    out.capacity = item.spec?.capacity?.storage || '-';
-    out.storageClass = item.spec?.storageClassName || '-';
-    out.reclaimPolicy = item.spec?.persistentVolumeReclaimPolicy || '-';
-    out.claim = item.spec?.claimRef ? `${item.spec.claimRef.namespace}/${item.spec.claimRef.name}` : '-';
-    out.accessModes = (item.spec?.accessModes || []).join(',') || '-';
-  }
-  if (resolvedKind === 'StorageClass') {
-    out.provisioner = item.provisioner || '-';
-    out.reclaimPolicy = item.reclaimPolicy || 'Delete';
-    out.bindingMode = item.volumeBindingMode || 'Immediate';
-  }
-  return out;
-}
-
-// `kind` is passed explicitly because list items from the client library
-// don't carry a per-item `kind` field.
-function getResourceStatus(item, kind) {
-  const status = item.status || {};
-  if (kind === 'Pod') {
-    return status.phase || 'Unknown';
-  }
-  if (kind === 'Deployment' || kind === 'StatefulSet' || kind === 'DaemonSet') {
-    const ready = status.readyReplicas != null ? status.readyReplicas
-      : (status.numberReady != null ? status.numberReady : 0);
-    const desired = status.replicas != null ? status.replicas
-      : (status.desiredNumberScheduled != null ? status.desiredNumberScheduled : 0);
-    return `${ready}/${desired}`;
-  }
-  if (kind === 'Service') {
-    return item.spec?.type || 'Unknown';
-  }
-  if (kind === 'PersistentVolume' || kind === 'PersistentVolumeClaim') {
-    return status.phase || 'Unknown';
-  }
-  if (kind === 'StorageClass') {
-    return '';
-  }
-  return 'Unknown';
-}
-
 // ------------------------------------------------------------------
 // MCP endpoint (Streamable HTTP). Any MCP-compatible AI agent can connect to
 // /mcp to drive the cluster this app is attached to. Stateful: an initialize
@@ -4256,7 +4307,7 @@ const podShellError = (err) => {
 };
 
 // KUBE* covers KUBECACHEDIR, KUBECTL_* and kubelogin settings, but not
-// KUBEPILOT_* (the API token) — childEnv() drops KubePilot's secrets as well.
+// KUBEPILOT_* (the API token) — childEnv() drops k8Board's secrets as well.
 const ptyEnv = () => {
   const env = {};
   for (const [k, v] of Object.entries(childEnv())) {
@@ -4405,7 +4456,7 @@ wss.on('connection', async (browserWs, req) => {
     // app's current context (like the Helm terminal), then launch the chosen
     // agent CLI. Only a known agent id is accepted, and only where local
     // shells are allowed (both checked at upgrade). The shell gets the user's
-    // environment — agent CLIs need their own API keys — minus KubePilot's
+    // environment — agent CLIs need their own API keys — minus k8Board's
     // secrets. ----
     const info = AI_AGENTS.find((a) => a.id === agentId);
     if (!info) { send('\r\n\x1b[31mUnknown AI agent.\x1b[0m\r\n'); browserWs.close(); return; }
@@ -4467,7 +4518,7 @@ wss.on('connection', async (browserWs, req) => {
       }
     } else {
       // No kubectl on this machine: the same session over the Kubernetes API.
-      send('\x1b[90mkubectl isn’t installed — connecting through KubePilot’s built-in Kubernetes client.\x1b[0m\r\n');
+      send('\x1b[90mkubectl isn’t installed — connecting through k8Board’s built-in Kubernetes client.\x1b[0m\r\n');
       try {
         term = await openPodShell(kubeConfig, { namespace, pod, container, command: shellCmd });
       } catch (err) {
@@ -4574,9 +4625,9 @@ server.listen(PORT, HOST, () => {
   // non-expiring credential; scripts/login-url.mjs prints it on demand.
   // KUBEPILOT_PRINT_LOGIN_URL=1 restores the old line.
   if (process.stdout.isTTY || process.env.NODE_ENV !== 'production' || envFlag('PRINT_LOGIN_URL')) {
-    log.raw(`KubePilot listening on ${base}  —  open ${base}/#token=${getAuthToken()}`);
+    log.raw(`k8Board listening on ${base}  —  open ${base}/#token=${getAuthToken()}`);
   } else {
-    log.raw(`KubePilot listening on ${base}  —  print the sign-in link with: node scripts/login-url.mjs (Docker: docker exec <container> node scripts/login-url.mjs --base <the URL you open>)`);
+    log.raw(`k8Board listening on ${base}  —  print the sign-in link with: node scripts/login-url.mjs (Docker: docker exec <container> node scripts/login-url.mjs --base <the URL you open>)`);
   }
   log.info('listening', { host: HOST, port: PORT, bound: HOST === '0.0.0.0' ? '0.0.0.0' : HOST });
 });

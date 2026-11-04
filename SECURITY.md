@@ -1,6 +1,6 @@
 # Security Policy
 
-KubePilot runs with the full privileges of your kubeconfig. We treat anything that lets an
+k8Board runs with the full privileges of your kubeconfig. We treat anything that lets an
 unauthorised party reach the API, the MCP endpoint, the exec WebSocket, or the Electron main
 process as a security issue.
 
@@ -43,7 +43,7 @@ Out of scope:
 
 - Anything requiring an already-compromised machine or a malicious kubeconfig you chose to load.
 - Vulnerabilities in the clusters you connect to, or in third-party tools (`kubectl`, `trivy`)
-  unless KubePilot invokes them unsafely.
+  unless k8Board invokes them unsafely.
 - The marketing website (static HTML) beyond content injection.
 
 ## Hardening summary (what the app does)
@@ -53,7 +53,7 @@ Out of scope:
 - AI agents use a separate MCP token (`~/.config/kubepilot/mcp-token`): its requests are MCP requests by
   construction — the write gate applies, terminals, settings, kubeconfig loading, cloud sign-ins and updates
   are refused — and Kubernetes Secret values are masked for agents unless the user opts in.
-- KubePilot's own secrets (API/MCP tokens, secret key, LLM key) are removed from the environment of every
+- k8Board's own secrets (API/MCP tokens, secret key, LLM key) are removed from the environment of every
   process it starts; the Helm and AI-agent terminals are desktop-only and see only the selected cluster.
 - Loopback bind by default; `Host` allowlist (HTTP 421 otherwise); strict same-origin checks.
 - CSP, `X-Frame-Options: DENY`, `nosniff`, rate limiting, body-size limits, strict input validation.
@@ -62,6 +62,6 @@ Out of scope:
   `--inspect`, allow-listed environment for the backend process, fresh token per launch.
 - Docker: pinned base-image digest, checksum-verified `kubectl` / `kubelogin` / `trivy`, non-root user,
   `npm ci --ignore-scripts`, image scanned with Trivy in CI.
-- Releases: SHA256SUMS signed with KubePilot's Ed25519 release key (`SHA256SUMS.txt.sig`, bound to the
+- Releases: SHA256SUMS signed with k8Board's Ed25519 release key (`SHA256SUMS.txt.sig`, bound to the
   version) and a CycloneDX SBOM. The in-app updater installs nothing that isn't signed with a key built into
   the app. The Microsoft Store edition is signed by Microsoft and updated by the Store.

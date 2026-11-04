@@ -1,6 +1,6 @@
 // Generates the Microsoft Store (AppX/MSIX) logo assets in build/appx/ from
 // build/icon.png — the same artwork as the Windows .exe icon — so the Store
-// listing, Start menu and taskbar show KubePilot's own icon instead of
+// listing, Start menu and taskbar show k8Board's own icon instead of
 // electron-builder's placeholders. Run after changing the icon:
 //
 //   npx electron scripts/generate-appx-assets.cjs
@@ -15,6 +15,9 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const SRC = path.join(ROOT, 'build', 'icon.png');
+// The simplified mark (scripts/generate-icons.cjs) for the tiles drawn at 64px or less.
+const SRC_SMALL = path.join(ROOT, 'build', 'icon-small.png');
+const SMALL_MAX = 64;
 const OUT = path.join(ROOT, 'build', 'appx');
 
 // [file, width, height, icon size as a fraction of the shorter side]
@@ -55,9 +58,11 @@ app.whenReady().then(async () => {
   try {
     const win = new BrowserWindow({ show: false, webPreferences: { offscreen: true } });
     await win.loadURL('data:text/html,<!doctype html><title>appx</title>');
-    const src = `data:image/png;base64,${fs.readFileSync(SRC).toString('base64')}`;
+    const full = `data:image/png;base64,${fs.readFileSync(SRC).toString('base64')}`;
+    const small = fs.existsSync(SRC_SMALL) ? `data:image/png;base64,${fs.readFileSync(SRC_SMALL).toString('base64')}` : full;
     fs.mkdirSync(OUT, { recursive: true });
     for (const [file, w, h, frac] of ASSETS) {
+      const src = Math.round(Math.min(w, h) * frac) <= SMALL_MAX ? small : full;
       const dataUrl = await win.webContents.executeJavaScript(`(${render})(${JSON.stringify({ src, w, h, frac })})`);
       fs.writeFileSync(path.join(OUT, file), Buffer.from(dataUrl.split(',')[1], 'base64'));
       console.log(`  • ${file} ${w}x${h}`);

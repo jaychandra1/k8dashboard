@@ -49,8 +49,8 @@ export default function KubeConfigModal({ open = true, defaultPath, exists, onSu
 
   const where = defaultPath ? ` at ${defaultPath}` : '';
   const description = exists
-    ? `A kubeconfig was found${where} but couldn't be loaded. Point KubePilot at a valid kubeconfig file${canAdd ? ', or import an EKS/AKS cluster' : ''}.`
-    : `No kubeconfig was found${where}. Point KubePilot at a kubeconfig file${canAdd ? ', or import an EKS/AKS cluster from your cloud account' : ''}.`;
+    ? `A kubeconfig was found${where} but couldn't be loaded. Point k8Board at a valid kubeconfig file${canAdd ? ', or import an EKS/AKS cluster' : ''}.`
+    : `No kubeconfig was found${where}. Point k8Board at a kubeconfig file${canAdd ? ', or import an EKS/AKS cluster from your cloud account' : ''}.`;
 
   return (
     <Modal
@@ -112,7 +112,7 @@ export default function KubeConfigModal({ open = true, defaultPath, exists, onSu
             )}
           </div>
           <p className="modal-hint modal-hint-tight">
-            Import a cluster straight from your cloud account — no CLI required. KubePilot signs you in and writes the kubeconfig for you.
+            Import a cluster straight from your cloud account — no CLI required. k8Board signs you in and writes the kubeconfig for you.
           </p>
         </div>
       )}

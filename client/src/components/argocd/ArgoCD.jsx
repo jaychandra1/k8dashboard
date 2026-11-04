@@ -3,6 +3,7 @@ import Icon from '../Icons';
 import { useToast } from '../Toast';
 import { askLabel } from '../../aiConfig';
 import useRequest from '../../hooks/useRequest';
+import useTabStripScroll from '../../hooks/useTabStripScroll';
 import { getJson, postJson, del, p, errorMessage } from '../../lib/api';
 import { KIND_TYPE } from '../../lib/kinds';
 import ErrorState from '../ui/ErrorState';
@@ -47,6 +48,7 @@ export default function ArgoCD({ view, onViewChange, refreshSignal = 0, onNaviga
   // Sub-view: from the route when provided, local otherwise (no mirrored state).
   const [localView, setLocalView] = useState('dashboard');
   const tab = view && TAB_KEYS.includes(view) ? view : (view ? 'dashboard' : localView);
+  const tabsRef = useTabStripScroll(tab);
   const selectTab = useCallback((t) => { setLocalView(t); onViewChange?.(t); }, [onViewChange]);
 
   // Selected application: from the route when provided, local otherwise.
@@ -207,7 +209,7 @@ export default function ArgoCD({ view, onViewChange, refreshSignal = 0, onNaviga
   return (
     <div className="resource-viewer argo-view">
       <h1 className="sr-only">Argo CD</h1>
-      <div className="resource-tabs argo-tabs" role="tablist" aria-label="Argo CD views">
+      <div ref={tabsRef} className="resource-tabs argo-tabs" role="tablist" aria-label="Argo CD views">
         {TABS.map((t) => (
           <button
             key={t.key}

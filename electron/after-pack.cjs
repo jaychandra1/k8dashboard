@@ -5,7 +5,7 @@
 //
 //   1. Electron fuses (all platforms) — hard-disable the Node.js escape hatches
 //      that an attacker on the machine could otherwise use to run arbitrary
-//      code *as the trusted KubePilot binary*:
+//      code *as the trusted k8Board binary*:
 //        RunAsNode=false                          ELECTRON_RUN_AS_NODE is ignored
 //        EnableNodeOptionsEnvironmentVariable=false  NODE_OPTIONS is ignored
 //        EnableNodeCliInspectArguments=false      --inspect/--inspect-brk ignored

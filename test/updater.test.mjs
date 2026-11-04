@@ -69,7 +69,7 @@ const DL = `https://github.com/${REPO}/releases/download`;
 function ghRelease(tag, { prerelease = false, draft = false, assets = [], body = '## Notes' } = {}) {
   return {
     tag_name: tag,
-    name: `KubePilot ${tag.replace(/^v/, '')}`,
+    name: `k8Board ${tag.replace(/^v/, '')}`,
     published_at: '2026-10-01T10:00:00Z',
     body,
     html_url: `https://github.com/${REPO}/releases/tag/${tag}`,
@@ -131,13 +131,13 @@ describe('GitHub release service', () => {
     const r = await svc({
       [`${API}/releases/latest`]: json(
         ghRelease('v1.4.0', {
-          assets: [{ name: 'KubePilot-windows.exe', digest: `sha256:${digest}` }, { name: 'SHA256SUMS.txt' }],
+          assets: [{ name: 'k8Board-windows.exe', digest: `sha256:${digest}` }, { name: 'SHA256SUMS.txt' }],
         })
       ),
     }).latest();
     assert.equal(r.version, '1.4.0');
     assert.equal(r.tag, 'v1.4.0');
-    assert.equal(r.name, 'KubePilot 1.4.0');
+    assert.equal(r.name, 'k8Board 1.4.0');
     assert.equal(r.publishedAt, '2026-10-01T10:00:00Z');
     assert.equal(r.body, '## Notes');
     assert.equal(r.htmlUrl, `https://github.com/${REPO}/releases/tag/v1.4.0`);
@@ -233,23 +233,23 @@ describe('GitHub release service', () => {
         ...ghRelease('v1.4.0'),
         assets: [
           {
-            name: 'KubePilot-windows.exe',
+            name: 'k8Board-windows.exe',
             size: 1,
-            browser_download_url: 'http://github.com/x/KubePilot-windows.exe',
+            browser_download_url: 'http://github.com/x/k8Board-windows.exe',
           },
           {
-            name: 'KubePilot-linux.deb',
+            name: 'k8Board-linux.deb',
             size: 1,
-            browser_download_url: 'https://evil.example/KubePilot-linux.deb',
+            browser_download_url: 'https://evil.example/k8Board-linux.deb',
           },
-          { name: 'KubePilot-macos.dmg', size: 1, browser_download_url: `${DL}/v1.4.0/KubePilot-macos.dmg` },
+          { name: 'k8Board-macos.dmg', size: 1, browser_download_url: `${DL}/v1.4.0/k8Board-macos.dmg` },
         ],
       }),
     });
     const r = await createReleaseService({ repo: REPO, fetchImpl: f }).latest();
     assert.deepEqual(
       r.assets.map((a) => a.name),
-      ['KubePilot-macos.dmg']
+      ['k8Board-macos.dmg']
     );
     const headers = f.calls[0].opts.headers;
     assert.equal(
@@ -276,10 +276,10 @@ describe('GitHub release service', () => {
 describe('platform / asset selection', () => {
   // The names today's release workflow publishes (unsuffixed = Windows x64, Linux x64, macOS arm64).
   const CURRENT = [
-    'KubePilot-windows.exe',
-    'KubePilot-macos.dmg',
-    'KubePilot-linux.AppImage',
-    'KubePilot-linux.deb',
+    'k8Board-windows.exe',
+    'k8Board-macos.dmg',
+    'k8Board-linux.AppImage',
+    'k8Board-linux.deb',
     'SHA256SUMS.txt',
     'kubepilot-v1.4.0.cdx.json',
   ].map((name) => ({ name }));
@@ -292,7 +292,7 @@ describe('platform / asset selection', () => {
     'macos-arm64.dmg',
     'linux-x64.deb',
     'linux-arm64.deb',
-  ].map((s) => ({ name: `KubePilot-1.4.0-${s}` }));
+  ].map((s) => ({ name: `k8Board-1.4.0-${s}` }));
   const pick = (assets, platform, arch, installKind) =>
     selectAsset(assets, detectTarget({ platform, arch, installKind }), { version: '1.4.0' }).name;
 
@@ -313,7 +313,7 @@ describe('platform / asset selection', () => {
   });
 
   test('parses asset names (case-insensitive, optional version / arch)', () => {
-    assert.deepEqual(parseAssetName('KubePilot-windows.exe'), {
+    assert.deepEqual(parseAssetName('k8Board-windows.exe'), {
       os: 'windows',
       arch: null,
       ext: 'exe',
@@ -325,7 +325,7 @@ describe('platform / asset selection', () => {
       ext: 'dmg',
       version: '1.4.0',
     });
-    assert.deepEqual(parseAssetName('KubePilot-linux-aarch64.AppImage'), {
+    assert.deepEqual(parseAssetName('k8Board-linux-aarch64.AppImage'), {
       os: 'linux',
       arch: 'arm64',
       ext: 'appimage',
@@ -333,29 +333,39 @@ describe('platform / asset selection', () => {
     });
     for (const n of [
       'SHA256SUMS.txt',
-      'KubePilot-windows.exe.blockmap',
+      'k8Board-windows.exe.blockmap',
       'Other-windows.exe',
-      'KubePilot-windows-ia32.exe',
+      'k8Board-windows-ia32.exe',
       'latest.yml',
     ])
       assert.equal(parseAssetName(n), null, n);
   });
 
+  test('k8Board was KubePilot: legacy-named assets are accepted, the current name is preferred', () => {
+    assert.deepEqual(parseAssetName('KubePilot-windows.exe'), { os: 'windows', arch: null, ext: 'exe', version: null });
+    // A transition release carries both names for the same installer.
+    const both = ['KubePilot-windows.exe', 'k8Board-windows.exe', 'KubePilot-macos.dmg', 'k8Board-macos.dmg'].map((name) => ({ name }));
+    assert.equal(pick(both, 'win32', 'x64', 'nsis'), 'k8Board-windows.exe');
+    assert.equal(pick(both, 'darwin', 'arm64', 'dmg'), 'k8Board-macos.dmg');
+    // A release with only the legacy names still installs.
+    assert.equal(pick([{ name: 'KubePilot-linux.AppImage' }], 'linux', 'x64', 'appimage'), 'KubePilot-linux.AppImage');
+  });
+
   test('every OS / arch with explicitly named assets', () => {
-    assert.equal(pick(ALL_ARCHES, 'win32', 'x64'), 'KubePilot-1.4.0-windows-x64.exe');
-    assert.equal(pick(ALL_ARCHES, 'win32', 'arm64'), 'KubePilot-1.4.0-windows-arm64.exe');
-    assert.equal(pick(ALL_ARCHES, 'linux', 'x64', 'appimage'), 'KubePilot-1.4.0-linux-x64.AppImage');
-    assert.equal(pick(ALL_ARCHES, 'linux', 'arm64', 'appimage'), 'KubePilot-1.4.0-linux-arm64.AppImage');
-    assert.equal(pick(ALL_ARCHES, 'linux', 'arm64', 'deb'), 'KubePilot-1.4.0-linux-arm64.deb');
-    assert.equal(pick(ALL_ARCHES, 'darwin', 'x64'), 'KubePilot-1.4.0-macos-x64.dmg');
-    assert.equal(pick(ALL_ARCHES, 'darwin', 'arm64'), 'KubePilot-1.4.0-macos-arm64.dmg');
+    assert.equal(pick(ALL_ARCHES, 'win32', 'x64'), 'k8Board-1.4.0-windows-x64.exe');
+    assert.equal(pick(ALL_ARCHES, 'win32', 'arm64'), 'k8Board-1.4.0-windows-arm64.exe');
+    assert.equal(pick(ALL_ARCHES, 'linux', 'x64', 'appimage'), 'k8Board-1.4.0-linux-x64.AppImage');
+    assert.equal(pick(ALL_ARCHES, 'linux', 'arm64', 'appimage'), 'k8Board-1.4.0-linux-arm64.AppImage');
+    assert.equal(pick(ALL_ARCHES, 'linux', 'arm64', 'deb'), 'k8Board-1.4.0-linux-arm64.deb');
+    assert.equal(pick(ALL_ARCHES, 'darwin', 'x64'), 'k8Board-1.4.0-macos-x64.dmg');
+    assert.equal(pick(ALL_ARCHES, 'darwin', 'arm64'), 'k8Board-1.4.0-macos-arm64.dmg');
   });
 
   test("today's unsuffixed names map to the one arch each OS is built for", () => {
-    assert.equal(pick(CURRENT, 'win32', 'x64'), 'KubePilot-windows.exe');
-    assert.equal(pick(CURRENT, 'darwin', 'arm64'), 'KubePilot-macos.dmg');
-    assert.equal(pick(CURRENT, 'linux', 'x64', 'appimage'), 'KubePilot-linux.AppImage');
-    assert.equal(pick(CURRENT, 'linux', 'x64', 'deb'), 'KubePilot-linux.deb');
+    assert.equal(pick(CURRENT, 'win32', 'x64'), 'k8Board-windows.exe');
+    assert.equal(pick(CURRENT, 'darwin', 'arm64'), 'k8Board-macos.dmg');
+    assert.equal(pick(CURRENT, 'linux', 'x64', 'appimage'), 'k8Board-linux.AppImage');
+    assert.equal(pick(CURRENT, 'linux', 'x64', 'deb'), 'k8Board-linux.deb');
     assert.throws(
       () => pick(CURRENT, 'win32', 'arm64'),
       (e) => e.code === 'no_asset_for_arch' && /Windows ARM64/.test(e.message)
@@ -372,20 +382,20 @@ describe('platform / asset selection', () => {
     assert.throws(
       () =>
         pick(
-          [{ name: 'KubePilot-macos.dmg' }, { name: 'setup.exe' }, { name: 'Other-windows.exe' }],
+          [{ name: 'k8Board-macos.dmg' }, { name: 'setup.exe' }, { name: 'Other-windows.exe' }],
           'win32',
           'x64'
         ),
-      (e) => e.code === 'no_asset_for_os' && /KubePilot v1\.4\.0 is available/.test(e.message)
+      (e) => e.code === 'no_asset_for_os' && /k8Board v1\.4\.0 is available/.test(e.message)
     );
-    assert.throws(() => pick([{ name: 'KubePilot-1.3.0-windows-x64.exe' }], 'win32', 'x64'), {
+    assert.throws(() => pick([{ name: 'k8Board-1.3.0-windows-x64.exe' }], 'win32', 'x64'), {
       code: 'no_asset_for_os',
     });
     assert.throws(() => pick(CURRENT, 'freebsd', 'x64'), { code: 'no_asset_for_os' });
     // An explicit arch beats the unsuffixed build.
     assert.equal(
-      pick([{ name: 'KubePilot-windows.exe' }, { name: 'KubePilot-windows-x64.exe' }], 'win32', 'x64'),
-      'KubePilot-windows-x64.exe'
+      pick([{ name: 'k8Board-windows.exe' }, { name: 'k8Board-windows-x64.exe' }], 'win32', 'x64'),
+      'k8Board-windows-x64.exe'
     );
   });
 });
@@ -394,14 +404,14 @@ describe('verification', () => {
   const good = sha(Buffer.from('installer'));
   test('parses SHA256SUMS.txt', () => {
     const m = parseChecksums(
-      `${good}  KubePilot-windows.exe\n${'b'.repeat(64)} *KubePilot-macos.dmg\r\njunk line\n`
+      `${good}  k8Board-windows.exe\n${'b'.repeat(64)} *k8Board-macos.dmg\r\njunk line\n`
     );
-    assert.equal(m.get('KubePilot-windows.exe'), good);
-    assert.equal(m.get('KubePilot-macos.dmg'), 'b'.repeat(64));
+    assert.equal(m.get('k8Board-windows.exe'), good);
+    assert.equal(m.get('k8Board-macos.dmg'), 'b'.repeat(64));
     assert.equal(m.size, 2);
   });
   test('expected digest: either source, both must agree, none → refuse', () => {
-    const asset = { name: 'KubePilot-windows.exe', digest: good };
+    const asset = { name: 'k8Board-windows.exe', digest: good };
     assert.deepEqual(expectedSha256(asset, null), { sha256: good, sources: ['github-digest'] });
     assert.deepEqual(expectedSha256({ name: asset.name, digest: null }, new Map([[asset.name, good]])), {
       sha256: good,
@@ -422,7 +432,7 @@ describe('verification', () => {
     const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
     const pub = publicKey.export({ type: 'spki', format: 'der' }).toString('base64');
     const other = crypto.generateKeyPairSync('ed25519').publicKey.export({ type: 'spki', format: 'der' }).toString('base64');
-    const text = `${good}  KubePilot-windows.exe\n`;
+    const text = `${good}  k8Board-windows.exe\n`;
     const signature = crypto.sign(null, signedMessage('1.4.0', text), privateKey).toString('base64');
     const ok = (o) => verifyChecksumsSignature({ version: '1.4.0', checksumsText: text, signature, keys: [pub], ...o });
     assert.equal(ok(), true);
@@ -436,12 +446,12 @@ describe('verification', () => {
     assert.equal(ok({ keys: ['bm90IGEga2V5'] }), false, 'malformed key');
     const rsa = crypto.generateKeyPairSync('rsa', { modulusLength: 1024 }).publicKey;
     assert.equal(ok({ keys: [rsa.export({ type: 'spki', format: 'der' }).toString('base64')] }), false, 'non-Ed25519 key');
-    const signedOnly = new Map([['KubePilot-windows.exe', good]]);
-    assert.deepEqual(expectedSha256({ name: 'KubePilot-windows.exe', digest: good }, signedOnly, { signed: true }).sources, [
+    const signedOnly = new Map([['k8Board-windows.exe', good]]);
+    assert.deepEqual(expectedSha256({ name: 'k8Board-windows.exe', digest: good }, signedOnly, { signed: true }).sources, [
       'signed SHA256SUMS.txt',
       'github-digest',
     ]);
-    assert.throws(() => expectedSha256({ name: 'KubePilot-windows.exe', digest: good }, new Map(), { signed: true }), {
+    assert.throws(() => expectedSha256({ name: 'k8Board-windows.exe', digest: good }, new Map(), { signed: true }), {
       code: 'verification_unavailable',
     });
   });
@@ -464,7 +474,7 @@ describe('verification', () => {
 
 describe('download', () => {
   const data = Buffer.alloc(300_000, 7);
-  const url = `${DL}/v1.4.0/KubePilot-windows.exe`;
+  const url = `${DL}/v1.4.0/k8Board-windows.exe`;
   const cdn = 'https://release-assets.githubusercontent.com/abc?sig=1';
 
   test('follows GitHub redirects, streams to disk, hashes, reports progress', async () => {
@@ -551,7 +561,7 @@ describe('update workflow (service)', () => {
   const installer = Buffer.from('fake installer bytes');
   const assetsFor = (
     tag,
-    { digest = sha(installer), withSums = false, name = 'KubePilot-windows.exe' } = {}
+    { digest = sha(installer), withSums = false, name = 'k8Board-windows.exe' } = {}
   ) => {
     const list = [{ name, data: installer, digest: digest ? `sha256:${digest}` : undefined }];
     if (withSums) list.push({ name: 'SHA256SUMS.txt' });
@@ -622,8 +632,8 @@ describe('update workflow (service)', () => {
     svc.startDownload();
     const ready = await settle(svc, ['downloading', 'verifying']);
     assert.equal(ready.phase, 'ready');
-    assert.equal(ready.asset.name, 'KubePilot-windows.exe');
-    const file = path.join(dir, 'pending', 'KubePilot-windows.exe');
+    assert.equal(ready.asset.name, 'k8Board-windows.exe');
+    const file = path.join(dir, 'pending', 'k8Board-windows.exe');
     assert.equal(sha(fs.readFileSync(file)), sha(installer));
     const done = await svc.install({ when: 'now' });
     assert.equal(done.phase, 'restarting');
@@ -649,7 +659,7 @@ describe('update workflow (service)', () => {
       platform: 'darwin',
       arch: 'arm64',
       kind: 'dmg',
-      assets: assetsFor('v1.4.0', { name: 'KubePilot-macos.dmg' }),
+      assets: assetsFor('v1.4.0', { name: 'k8Board-macos.dmg' }),
     });
     await svc.check();
     svc.startDownload();
@@ -663,14 +673,14 @@ describe('update workflow (service)', () => {
   test('SHA256SUMS.txt is used too, and must agree', async () => {
     const ok = setup({
       assets: assetsFor('v1.4.0', { withSums: true }),
-      sums: `${sha(installer)}  KubePilot-windows.exe\n`,
+      sums: `${sha(installer)}  k8Board-windows.exe\n`,
     });
     await ok.svc.check();
     ok.svc.startDownload();
     assert.equal((await settle(ok.svc, ['downloading', 'verifying'])).phase, 'ready');
     const bad = setup({
       assets: assetsFor('v1.4.0', { withSums: true }),
-      sums: `${'f'.repeat(64)}  KubePilot-windows.exe\n`,
+      sums: `${'f'.repeat(64)}  k8Board-windows.exe\n`,
     });
     await bad.svc.check();
     bad.svc.startDownload();
@@ -687,7 +697,7 @@ describe('update workflow (service)', () => {
     assert.equal(s.phase, 'failed');
     assert.deepEqual(s.error, {
       code: 'verification_failed',
-      message: 'The downloaded KubePilot update could not be verified and will not be installed.',
+      message: 'The downloaded k8Board update could not be verified and will not be installed.',
       retryable: true,
       stage: 'verify',
     });
@@ -711,7 +721,7 @@ describe('update workflow (service)', () => {
   describe('signed releases (a release key is trusted)', () => {
     const signer = crypto.generateKeyPairSync('ed25519');
     const pub = signer.publicKey.export({ type: 'spki', format: 'der' }).toString('base64');
-    const sumsText = `${sha(installer)}  KubePilot-windows.exe\n`;
+    const sumsText = `${sha(installer)}  k8Board-windows.exe\n`;
     const signFor = (version, text = sumsText, key = signer.privateKey) =>
       crypto.sign(null, signedMessage(version, text), key).toString('base64');
     const signedAssets = (tag, opts) => [...assetsFor(tag, { withSums: true, ...opts }), { name: 'SHA256SUMS.txt.sig' }];
@@ -736,7 +746,7 @@ describe('update workflow (service)', () => {
       const t = signedSetup({ assets: assetsFor('v1.4.0', { withSums: true }) });
       const s = await run(t);
       assert.equal(s.error.code, 'verification_unavailable');
-      assert.match(s.error.message, /isn't signed with KubePilot's release key/);
+      assert.match(s.error.message, /isn't signed with k8Board's release key/);
       assert.equal(fetchedInstaller(t.fetchImpl), false);
       assert.equal(t.requests.length, 0);
     });
@@ -755,13 +765,13 @@ describe('update workflow (service)', () => {
     });
 
     test('installer missing from the signed list → refused even with a GitHub digest', async () => {
-      const other = `${'a'.repeat(64)}  KubePilot-macos.dmg\n`;
+      const other = `${'a'.repeat(64)}  k8Board-macos.dmg\n`;
       const s = await run(signedSetup({ sums: other, sig: signFor('1.4.0', other) }));
       assert.equal(s.error.code, 'verification_unavailable');
     });
 
     test('installer bytes that differ from the signed list → deleted, never installed', async () => {
-      const forged = `${'f'.repeat(64)}  KubePilot-windows.exe\n`;
+      const forged = `${'f'.repeat(64)}  k8Board-windows.exe\n`;
       const t = signedSetup({
         assets: signedAssets('v1.4.0', { digest: null }),
         sums: forged,
@@ -782,7 +792,7 @@ describe('update workflow (service)', () => {
     assert.equal(s.error.code, 'no_asset_for_arch');
     assert.match(
       s.error.message,
-      /KubePilot v1\.4\.0 is available, but an installer for Windows ARM64 could not be found/
+      /k8Board v1\.4\.0 is available, but an installer for Windows ARM64 could not be found/
     );
   });
 
@@ -833,7 +843,7 @@ describe('update workflow (service)', () => {
         available: true,
         request: async () => {
           const e = new Error(
-            'The update could not be installed. Your existing KubePilot installation has not been modified.'
+            'The update could not be installed. Your existing k8Board installation has not been modified.'
           );
           e.code = 'install_failed';
           throw Object.assign(e, { name: 'UpdateError' });
@@ -883,7 +893,7 @@ describe('installers (mocked — nothing is installed)', () => {
       setImmediate(() => child.emit('spawn'));
       return child;
     };
-    await launchNsisInstaller('C:\\cache\\KubePilot-windows.exe', { relaunch: true, spawnImpl: fakeSpawn });
+    await launchNsisInstaller('C:\\cache\\k8Board-windows.exe', { relaunch: true, spawnImpl: fakeSpawn });
     assert.deepEqual(calls[0].args, ['--updated', '/S', '--force-run']);
     assert.equal(calls[0].opts.detached, true);
     const failSpawn = () => {
@@ -896,16 +906,16 @@ describe('installers (mocked — nothing is installed)', () => {
     });
   });
 
-  test('detects how KubePilot is installed', () => {
+  test('detects how k8Board is installed', () => {
     const exists = (set) => (p) => set.has(p);
     assert.equal(detectInstall({ isPackaged: false }).reason, 'development');
     assert.equal(
       detectInstall({
         platform: 'win32',
         isPackaged: true,
-        execPath: 'C:\\Users\\u\\AppData\\Local\\Programs\\kubepilot\\KubePilot.exe',
+        execPath: 'C:\\Users\\u\\AppData\\Local\\Programs\\kubepilot\\k8Board.exe',
         existsSync: exists(
-          new Set(['C:\\Users\\u\\AppData\\Local\\Programs\\kubepilot\\Uninstall KubePilot.exe'])
+          new Set(['C:\\Users\\u\\AppData\\Local\\Programs\\kubepilot\\Uninstall k8Board.exe'])
         ),
       }).kind,
       'nsis'
@@ -914,15 +924,15 @@ describe('installers (mocked — nothing is installed)', () => {
       detectInstall({
         platform: 'win32',
         isPackaged: true,
-        execPath: 'D:\\release\\win-unpacked\\KubePilot.exe',
+        execPath: 'D:\\release\\win-unpacked\\k8Board.exe',
         existsSync: exists(new Set()),
       }).reason,
       'portable'
     );
     // Microsoft Store (MSIX): Electron's process.windowsStore, or the WindowsApps location.
     for (const opts of [
-      { windowsStore: true, execPath: 'C:\\x\\KubePilot.exe' },
-      { execPath: 'C:\\Program Files\\WindowsApps\\KubePilot_1.6.0.0_x64__abc\\app\\KubePilot.exe' },
+      { windowsStore: true, execPath: 'C:\\x\\k8Board.exe' },
+      { execPath: 'C:\\Program Files\\WindowsApps\\k8Board_1.6.0.0_x64__abc\\app\\k8Board.exe' },
     ]) {
       const store = detectInstall({ platform: 'win32', isPackaged: true, existsSync: exists(new Set()), ...opts });
       assert.equal(store.kind, null);
@@ -934,15 +944,15 @@ describe('installers (mocked — nothing is installed)', () => {
       detectInstall({
         platform: 'darwin',
         isPackaged: true,
-        execPath: '/Applications/KubePilot.app/Contents/MacOS/KubePilot',
+        execPath: '/Applications/k8Board.app/Contents/MacOS/k8Board',
       }),
-      { kind: 'dmg', appPath: '/Applications/KubePilot.app' }
+      { kind: 'dmg', appPath: '/Applications/k8Board.app' }
     );
     assert.equal(
       detectInstall({
         platform: 'darwin',
         isPackaged: true,
-        execPath: '/Volumes/KubePilot/KubePilot.app/Contents/MacOS/KubePilot',
+        execPath: '/Volumes/k8Board/k8Board.app/Contents/MacOS/k8Board',
       }).reason,
       'dmg'
     );
@@ -950,7 +960,7 @@ describe('installers (mocked — nothing is installed)', () => {
       detectInstall({
         platform: 'darwin',
         isPackaged: true,
-        execPath: '/private/var/folders/x/AppTranslocation/1/d/KubePilot.app/Contents/MacOS/KubePilot',
+        execPath: '/private/var/folders/x/AppTranslocation/1/d/k8Board.app/Contents/MacOS/k8Board',
       }).reason,
       'translocated'
     );
@@ -959,31 +969,31 @@ describe('installers (mocked — nothing is installed)', () => {
         platform: 'linux',
         isPackaged: true,
         execPath: '/tmp/.mount_x/kubepilot',
-        env: { APPIMAGE: '/home/u/Apps/KubePilot.AppImage' },
-        existsSync: exists(new Set(['/home/u/Apps/KubePilot.AppImage'])),
+        env: { APPIMAGE: '/home/u/Apps/k8Board.AppImage' },
+        existsSync: exists(new Set(['/home/u/Apps/k8Board.AppImage'])),
       }),
-      { kind: 'appimage', appPath: '/home/u/Apps/KubePilot.AppImage' }
+      { kind: 'appimage', appPath: '/home/u/Apps/k8Board.AppImage' }
     );
     assert.equal(
       detectInstall({
         platform: 'linux',
         isPackaged: true,
-        execPath: '/opt/KubePilot/kubepilot',
+        execPath: '/opt/k8Board/kubepilot',
         env: {},
         existsSync: exists(new Set(['/var/lib/dpkg/info/kubepilot.list'])),
       }).kind,
       'deb'
     );
     assert.equal(
-      macBundlePath('/Applications/KubePilot.app/Contents/MacOS/KubePilot'),
-      '/Applications/KubePilot.app'
+      macBundlePath('/Applications/k8Board.app/Contents/MacOS/k8Board'),
+      '/Applications/k8Board.app'
     );
   });
 
   test('Linux .deb: pkexec dpkg -i; a dismissed password prompt is a permission error', async () => {
     const runs = [];
     await installDeb({
-      file: '/home/u/.cache/kubepilot-updater/pending/KubePilot-linux.deb',
+      file: '/home/u/.cache/kubepilot-updater/pending/k8Board-linux.deb',
       existsSync: () => true,
       run: async (cmd, args) => {
         runs.push([cmd, ...args]);
@@ -993,7 +1003,7 @@ describe('installers (mocked — nothing is installed)', () => {
       '/usr/bin/pkexec',
       '/usr/bin/dpkg',
       '-i',
-      '/home/u/.cache/kubepilot-updater/pending/KubePilot-linux.deb',
+      '/home/u/.cache/kubepilot-updater/pending/k8Board-linux.deb',
     ]);
     await assert.rejects(
       installDeb({
@@ -1022,7 +1032,7 @@ describe('installers (mocked — nothing is installed)', () => {
 
   test('Linux AppImage: replaced by an atomic rename in its own folder (temp files only)', async () => {
     const dir = tmp();
-    const target = path.join(dir, 'KubePilot.AppImage');
+    const target = path.join(dir, 'k8Board.AppImage');
     const update = path.join(dir, 'new.AppImage');
     fs.writeFileSync(target, 'old');
     fs.writeFileSync(update, 'new');
@@ -1033,7 +1043,7 @@ describe('installers (mocked — nothing is installed)', () => {
       assert.equal(fs.statSync(target).mode & 0o111, 0o111);
     }
     await assert.rejects(
-      installAppImage({ file: update, appPath: '/nonexistent-kp-dir/KubePilot.AppImage' }),
+      installAppImage({ file: update, appPath: '/nonexistent-kp-dir/k8Board.AppImage' }),
       { code: 'permission_denied' }
     );
   });
@@ -1043,7 +1053,7 @@ describe('installers (mocked — nothing is installed)', () => {
     const fakeFs = {
       mkdir: async () => {},
       mkdtemp: async (p) => `${p}X`,
-      readdir: async () => ['KubePilot.app'],
+      readdir: async () => ['k8Board.app'],
       access: async () => {},
       rm: async (p) => {
         ops.push(['rm', p]);
@@ -1058,8 +1068,8 @@ describe('installers (mocked — nothing is installed)', () => {
       runs.push([cmd, ...args]);
     };
     await installDmg({
-      file: '/c/KubePilot-macos.dmg',
-      appPath: '/Applications/KubePilot.app',
+      file: '/c/k8Board-macos.dmg',
+      appPath: '/Applications/k8Board.app',
       workDir: '/c/work',
       run,
       fsImpl: fakeFs,
@@ -1067,22 +1077,22 @@ describe('installers (mocked — nothing is installed)', () => {
     assert.deepEqual(runs[0].slice(0, 2), ['/usr/bin/hdiutil', 'attach']);
     assert.deepEqual(runs[1], [
       '/usr/bin/ditto',
-      '/c/work/mnt-X/KubePilot.app',
-      `/Applications/.KubePilot.app.update-${process.pid}`,
+      '/c/work/mnt-X/k8Board.app',
+      `/Applications/.k8Board.app.update-${process.pid}`,
     ]);
     assert.deepEqual(runs.at(-1).slice(0, 2), ['/usr/bin/hdiutil', 'detach']);
     const renames = ops.filter((o) => o[0] === 'rename');
     assert.deepEqual(renames, [
-      ['rename', '/Applications/KubePilot.app', `/Applications/.KubePilot.app.previous-${process.pid}`],
-      ['rename', `/Applications/.KubePilot.app.update-${process.pid}`, '/Applications/KubePilot.app'],
+      ['rename', '/Applications/k8Board.app', `/Applications/.k8Board.app.previous-${process.pid}`],
+      ['rename', `/Applications/.k8Board.app.update-${process.pid}`, '/Applications/k8Board.app'],
     ]);
     // A failed swap puts the old bundle back.
     ops.length = 0;
     fakeFs.failSwap = true;
     await assert.rejects(
       installDmg({
-        file: '/c/KubePilot-macos.dmg',
-        appPath: '/Applications/KubePilot.app',
+        file: '/c/k8Board-macos.dmg',
+        appPath: '/Applications/k8Board.app',
         workDir: '/c/work',
         run,
         fsImpl: fakeFs,
@@ -1091,8 +1101,8 @@ describe('installers (mocked — nothing is installed)', () => {
     );
     assert.deepEqual(ops.filter((o) => o[0] === 'rename').at(-1), [
       'rename',
-      `/Applications/.KubePilot.app.previous-${process.pid}`,
-      '/Applications/KubePilot.app',
+      `/Applications/.k8Board.app.previous-${process.pid}`,
+      '/Applications/k8Board.app',
     ]);
     // Paths are shell-quoted for the administrator (osascript) path.
     assert.match(

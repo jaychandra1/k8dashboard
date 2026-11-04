@@ -11,8 +11,64 @@ import { formatAgeLong } from '../../lib/format';
 import { KIND_TYPE, kindType } from '../../lib/kinds';
 import { navToNamespace, navToPods, navToResource } from '../shared/nav';
 import { withKeys } from '../shared/keys';
-import { SevPill, SevFilter, sevSegments, worstSeverity } from './severity';
+import { SevPill, SevFilter, sevSegments, sevTotal, worstSeverity } from './severity';
 import Remediation from './Remediation';
+import Badge from '../ui/Badge';
+import { displayImage, splitImage } from './ImageName';
+
+const SINCE_LIMIT = 8;
+
+/** One finding in the "since the previous version" lists. */
+function SinceItem({ v, fixed }) {
+  return (
+    <li className={`sec-since-item${fixed ? ' fixed' : ''}`}>
+      <Badge tone={fixed ? 'ok' : 'bad'} size="sm">{fixed ? 'Fixed' : 'New'}</Badge>
+      <SevPill s={v.severity} />
+      <span className="sec-since-id">{v.id}</span>
+      <span className="sec-since-pkg">{v.pkg}{v.installedVersion ? ` ${v.installedVersion}` : ''}</span>
+    </li>
+  );
+}
+
+/**
+ * What this image changed since the previous image of its Deployment: the
+ * vulnerabilities it fixed (the old image had them) and the ones it added.
+ */
+function SinceLastVersion({ changes }) {
+  return (
+    <>
+      <h3 className="sec-drawer-section">Since the previous version</h3>
+      {withKeys(changes, (c) => `${c.namespace}|${c.workload}|${c.container}`).map(({ key, item: c }) => {
+        const fixed = c.resolved || [];
+        const added = c.introduced || [];
+        const items = [...fixed.map((v) => ({ v, fixed: true })), ...added.map((v) => ({ v, fixed: false }))];
+        return (
+          <div className="sec-since" key={key}>
+            <div className="sec-since-head">
+              <span>{c.workload}{c.container ? ` · ${c.container}` : ''}</span>
+              <span>revision {c.previousRevision} → {c.revision}</span>
+              <span>was <code title={displayImage(c.previousImage)}>{splitImage(c.previousImage).name}</code></span>
+            </div>
+            {items.length === 0 ? (
+              <p className="sec-dim sec-note-left">Same vulnerabilities as the previous image.</p>
+            ) : (
+              <>
+                <div className="sec-since-head">
+                  {sevTotal(c.resolvedBySeverity) > 0 && <span className="sec-chg-fixed sec-strong">▼ {fixed.length} fixed</span>}
+                  {sevTotal(c.introducedBySeverity) > 0 && <span className="sec-chg-new sec-strong">▲ {added.length} new</span>}
+                </div>
+                <ul className="sec-since-list" aria-label={`Changes in ${c.workload}`}>
+                  {withKeys(items.slice(0, SINCE_LIMIT), (x) => `${x.fixed}|${x.v.id}|${x.v.pkg}`).map(({ key: k, item: x }) => <SinceItem key={k} v={x.v} fixed={x.fixed} />)}
+                </ul>
+                {items.length > SINCE_LIMIT && <div className="sec-since-more">+{items.length - SINCE_LIMIT} more</div>}
+              </>
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
 
 function Prop({ k, children }) {
   return <div className="sec-prop"><span className="sec-prop-k">{k}</span><span className="sec-prop-v">{children}</span></div>;
@@ -59,7 +115,7 @@ export default function FindingDrawer({ detail, onClose, onNavigate }) {
     >
       <div className="sec-drawer-head">
         <h2 id={`${id}-title`} className="sec-drawer-title">
-          {isImage ? <><span className="sec-kind">OciImage</span> {d.image}</> : <><span className="sec-kind">{d.kind}</span> {d.name}</>}
+          {isImage ? <><span className="sec-kind">OciImage</span> {displayImage(d.image)}</> : <><span className="sec-kind">{d.kind}</span> {d.name}</>}
         </h2>
         <Tooltip content="Close">
           <Button variant="ghost" size="sm" iconOnly icon="close" ariaLabel="Close finding details" className="sec-drawer-x" onClick={onClose} />
@@ -86,7 +142,7 @@ function ImageDetail({ d, onNavigate }) {
   return (
     <>
       <h3 className="sec-drawer-section">Properties</h3>
-      <Prop k="Name"><span className="sec-mono">{d.image}</span></Prop>
+      <Prop k="Name"><span className="sec-mono sec-break">{displayImage(d.image)}</span></Prop>
       <Prop k="Namespace">{d.namespace && canNav ? <LinkButton onClick={() => navToNamespace(onNavigate, d.namespace)}>{d.namespace}</LinkButton> : (d.namespace || '—')}</Prop>
       {controlledBy && (
         <Prop k="Controlled By">
@@ -97,6 +153,12 @@ function ImageDetail({ d, onNavigate }) {
       {d.tag && <Prop k="Tag">{d.tag}</Prop>}
       {d.digest && <Prop k="Image Digest"><span className="sec-mono sec-break">{d.digest}</span></Prop>}
       <Prop k="Status">{d.status}</Prop>
+      {d.active === false && (
+        <p className="sec-dim sec-note-left">
+          No pod runs this image any more — a newer revision replaced it. The report stays while the old ReplicaSet is kept
+          for rollback, so these findings are not counted in the totals.
+        </p>
+      )}
       {d.pending && (
         <p className="sec-dim sec-note">
           {d.status === 'Scanning' ? 'The Trivy Operator is scanning this image now — its findings appear here when the scan finishes.'
@@ -116,6 +178,7 @@ function ImageDetail({ d, onNavigate }) {
         </span>
       </Prop>
 
+      {d.changes?.length > 0 && <SinceLastVersion changes={d.changes} />}
       {!d.pending && <Remediation image={d} />}
       {!d.pending && (
       <>
@@ -145,7 +208,7 @@ function ImageDetail({ d, onNavigate }) {
 
       <div className="sec-drawer-table">
         <DataTable
-          caption={`Vulnerabilities in ${d.image}`}
+          caption={`Vulnerabilities in ${displayImage(d.image)}`}
           dense
           columns={[
             { key: 'id', header: 'ID', sortable: true, render: (v) => (v.link ? <a href={v.link} target="_blank" rel="noreferrer" className="sec-cve">{v.id}<span className="sr-only"> (opens in a new tab)</span></a> : v.id) },

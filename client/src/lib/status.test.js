@@ -44,6 +44,15 @@ describe('statusClass', () => {
   });
 });
 
+describe('statusTone — ready / desired replica counts', () => {
+  it('all ready is ok, some is warn, none is bad, scaled to zero is muted', () => {
+    expect(statusTone('2/2')).toBe('ok');
+    expect(statusTone('deployment', '1/2')).toBe('warn');
+    expect(statusTone('0/1')).toBe('bad');
+    expect(statusTone('0/0')).toBe('muted');
+  });
+});
+
 describe('podPhaseBucket', () => {
   it('buckets by phase', () => {
     expect(podPhaseBucket({ status: 'Running' })).toBe('running');
@@ -56,6 +65,15 @@ describe('podPhaseBucket', () => {
   it('treats container-level failures as failed even when phase is Running', () => {
     expect(podPhaseBucket({ status: 'Running', containerStatuses: [{ state: { waiting: { reason: 'CrashLoopBackOff' } } }] })).toBe('failed');
     expect(podPhaseBucket({ status: { phase: 'Running', containerStatuses: [{ state: { terminated: { reason: 'OOMKilled' } } }] } })).toBe('failed');
+  });
+  it('buckets the kubectl-style STATUS from /api/resources', () => {
+    expect(podPhaseBucket({ status: 'CrashLoopBackOff' })).toBe('failed');
+    expect(podPhaseBucket({ status: 'ContainerCreating' })).toBe('pending');
+    expect(podPhaseBucket({ status: 'Init:1/2' })).toBe('pending');
+    expect(podPhaseBucket({ status: 'Init:CrashLoopBackOff' })).toBe('failed');
+    expect(podPhaseBucket({ status: 'ExitCode:2' })).toBe('failed');
+    expect(podPhaseBucket({ status: 'Completed' })).toBe('succeeded');
+    expect(podPhaseBucket({ status: 'Terminating' })).toBe('pending');
   });
   it('has a tone per bucket', () => {
     expect(Object.keys(BUCKET_TONE)).toEqual(['running', 'pending', 'failed', 'succeeded', 'unknown']);

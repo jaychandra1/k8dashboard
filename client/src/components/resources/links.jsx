@@ -33,6 +33,12 @@ export const podsLink = (namespace, nameFilter) => ({
   legacy: (o) => o.toPods?.(namespace, nameFilter),
 });
 
+/** The Events page for one namespace. */
+export const eventsNsLink = (ns) => ({ view: 'events', params: [], query: { ns } });
+
+/** The Events page for one workload (or pod) and what it owns. */
+export const eventsLink = (namespace, kind, name) => ({ view: 'events', params: [], query: { ns: namespace, workload: `${kind}/${name}` } });
+
 export const hrefFor = (link) => buildHash(link.view, link.params, link.query);
 
 /** Invoke `onNavigate` for a link, supporting both the function and legacy object shapes. Returns true if handled. */

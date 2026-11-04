@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="build/icon-detailed.png" alt="KubePilot" width="128" />
+<img src="build/icon-detailed.png" alt="k8Board" width="128" />
 
-# KubePilot
+# k8Board
 
 **See your whole cluster in one beautiful window.**
 
@@ -17,7 +17,7 @@ A native desktop app (macOS · Windows · Linux) — and a Docker image — for 
 
 </div>
 
-![KubePilot cluster dashboard](docs/screenshot-dashboard.png)
+![k8Board cluster dashboard](docs/screenshot-dashboard.png)
 
 > [!TIP]
 > Grab the latest macOS `.dmg`, Windows `.exe`, or Linux `.AppImage`/`.deb` from the [**Releases**](https://github.com/jaychandra1/KubePilot/releases/latest) page — no build required.
@@ -51,11 +51,11 @@ A native desktop app (macOS · Windows · Linux) — and a Docker image — for 
 - Docked coding agents — detects Claude Code, GitHub Copilot CLI, Gemini CLI, Codex and opencode on your `PATH`.
 - Doubles as an [MCP](https://modelcontextprotocol.io) server so external agents can inspect the cluster ([details](#connect-ai-agents-mcp)).
 
-## How KubePilot compares
+## How k8Board compares
 
-KubePilot is a **desktop UI for clusters you already have** — closest in spirit to **Lens** and **k9s**, not to a management *platform* like **Rancher**. Rancher runs *inside* your clusters to provision and govern a whole fleet for a team; KubePilot runs on your laptop, reads your kubeconfig, and needs nothing installed in-cluster.
+k8Board is a **desktop UI for clusters you already have** — closest in spirit to **Lens** and **k9s**, not to a management *platform* like **Rancher**. Rancher runs *inside* your clusters to provision and govern a whole fleet for a team; k8Board runs on your laptop, reads your kubeconfig, and needs nothing installed in-cluster.
 
-| | **KubePilot** | **Rancher** | **Lens / k9s** |
+| | **k8Board** | **Rancher** | **Lens / k9s** |
 |---|:---:|:---:|:---:|
 | Category | Native desktop UI | Multi-cluster platform (server) | Desktop UI / terminal UI |
 | Setup | Download & run | Deploy & operate in-cluster | Download & run |
@@ -68,15 +68,15 @@ KubePilot is a **desktop UI for clusters you already have** — closest in spiri
 | Free & open-source | ✅ | ✅ | k9s ✅ · Lens: sign-in required |
 
 > [!NOTE]
-> Reach for **Rancher** to provision and govern a fleet of clusters for a team. Reach for **KubePilot** as a fast local cockpit for clusters you already have — dashboards, logs, shell, topology, security scans and an AI assistant, with nothing to deploy. They coexist happily.
+> Reach for **Rancher** to provision and govern a fleet of clusters for a team. Reach for **k8Board** as a fast local cockpit for clusters you already have — dashboards, logs, shell, topology, security scans and an AI assistant, with nothing to deploy. They coexist happily.
 
 ## Quick start
 
 > [!TIP]
-> No kubeconfig yet? Launch the app and use **Add cluster** to import an **AWS EKS** or **Azure AKS** cluster straight from your cloud account — KubePilot signs you in and writes the kubeconfig for you, no CLI required.
+> No kubeconfig yet? Launch the app and use **Add cluster** to import an **AWS EKS** or **Azure AKS** cluster straight from your cloud account — k8Board signs you in and writes the kubeconfig for you, no CLI required.
 
 > [!NOTE]
-> KubePilot needs a working `kubeconfig` (`~/.kube/config`, or set `KUBECONFIG`). Every view and action talks to the Kubernetes API directly — `kubectl` is only needed for the in-pod terminal and port-forward (`GET /api/config/capabilities` reports what the current machine can do). The `helm` CLI is **not** required — Helm releases are read straight from the Kubernetes API. The packaged desktop app bundles its own Node runtime; building from source needs **Node.js 22+** (see `.nvmrc`).
+> k8Board needs a working `kubeconfig` (`~/.kube/config`, or set `KUBECONFIG`). Every view and action talks to the Kubernetes API directly — `kubectl` is only needed for the in-pod terminal and port-forward (`GET /api/config/capabilities` reports what the current machine can do). The `helm` CLI is **not** required — Helm releases are read straight from the Kubernetes API. The packaged desktop app bundles its own Node runtime; building from source needs **Node.js 22+** (see `.nvmrc`).
 
 ### Desktop app
 
@@ -92,12 +92,12 @@ npm run dist        # fetches trivy (pinned, checksum-verified), builds the UI, 
 
 | OS | Artifact |
 |----|----------|
-| macOS | `KubePilot-macos.dmg` (**Apple Silicon only** — Intel Macs are not supported) |
-| Windows | `KubePilot-windows.exe` (NSIS) |
-| Linux | `KubePilot-linux.AppImage` and `KubePilot-linux.deb` |
+| macOS | `k8Board-macos.dmg` (**Apple Silicon only** — Intel Macs are not supported) |
+| Windows | `k8Board-windows.exe` (NSIS) |
+| Linux | `k8Board-linux.AppImage` and `k8Board-linux.deb` |
 
 > [!IMPORTANT]
-> Builds are ad-hoc signed (no paid certificate), so the OS will warn on first launch. On macOS, right-click the app → **Open**. Alternatively `xattr -dr com.apple.quarantine "/Applications/KubePilot.app"` removes the quarantine flag — understand that this tells Gatekeeper to skip its checks for that bundle, so only do it for a download whose `SHA256SUMS.txt` you have verified. On Windows, SmartScreen → **More info → Run anyway**.
+> Builds are ad-hoc signed (no paid certificate), so the OS will warn on first launch. On macOS, right-click the app → **Open**. Alternatively `xattr -dr com.apple.quarantine "/Applications/k8Board.app"` removes the quarantine flag — understand that this tells Gatekeeper to skip its checks for that bundle, so only do it for a download whose `SHA256SUMS.txt` you have verified. On Windows, SmartScreen → **More info → Run anyway**.
 
 ### Docker
 
@@ -203,18 +203,18 @@ App data (token, assistant config, scan cache) lives in `~/.config/kubepilot`.
 The API, `/mcp` and the `/ws/exec` shell carry your kubeconfig's full read/write access, so the backend is protected by a **bearer token** and locked to the local machine by default. Report vulnerabilities as described in [SECURITY.md](SECURITY.md).
 
 - **Token auth on every request** — `Authorization: Bearer <token>` on `/api/*` and `/mcp`, `?token=` on the `/ws/exec` upgrade. Only `GET /healthz` and `GET /api/version` are public. The token comes from `KUBEPILOT_TOKEN`, else `~/.config/kubepilot/token` (auto-generated, mode `0600`). Run from a terminal (`npm start`), the server prints the login URL `http://127.0.0.1:3001/#token=<token>` at boot; a production server without a terminal (Docker, systemd) doesn't, and `node scripts/login-url.mjs` prints it instead. The UI moves the token from the URL fragment into `sessionStorage`.
-- **Desktop app** — generates a fresh random token per launch, starts the backend on a port it verified is free (never attaching to a process that already listens there), passes only an allow-listed environment to it, keeps the renderer sandboxed with navigation pinned to the backend origin, and ships with Electron fuses that disable `ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS` and `--inspect`. Because `ELECTRON_RUN_AS_NODE` is off, imported clusters authenticate through an explicit CLI mode of the app binary (`KubePilot --token-helper eks|azure …`) rather than by turning the app into node; stale kubeconfig entries from older builds are repaired automatically when the kubeconfig is loaded.
+- **Desktop app** — generates a fresh random token per launch, starts the backend on a port it verified is free (never attaching to a process that already listens there), passes only an allow-listed environment to it, keeps the renderer sandboxed with navigation pinned to the backend origin, and ships with Electron fuses that disable `ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS` and `--inspect`. Because `ELECTRON_RUN_AS_NODE` is off, imported clusters authenticate through an explicit CLI mode of the app binary (`k8Board --token-helper eks|azure …`) rather than by turning the app into node; stale kubeconfig entries from older builds are repaired automatically when the kubeconfig is loaded.
 - **Loopback by default** — binds `127.0.0.1`; set `HOST=0.0.0.0` only to expose it deliberately (the Docker image does this so its published port works).
 - **Host allowlist** — only `localhost`, `127.0.0.1`, `[::1]` (plus `ALLOWED_HOSTS`) are accepted as `Host`; anything else gets HTTP 421, which defeats DNS rebinding.
 - **Same-origin only** — a page on another origin can't drive the API or the exec WebSocket. Non-browser MCP clients are unaffected but still need the token.
 - **Hardened responses** — strict CSP on the UI, `X-Frame-Options: DENY`, `nosniff`, no `X-Powered-By`, rate limiting, request-size limits and input validation on every path segment that reaches `kubectl`.
-- **When exposing it**, publish to loopback and/or put an authenticating proxy in front, add its hostname via `ALLOWED_HOSTS` and its origin via `ALLOWED_ORIGINS`, and keep the token secret (it is not printed in the container log unless `KUBEPILOT_PRINT_LOGIN_URL=1`). The Helm and AI-agent terminals run on the KubePilot host, so a server offers them only with `KUBEPILOT_LOCAL_SHELL=1`.
+- **When exposing it**, publish to loopback and/or put an authenticating proxy in front, add its hostname via `ALLOWED_HOSTS` and its origin via `ALLOWED_ORIGINS`, and keep the token secret (it is not printed in the container log unless `KUBEPILOT_PRINT_LOGIN_URL=1`). The Helm and AI-agent terminals run on the k8Board host, so a server offers them only with `KUBEPILOT_LOCAL_SHELL=1`.
 
 ## Architecture
 
 - **Backend** (`server.js` + `lib/`) — Express + `@kubernetes/client-node`; REST API, a `/ws/exec` WebSocket for shells, short-TTL caches, and `kubectl` for the few things the API can't do (exec, port-forward). Helm releases are decoded from their release Secrets. In production it also serves the built UI.
 - **Frontend** (`client/`) — React + Vite; same-origin `/api` + `/ws/exec`, xterm.js terminal, ⌘K palette, token-driven theming.
-- **Cloud** (`aws-eks.js`, `azure-aks.js`, `eks-token.js`, `azure-token.js`) — CLI-free EKS/AKS discovery, kubeconfig merge, and native runtime auth via bundled token helpers. The kubeconfig `exec` entry is `KubePilot --token-helper eks|azure …` in the packaged app (handled at the top of `electron/main.cjs`, before any GUI code) or `node eks-token.js …` from source/Docker; `lib/paths.mjs` `execEntry()` is the single place that decides, and `lib/kubeconfig-repair.mjs` rewrites stale entries (missing binary, legacy `ELECTRON_RUN_AS_NODE` form) on load. An expired AWS SSO session is reported as such with a "Sign in again" prompt.
+- **Cloud** (`aws-eks.js`, `azure-aks.js`, `eks-token.js`, `azure-token.js`) — CLI-free EKS/AKS discovery, kubeconfig merge, and native runtime auth via bundled token helpers. The kubeconfig `exec` entry is `k8Board --token-helper eks|azure …` in the packaged app (handled at the top of `electron/main.cjs`, before any GUI code) or `node eks-token.js …` from source/Docker; `lib/paths.mjs` `execEntry()` is the single place that decides, and `lib/kubeconfig-repair.mjs` rewrites stale entries (missing binary, legacy `ELECTRON_RUN_AS_NODE` form) on load. An expired AWS SSO session is reported as such with a "Sign in again" prompt.
 - **Security** (`trivy-scan.js`) — reads Trivy Operator reports or runs Trivy, downloaded on first use (pinned version, checksum-verified) into `~/.config/kubepilot/bin`; `npm run dist:bundled-trivy` builds an installer that ships it instead.
 - **Desktop** (`electron/`) — Electron shell that runs the backend as a utility process; `after-pack.cjs` applies Electron fuses and ad-hoc signs the macOS build. Released for all three OSes plus the GHCR image by the [`Build & Release`](.github/workflows/release.yml) workflow on a `v*.*.*` tag that matches `VERSION`.
 

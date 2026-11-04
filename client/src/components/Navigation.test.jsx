@@ -34,7 +34,7 @@ describe('Navigation', () => {
     expect(within(nav).queryByText(/^Context$/)).toBeNull();
     expect(nav.querySelector('.nav-context-selector, .nav-cluster, .ctx-search, .cluster-switcher')).toBeNull();
     const header = nav.querySelector('.nav-header');
-    expect(header).toHaveTextContent('KubePilot');
+    expect(header).toHaveTextContent('k8Board');
     expect(within(header).getByRole('button', { name: 'Preferences' })).toBeInTheDocument();
     // Only the brand block lives in the header.
     expect(header.children).toHaveLength(1);

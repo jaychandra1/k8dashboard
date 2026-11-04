@@ -7,9 +7,9 @@ import { execEntry, helperFile, ROOT_DIR, TOKEN_HELPER_FLAG } from '../lib/paths
 
 describe('execEntry', () => {
   test('Electron runtime: re-enters the app binary with --token-helper and no env', () => {
-    const e = execEntry('eks', ['--cluster', 'c', '--region', 'eu-west-1', '--profile', 'p'], { electron: true, execPath: 'C:\\Apps\\KubePilot\\KubePilot.exe' });
+    const e = execEntry('eks', ['--cluster', 'c', '--region', 'eu-west-1', '--profile', 'p'], { electron: true, execPath: 'C:\\Apps\\k8Board\\k8Board.exe' });
     assert.deepEqual(e, {
-      command: 'C:\\Apps\\KubePilot\\KubePilot.exe',
+      command: 'C:\\Apps\\k8Board\\k8Board.exe',
       args: [TOKEN_HELPER_FLAG, 'eks', '--cluster', 'c', '--region', 'eu-west-1', '--profile', 'p'],
     });
     assert.equal('env' in e, false);
@@ -17,9 +17,9 @@ describe('execEntry', () => {
 
   test('Electron runtime: prefers KUBEPILOT_APP_EXEC (set by electron/main.cjs) over process.execPath', () => {
     const prev = process.env.KUBEPILOT_APP_EXEC;
-    process.env.KUBEPILOT_APP_EXEC = '/Applications/KubePilot.app/Contents/MacOS/KubePilot';
+    process.env.KUBEPILOT_APP_EXEC = '/Applications/k8Board.app/Contents/MacOS/k8Board';
     try {
-      assert.equal(execEntry('azure', ['--server-id', 's'], { electron: true }).command, '/Applications/KubePilot.app/Contents/MacOS/KubePilot');
+      assert.equal(execEntry('azure', ['--server-id', 's'], { electron: true }).command, '/Applications/k8Board.app/Contents/MacOS/k8Board');
     } finally {
       if (prev === undefined) delete process.env.KUBEPILOT_APP_EXEC; else process.env.KUBEPILOT_APP_EXEC = prev;
     }

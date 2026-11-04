@@ -101,7 +101,7 @@ contexts:
   });
 
   test('an annotation deleted in the editor is gone — whoever set it (the KEDA paused-replicas case)', async () => {
-    // Loaded with `autoscaling.keda.sh/paused-replicas` (set by kubectl, not KubePilot); the user deletes that line.
+    // Loaded with `autoscaling.keda.sh/paused-replicas` (set by kubectl, not k8Board); the user deletes that line.
     const edited = widget({ extra: '  annotations:\n    team: core\n  resourceVersion: "395632221"\n' });
     const r = await put('/api/customresource/example.com/v1/widgets/w1?namespace=apps', edited);
     assert.equal(r.status, 200, JSON.stringify(await r.json()));
@@ -160,7 +160,7 @@ contexts:
 
   test('AI agents can only edit while MCP write access is on', async () => {
     const before = kube.patches.length;
-    const r = await put('/api/customresource/example.com/v1/widgets/w1?namespace=apps', widget(), { 'X-KubePilot-Source': 'mcp' });
+    const r = await put('/api/customresource/example.com/v1/widgets/w1?namespace=apps', widget(), { 'X-k8Board-Source': 'mcp' });
     assert.equal(r.status, 403);
     assert.equal((await r.json()).code, 'mcp_write_disabled');
     assert.equal(kube.patches.length, before);

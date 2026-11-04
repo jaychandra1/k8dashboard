@@ -41,9 +41,9 @@ function fakeSpawn() {
   fn.calls = calls;
   return fn;
 }
-const WIN_EXE = 'C:\\Users\\u\\AppData\\Local\\Programs\\kubepilot\\KubePilot.exe';
+const WIN_EXE = 'C:\\Users\\u\\AppData\\Local\\Programs\\kubepilot\\k8Board.exe';
 const winInstalled = (p) =>
-  p === 'C:\\Users\\u\\AppData\\Local\\Programs\\kubepilot\\Uninstall KubePilot.exe';
+  p === 'C:\\Users\\u\\AppData\\Local\\Programs\\kubepilot\\Uninstall k8Board.exe';
 
 async function windowsHost(extra = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kp-host-'));
@@ -60,7 +60,7 @@ async function windowsHost(extra = {}) {
     spawnImpl,
     ...extra,
   });
-  const file = path.join(dir, 'pending', 'KubePilot-windows.exe');
+  const file = path.join(dir, 'pending', 'k8Board-windows.exe');
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, 'installer');
   return { host, app, spawnImpl, dir, file, digest: sha('installer') };
@@ -118,7 +118,7 @@ describe('update host (main process)', () => {
     assert.equal(spawnImpl.calls.length, 0);
   });
 
-  test('Windows "Later": installs (without relaunch) as KubePilot quits', async () => {
+  test('Windows "Later": installs (without relaunch) as k8Board quits', async () => {
     const { host, spawnImpl, file, digest } = await windowsHost();
     const reply = await ask(host, {
       type: 'install',
@@ -170,7 +170,7 @@ describe('update host (main process)', () => {
     await new Promise((res) => setTimeout(res, 250));
     assert.equal(app.calls.quit, 1);
 
-    const appImage = '/home/u/Apps/KubePilot.AppImage';
+    const appImage = '/home/u/Apps/k8Board.AppImage';
     const linuxApp = fakeApp();
     const linux = await createUpdateHost({
       app: linuxApp,

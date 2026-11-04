@@ -8,7 +8,7 @@
 import Icon from '../Icons';
 import Badge from '../ui/Badge';
 import Tooltip from '../ui/Tooltip';
-import { formatAge, fmtCpu, fmtMem } from '../../lib/format';
+import { formatAge, formatAgeSeconds, fmtCpu, fmtMem } from '../../lib/format';
 import { statusTone } from '../../lib/status';
 import { XLink, nsLink, nodeLink } from './links';
 
@@ -93,9 +93,31 @@ const nodeCol = {
   title: (r) => r.node,
 };
 
+// The workload that owns a ReplicaSet / Job ("Deployment web", "CronJob backup").
+const ownerCol = text('owner', 'Controlled By', { ellipsis: true, maxWidth: 280 });
+// `kubectl get rs` columns: desired / current / ready.
+const replicaCols = [num('desired', 'Desired', { width: 90 }), num('current', 'Current', { width: 90 }), num('ready', 'Ready', { width: 80 })];
+const durationCol = {
+  key: 'duration', header: 'Duration', sortable: true, align: 'right', mono: true, width: 100,
+  accessor: (r) => r.durationSeconds ?? null,
+  render: (r) => (r.durationSeconds != null ? formatAgeSeconds(r.durationSeconds) : '—'),
+};
+const lastScheduleCol = {
+  key: 'lastSchedule', header: 'Last Schedule', sortable: true, align: 'right', mono: true, width: 120,
+  accessor: (r) => (r.lastSchedule ? Date.parse(r.lastSchedule) : null),
+  render: (r) => (r.lastSchedule ? `${formatAge(r.lastSchedule)} ago` : '—'),
+};
+
 const COLUMNS = {
-  pod: [nameCol, logsCol, namespaceCol, containersCol, cpuCol, memCol, num('restarts', 'Restarts', { width: 90 }), nodeCol, ageCol, statusCol('pod')],
+  // Status early: at 1280px the last columns need a horizontal scroll.
+  pod: [nameCol, logsCol, namespaceCol, statusCol('pod'), containersCol, cpuCol, memCol, num('restarts', 'Restarts', { width: 90 }), nodeCol, ageCol],
   deployment: [nameCol, logsCol, namespaceCol, statusCol()],
+  // The type is not a status: a plain chip, no status dot.
+  service: [nameCol, namespaceCol, { key: 'serviceType', header: 'Type', sortable: true, width: 150, accessor: (r) => r.serviceType || r.status || '', render: (r) => <span className="drawer-chip">{r.serviceType || r.status || '—'}</span> }, text('ports', 'Ports', { mono: true, ellipsis: true, maxWidth: 280 }), ageCol],
+  replicaSet: [nameCol, namespaceCol, ...replicaCols, ownerCol, ageCol],
+  replicationController: [nameCol, namespaceCol, ...replicaCols, ageCol],
+  job: [nameCol, namespaceCol, statusCol('job'), text('completions', 'Completions', { mono: true, width: 120 }), durationCol, ownerCol, ageCol],
+  cronJob: [nameCol, namespaceCol, statusCol('cronJob'), text('schedule', 'Schedule', { mono: true, width: 140 }), lastScheduleCol, num('activeJobs', 'Active', { width: 80 }), ageCol],
   configMap: [nameCol, namespaceCol, num('dataKeys', 'Keys', { width: 80 }), ageCol],
   secret: [nameCol, namespaceCol, { key: 'secretType', header: 'Type', sortable: true, accessor: (r) => r.secretType || 'Opaque', render: (r) => <span className="drawer-chip">{r.secretType || 'Opaque'}</span> }, num('dataKeys', 'Keys', { width: 80 }), ageCol],
   serviceAccount: [nameCol, namespaceCol, num('saSecrets', 'Secrets', { width: 90 }), ageCol],
@@ -117,8 +139,11 @@ export const rowToneFor = (kind) => (r) => (statusTone(kind, r.status) === 'bad'
  */
 export function columnsFor(resourceType, ctx = {}) {
   const defs = COLUMNS[resourceType] || DEFAULT_COLUMNS;
-  return defs.map((c) => ({
+  // The last column takes the spare width, so a table with few columns keeps
+  // name, logs, namespace… together instead of spreading them across the page.
+  return defs.map((c, i) => ({
     ...c,
+    fill: c.fill ?? i === defs.length - 1,
     render: c.render ? (r, i) => c.render(r, i, ctx) : undefined,
     accessor: c.accessor ? (r) => c.accessor(r, ctx) : undefined,
   }));

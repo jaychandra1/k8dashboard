@@ -1,4 +1,4 @@
-# Contributing to KubePilot
+# Contributing to k8Board
 
 Thanks for helping. This page covers the local setup, the checks CI runs, and how releases work.
 
@@ -86,7 +86,7 @@ Trivy scan of the image (fails on CRITICAL).
    The `release` job needs a `RELEASE_TOKEN` secret (fine-grained PAT on
    jaychandra1/KubePilot with Contents: read & write) and fails early with a clear error if it is
    missing. The container image is pushed with this repo's `GITHUB_TOKEN`; after the first push,
-   make the `kubepilot` package public and link it to KubePilot in its Package settings.
+   make the `kubepilot` package public and link it to k8Board in its Package settings.
 
 Manual runs (Actions → Build & Release → Run workflow) are only accepted from `main`.
 

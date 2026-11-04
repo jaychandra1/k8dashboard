@@ -26,6 +26,10 @@ const KIND_OVERRIDES = {
   node: { unknown: 'bad' },
   helm: { superseded: 'muted' },
   event: { warning: 'warn', normal: 'ok' },
+  // A suspended Job / CronJob is a choice, not a problem; a running or
+  // active one is in progress.
+  job: { suspended: 'muted', running: 'info' },
+  cronjob: { suspended: 'muted', active: 'info' },
 };
 
 /**
@@ -46,6 +50,14 @@ export function statusTone(kind, status) {
   if (s.startsWith('init:')) {
     const rest = s.slice(5);
     return TONE_OF.get(rest) || 'warn';
+  }
+  // Ready / desired replica counts ("2/2", "1/2", "0/1"; "0/0" = scaled down).
+  const counts = /^(\d+)\/(\d+)$/.exec(s);
+  if (counts) {
+    const ready = Number(counts[1]);
+    const desired = Number(counts[2]);
+    if (desired === 0) return 'muted';
+    return ready >= desired ? 'ok' : ready === 0 ? 'bad' : 'warn';
   }
   if (/degrad/.test(s)) return 'bad';
   if (/backoff|err|fail|kill|evict|crash|unhealthy|notready|denied|timeout|invalid/.test(s)) return 'bad';
@@ -84,6 +96,10 @@ export function podPhaseBucket(pod) {
     .map((r) => String(r).toLowerCase())
     .filter(Boolean);
   if (reasons.some((r) => BAD.includes(r))) return 'failed';
+  // kubectl-style reasons from /api/resources: "Init:0/2", "Init:Error",
+  // "ExitCode:137", "Signal:9".
+  if (s.startsWith('init:')) return statusTone(s) === 'bad' ? 'failed' : 'pending';
+  if (/^(exitcode|signal):/.test(s)) return 'failed';
   if (s === 'running') return 'running';
   if (s === 'succeeded' || s === 'completed') return 'succeeded';
   if (BAD.includes(s)) return 'failed';

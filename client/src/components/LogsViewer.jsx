@@ -305,15 +305,18 @@ export default function LogsViewer({ namespace, pod, containers, initialContaine
 
         <div className="logs-spacer" />
 
-        <button
-          type="button"
-          className={`logs-icon-btn${fullscreen.on ? ' on' : ''}`}
-          onClick={fullscreen.toggle}
-          aria-label={fullscreen.on ? 'Minimize logs (exit full screen)' : 'Show logs full screen'}
-          title={fullscreen.on ? 'Minimize (Esc)' : 'Full screen'}
-        >
-          <Icon name={fullscreen.on ? 'minimize' : 'maximize'} size={15} />
-        </button>
+        {/* In the bottom panel its tab strip has full screen and close already. */}
+        {!fullscreen.inPanel && (
+          <button
+            type="button"
+            className={`logs-icon-btn${fullscreen.on ? ' on' : ''}`}
+            onClick={fullscreen.toggle}
+            aria-label={fullscreen.on ? 'Minimize logs (exit full screen)' : 'Show logs full screen'}
+            title={fullscreen.on ? 'Minimize (Esc)' : 'Full screen'}
+          >
+            <Icon name={fullscreen.on ? 'minimize' : 'maximize'} size={15} />
+          </button>
+        )}
         <button type="button" className={`logs-icon-btn${follow ? ' on' : ''}`} onClick={() => setFollow((v) => !v)} aria-pressed={follow} aria-label="Follow logs (refresh every few seconds)"><Icon name="activity" size={15} /></button>
         <button type="button" className={`logs-icon-btn${showTs ? ' on' : ''}`} onClick={() => setShowTs((v) => !v)} aria-pressed={showTs} aria-label="Show timestamps"><Icon name="timer" size={15} /></button>
         <button type="button" className={`logs-icon-btn${showNames ? ' on' : ''}`} onClick={() => setShowNames((v) => !v)} aria-pressed={showNames} aria-label="Show container names"><Icon name="tag" size={15} /></button>
@@ -326,7 +329,7 @@ export default function LogsViewer({ namespace, pod, containers, initialContaine
           </select>
           <Icon name="chevronDown" size={13} className="logs-select-caret" aria-hidden="true" />
         </div>
-        {onClose && (
+        {onClose && !fullscreen.inPanel && (
           <button type="button" className="logs-icon-btn" onClick={onClose} aria-label={`Close logs for ${title}`}><Icon name="close" size={15} /></button>
         )}
       </div>

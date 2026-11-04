@@ -30,7 +30,7 @@ export const resourceKey = (r) => `${r.kind}|${r.namespace || ''}|${r.name}`;
 
 // Short kind labels shown under the glyph in the graph, matching the Argo CD tree.
 const SHORT_KIND = {
-  Application: 'application', Service: 'svc', ServiceAccount: 'sa', Deployment: 'deploy',
+  Application: 'app', Service: 'svc', ServiceAccount: 'sa', Deployment: 'deploy',
   ReplicaSet: 'rs', StatefulSet: 'sts', DaemonSet: 'ds', Pod: 'pod', ConfigMap: 'cm',
   Secret: 'secret', ExternalSecret: 'externalsecret', SecretStore: 'secretstore', ClusterSecretStore: 'clustersecretstore',
   Ingress: 'ing', IngressClass: 'ingressclass', ServiceMonitor: 'servicemonitor', PodMonitor: 'podmonitor',

@@ -44,10 +44,10 @@ describe('app update routes', () => {
     assert.equal(anon.status, 401);
     const mcp = await srv.authed('/api/app/update/check', {
       method: 'POST',
-      headers: { 'X-KubePilot-Source': 'mcp' },
+      headers: { 'X-k8Board-Source': 'mcp' },
     });
     assert.equal(mcp.status, 403);
-    const notes = await srv.authed('/api/app/release-notes', { headers: { 'X-KubePilot-Source': 'mcp' } });
+    const notes = await srv.authed('/api/app/release-notes', { headers: { 'X-k8Board-Source': 'mcp' } });
     assert.equal(notes.status, 403);
   });
 });

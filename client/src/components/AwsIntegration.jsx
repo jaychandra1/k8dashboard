@@ -250,7 +250,7 @@ export default function AwsIntegration({ onClose, onImported }) {
               </div>
             </div>
             {ssoProfiles.length > 0 && (
-              <Field id={f('sso-profile')} label="Saved SSO sign-in (optional)" hint="Profiles KubePilot or the AWS CLI saved in ~/.aws/config. Pick one to reuse its start URL, or leave this on 'enter a start URL'.">
+              <Field id={f('sso-profile')} label="Saved SSO sign-in (optional)" hint="Profiles k8Board or the AWS CLI saved in ~/.aws/config. Pick one to reuse its start URL, or leave this on 'enter a start URL'.">
                 <select id={f('sso-profile')} className="aws-input" value={ssoProfile} onChange={(e) => onPickSsoProfile(e.target.value)}>
                   <option value="">— enter a start URL below —</option>
                   {ssoProfiles.map((pr) => <option key={pr.name} value={pr.name}>{pr.name}{pr.ssoStartUrl ? ` · ${hostOf(pr.ssoStartUrl)}` : ''}{pr.ssoRegion ? ` (${pr.ssoRegion})` : ''}</option>)}

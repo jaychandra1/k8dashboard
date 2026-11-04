@@ -103,7 +103,7 @@ describe('VulnTable — fix availability and images still waiting', () => {
   it('overview: "Fix available" for the critical findings', () => {
     render(<VulnTable vuln={vuln} ns="all" criticalOnly onSelect={() => {}} />);
     expect(screen.getByRole('columnheader', { name: /Fix available/ })).toBeInTheDocument();
-    const row = screen.getByRole('row', { name: /ingress-nginx\/controller/ });
+    const row = screen.getByRole('row', { name: /controller:v1\.7\.0/ });
     expect(row).toHaveTextContent('2 of 2');
   });
 

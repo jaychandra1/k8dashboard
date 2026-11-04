@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Print the KubePilot sign-in link: the server's URL with the API token in the
+// Print the k8Board sign-in link: the server's URL with the API token in the
 // fragment (the UI moves it into session storage).
 //
 //   node scripts/login-url.mjs [--base http://localhost:8080]
@@ -26,7 +26,7 @@ if (!token) {
   }
 }
 if (!token) {
-  console.error('✗ No KubePilot token found (KUBEPILOT_TOKEN or ~/.config/kubepilot/token). Start the server once first.');
+  console.error('✗ No k8Board token found (KUBEPILOT_TOKEN or ~/.config/kubepilot/token). Start the server once first.');
   process.exit(1);
 }
 console.log(`${base}/#token=${token}`);

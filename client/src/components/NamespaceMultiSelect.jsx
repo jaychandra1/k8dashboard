@@ -1,6 +1,7 @@
 import { afterPaint } from '../lib/a11y';
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import useClickOutside from '../hooks/useClickOutside';
+import Icon from './Icons';
 
 const ALL = 'all';
 
@@ -134,7 +135,7 @@ export default function NamespaceMultiSelect({ namespaces = [], selected = [ALL]
           aria-controls={open ? listId : undefined}
           aria-label={`${label}: ${summaryLabel()}`}
         >
-          <span aria-hidden="true">{open ? '▲' : '▼'}</span>
+          <Icon name="chevronDown" size={14} className={`namespace-multi-select-chevron${open ? ' open' : ''}`} />
         </button>
       </div>
 

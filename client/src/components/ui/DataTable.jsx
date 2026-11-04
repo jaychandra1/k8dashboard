@@ -223,7 +223,8 @@ export default function DataTable({
                   key={col.key}
                   scope="col"
                   aria-sort={ariaSort}
-                  style={{ width: col.width, minWidth: col.minWidth, textAlign: col.align }}
+                  // `fill`: this column takes the spare width (the others keep theirs).
+                  style={{ width: col.fill ? '100%' : col.width, minWidth: col.fill ? col.width : col.minWidth, textAlign: col.align }}
                   className={`dt-th${col.align ? ` dt-align-${col.align}` : ''}${col.className ? ` ${col.className}` : ''}`}
                 >
                   {col.sortable ? (

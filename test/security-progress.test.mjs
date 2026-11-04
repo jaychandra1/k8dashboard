@@ -32,7 +32,25 @@ const REPORTS = [{
       { vulnerabilityID: 'CVE-2026-2', severity: 'HIGH', resource: 'openssl', installedVersion: '3.1.0-r0', fixedVersion: '3.1.2-r0', class: 'os-pkgs' },
     ],
   },
+}, {
+  // The previous image of Deployment web: its ReplicaSet is kept (scaled to 0)
+  // for rollback, so the report stays though no pod runs it.
+  metadata: { namespace: 'shop', name: 'replicaset-web-5d2-app', labels: labels('shop', 'ReplicaSet', 'web-5d2', 'app'), creationTimestamp: '2026-10-20T09:00:00Z' },
+  report: {
+    updateTimestamp: '2026-10-20T09:30:00Z',
+    artifact: { repository: 'acme/web', tag: '1.1' }, os: { family: 'alpine', name: '3.17.0' },
+    summary: { criticalCount: 2, highCount: 1, mediumCount: 0, lowCount: 0 },
+    vulnerabilities: [
+      { vulnerabilityID: 'CVE-2026-1', severity: 'CRITICAL', resource: 'openssl', installedVersion: '3.1.0-r0', fixedVersion: '3.1.4-r0' },
+      { vulnerabilityID: 'CVE-2026-2', severity: 'HIGH', resource: 'openssl', installedVersion: '3.1.0-r0', fixedVersion: '3.1.2-r0' },
+      { vulnerabilityID: 'CVE-2025-9', severity: 'CRITICAL', resource: 'libcurl', installedVersion: '8.1.0-r0', fixedVersion: '8.4.0-r0' },
+    ],
+  },
 }];
+const REPLICA_SETS = [
+  { metadata: { namespace: 'shop', name: 'web-7f9', annotations: { 'deployment.kubernetes.io/revision': '4' }, ownerReferences: [{ kind: 'Deployment', name: 'web', controller: true }] } },
+  { metadata: { namespace: 'shop', name: 'web-5d2', annotations: { 'deployment.kubernetes.io/revision': '3' }, ownerReferences: [{ kind: 'Deployment', name: 'web', controller: true }] } },
+];
 const JOBS = [
   { metadata: { namespace: OP_NS, name: 'scan-vulnerabilityreport-db1', labels: { 'app.kubernetes.io/managed-by': 'trivy-operator', 'vulnerabilityReport.scanner': 'Trivy', ...labels('shop', 'StatefulSet', 'db', 'pg') } }, status: { active: 1 } },
   { metadata: { namespace: OP_NS, name: 'scan-vulnerabilityreport-api', labels: { 'app.kubernetes.io/managed-by': 'trivy-operator', 'vulnerabilityReport.scanner': 'Trivy', ...labels('shop', 'ReplicaSet', 'api-5c4', 'api') } }, status: { failed: 1, conditions: [{ type: 'Failed', status: 'True', reason: 'BackoffLimitExceeded', message: 'Job has reached the specified backoff limit' }] } },
@@ -62,6 +80,7 @@ function fakeKubeApi() {
       case `/api/v1/namespaces/${OP_NS}/pods/trivy-operator-abc/log`:
         res.writeHead(200, { 'Content-Type': 'text/plain' }); return res.end(OP_LOG);
       case '/api/v1/pods': return list(PODS);
+      case '/apis/apps/v1/replicasets': return list(REPLICA_SETS);
       case '/apis/aquasecurity.github.io/v1alpha1/vulnerabilityreports': return list(REPORTS);
       case '/apis/aquasecurity.github.io/v1alpha1/exposedsecretreports': return list([]);
       default: return json({ kind: 'Status', code: 404 }, 404);
@@ -103,7 +122,7 @@ contexts:
     assert.deepEqual(p.jobs, { active: 1, failed: 1 });
     assert.equal(p.scanning, true);
     assert.deepEqual(p.coverage, { images: 3, scanned: 1, notScanned: 2, scanning: 1, failed: 1 });
-    assert.equal(p.reports, 1);
+    assert.equal(p.reports, 2);
     assert.equal(p.lastReportAt, '2026-10-23T09:30:00Z');
     assert.ok(p.failures.some((f) => /ReplicaSet api-5c4: BackoffLimitExceeded/.test(f)), JSON.stringify(p.failures));
     assert.ok(p.failures.some((f) => /401 Unauthorized/.test(f)), JSON.stringify(p.failures));
@@ -124,6 +143,28 @@ contexts:
     assert.equal(web.remediation.osFixes, 2);
     assert.deepEqual(web.remediation.upgrades.map((u) => [u.pkg, u.installedVersion, u.upgradeTo, u.cves]), [['openssl', '3.1.0-r0', '3.1.4-r0', 2]]);
     assert.equal(web.vulnerabilities[0].class, 'os-pkgs');
+  });
+
+  test('vulnerabilities: an image a rollout replaced is "Not running" and not counted; the new one says what it fixed', async () => {
+    const v = await (await srv.authed('/api/security/vulnerabilities')).json();
+    const web = v.images.find((im) => im.image === 'acme/web:1.2');
+    const old = v.images.find((im) => im.image === 'acme/web:1.1');
+    assert.equal(web.active, true);
+    assert.deepEqual([old.active, old.status, old.workloads[0].running], [false, 'Not running', false]);
+    assert.equal(v.inactive, 1);
+    // Totals and results count the running image only (deduplicated findings).
+    assert.deepEqual(v.summary, { CRITICAL: 1, HIGH: 1, MEDIUM: 0, LOW: 0, UNKNOWN: 0 });
+    assert.deepEqual(web.summary, v.summary);
+    assert.deepEqual(v.results, { vulnerable: 1, ok: 0 });
+    assert.equal(v.images[v.images.length - 1].image, 'acme/web:1.1', 'running images first');
+    // 1.1 → 1.2 fixed the libcurl critical and added nothing.
+    assert.equal(web.changes.length, 1);
+    const c = web.changes[0];
+    assert.deepEqual([c.workload, c.container, c.previousRevision, c.revision, c.previousImage], ['Deployment web', 'app', 3, 4, 'acme/web:1.1']);
+    assert.deepEqual(c.resolved.map((x) => x.id), ['CVE-2025-9']);
+    assert.deepEqual(c.introduced, []);
+    assert.deepEqual(v.resolved, { total: 1, bySeverity: { CRITICAL: 1, HIGH: 0, MEDIUM: 0, LOW: 0, UNKNOWN: 0 }, deployments: 1 });
+    assert.equal(v.introduced.total, 0);
   });
 
   test('a namespace filter narrows coverage', async () => {

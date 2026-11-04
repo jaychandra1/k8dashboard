@@ -18,7 +18,7 @@ const host = (detail) =>
 const LATEST = {
   version: '1.4.0',
   tag: 'v1.4.0',
-  name: 'KubePilot 1.4.0',
+  name: 'k8Board 1.4.0',
   publishedAt: '2026-10-01T10:00:00Z',
   htmlUrl: 'https://github.com/jaychandra1/KubePilot/releases/tag/v1.4.0',
 };
@@ -30,7 +30,7 @@ const state = (phase, extra = {}) => ({
     canInstall: true,
     installUnavailable: null,
     installMode: 'on-restart',
-    asset: { name: 'KubePilot-windows.exe', size: 49_388_749 },
+    asset: { name: 'k8Board-windows.exe', size: 49_388_749 },
     progress: null,
     error: null,
     dryRun: false,
@@ -60,12 +60,12 @@ describe('Help → Show Release Notes', { timeout: 15000 }, () => {
     getJson.mockResolvedValue({
       release: {
         ...LATEST,
-        body: '# KubePilot 1.4.0\n\n## Added\n- **Help menu**\n\n<script>window.__pwned = 1</script>\n[docs](javascript:alert(1))',
+        body: '# k8Board 1.4.0\n\n## Added\n- **Help menu**\n\n<script>window.__pwned = 1</script>\n[docs](javascript:alert(1))',
       },
     });
     const user = setup();
     await host({ type: 'show-release-notes' });
-    const dlg = await screen.findByRole('dialog', { name: 'KubePilot Release Notes' }, SLOW);
+    const dlg = await screen.findByRole('dialog', { name: 'k8Board Release Notes' }, SLOW);
     expect(await within(dlg).findByText('Version 1.4.0', {}, SLOW)).toBeInTheDocument();
     const day = new Date('2026-10-01T10:00:00Z').toLocaleDateString(undefined, {
       year: 'numeric',
@@ -88,7 +88,7 @@ describe('Help → Show Release Notes', { timeout: 15000 }, () => {
       new ApiError({
         status: 503,
         code: 'offline',
-        message: 'KubePilot could not connect to GitHub. Please check your network connection.',
+        message: 'k8Board could not connect to GitHub. Please check your network connection.',
       })
     );
     const user = setup();
@@ -117,7 +117,7 @@ describe('Help → Check for Updates', { timeout: 15000 }, () => {
     postJson.mockResolvedValue(state('up-to-date', { latest: null }));
     setup();
     await host({ type: 'check-updates' });
-    const dlg = await screen.findByRole('dialog', { name: 'KubePilot is up to date' }, SLOW);
+    const dlg = await screen.findByRole('dialog', { name: 'k8Board is up to date' }, SLOW);
     expect(dlg).toHaveTextContent('You are running the latest version: v1.3.0');
     expect(postJson).toHaveBeenCalledTimes(1);
     expect(postJson).toHaveBeenCalledWith('/api/app/update/check', {});
@@ -127,8 +127,8 @@ describe('Help → Check for Updates', { timeout: 15000 }, () => {
     postJson.mockResolvedValueOnce(state('available'));
     const user = setup();
     await host({ type: 'check-updates' });
-    const dlg = await screen.findByRole('dialog', { name: 'KubePilot Update Available' }, SLOW);
-    expect(dlg).toHaveTextContent('A new version of KubePilot is available.');
+    const dlg = await screen.findByRole('dialog', { name: 'k8Board Update Available' }, SLOW);
+    expect(dlg).toHaveTextContent('A new version of k8Board is available.');
     expect(dlg).toHaveTextContent('Installed versionv1.3.0');
     expect(dlg).toHaveTextContent('Latest versionv1.4.0');
     expect(postJson).toHaveBeenCalledTimes(1);
@@ -141,8 +141,8 @@ describe('Help → Check for Updates', { timeout: 15000 }, () => {
     );
     await user.click(within(dlg).getByRole('button', { name: 'Download and Install' }));
     expect(postJson).toHaveBeenLastCalledWith('/api/app/update/download', {});
-    const updating = await screen.findByRole('dialog', { name: 'Updating KubePilot' }, SLOW);
-    expect(updating).toHaveTextContent('Downloading KubePilot v1.4.0…');
+    const updating = await screen.findByRole('dialog', { name: 'Updating k8Board' }, SLOW);
+    expect(updating).toHaveTextContent('Downloading k8Board v1.4.0…');
     expect(within(updating).getByRole('progressbar')).toHaveAttribute('aria-valuenow', '72');
     expect(updating).toHaveTextContent('34.2 MB / 47.1 MB');
 
@@ -159,7 +159,7 @@ describe('Help → Check for Updates', { timeout: 15000 }, () => {
         error: {
           code: 'verification_failed',
           stage: 'verify',
-          message: 'The downloaded KubePilot update could not be verified and will not be installed.',
+          message: 'The downloaded k8Board update could not be verified and will not be installed.',
         },
       })
     );
@@ -181,7 +181,7 @@ describe('Help → Check for Updates', { timeout: 15000 }, () => {
         error: {
           code: 'no_asset_for_arch',
           stage: 'select',
-          message: 'KubePilot v1.4.0 is available, but an installer for Windows ARM64 could not be found.',
+          message: 'k8Board v1.4.0 is available, but an installer for Windows ARM64 could not be found.',
         },
       })
     );
@@ -200,7 +200,7 @@ describe('Help → Check for Updates', { timeout: 15000 }, () => {
         error: {
           code: 'offline',
           stage: 'check',
-          message: 'KubePilot could not connect to GitHub. Please check your network connection.',
+          message: 'k8Board could not connect to GitHub. Please check your network connection.',
         },
       })
     );
@@ -210,7 +210,7 @@ describe('Help → Check for Updates', { timeout: 15000 }, () => {
     expect(dlg).toHaveTextContent('Please check your network connection.');
     postJson.mockResolvedValueOnce(state('up-to-date', { latest: null }));
     await user.click(within(dlg).getByRole('button', { name: 'Try Again' }));
-    expect(await screen.findByRole('dialog', { name: 'KubePilot is up to date' }, SLOW)).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: 'k8Board is up to date' }, SLOW)).toBeInTheDocument();
     expect(postJson).toHaveBeenCalledTimes(2);
   });
 
@@ -221,7 +221,7 @@ describe('Help → Check for Updates', { timeout: 15000 }, () => {
           code: 'install_failed',
           stage: 'install',
           message:
-            'The update could not be installed. Your existing KubePilot installation has not been modified.',
+            'The update could not be installed. Your existing k8Board installation has not been modified.',
         },
       })
     );
@@ -243,7 +243,7 @@ describe('Help → Check for Updates', { timeout: 15000 }, () => {
     expect(postJson).toHaveBeenCalledWith('/api/app/update/install', { when: 'on-quit' });
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), SLOW);
     expect(
-      await screen.findByText('KubePilot v1.4.0 will be installed when you quit KubePilot.', {}, SLOW)
+      await screen.findByText('k8Board v1.4.0 will be installed when you quit k8Board.', {}, SLOW)
     ).toBeInTheDocument();
   });
 
@@ -252,24 +252,24 @@ describe('Help → Check for Updates', { timeout: 15000 }, () => {
     const user = setup();
     await host({ type: 'check-updates' });
     const dlg = await screen.findByRole('dialog', { name: 'Update Installed' }, SLOW);
-    expect(dlg).toHaveTextContent('KubePilot v1.4.0 has been installed successfully.');
-    expect(dlg).toHaveTextContent('Restart KubePilot to complete the update.');
+    expect(dlg).toHaveTextContent('k8Board v1.4.0 has been installed successfully.');
+    expect(dlg).toHaveTextContent('Restart k8Board to complete the update.');
     postJson.mockResolvedValueOnce(state('restarting', { installMode: 'in-place' }));
     await user.click(within(dlg).getByRole('button', { name: 'Restart Now' }));
     expect(postJson).toHaveBeenCalledWith('/api/app/update/restart', {});
-    expect(await screen.findByText('Restarting KubePilot…', {}, SLOW)).toBeInTheDocument();
+    expect(await screen.findByText('Restarting k8Board…', {}, SLOW)).toBeInTheDocument();
   });
 
   it('a copy that cannot update itself offers the release page instead of downloading', async () => {
     postJson.mockResolvedValue(
       state('available', {
         canInstall: false,
-        installUnavailable: "This is a development build of KubePilot, so it can't install updates.",
+        installUnavailable: "This is a development build of k8Board, so it can't install updates.",
       })
     );
     setup();
     await host({ type: 'check-updates' });
-    const dlg = await screen.findByRole('dialog', { name: 'KubePilot Update Available' }, SLOW);
+    const dlg = await screen.findByRole('dialog', { name: 'k8Board Update Available' }, SLOW);
     expect(dlg).toHaveTextContent('development build');
     expect(within(dlg).queryByRole('button', { name: 'Download and Install' })).toBeNull();
     expect(within(dlg).getByRole('button', { name: 'View Release' })).toBeInTheDocument();
@@ -280,12 +280,12 @@ describe('Help → Check for Updates', { timeout: 15000 }, () => {
       state('available', {
         canInstall: false,
         managedBy: 'store',
-        installUnavailable: 'This copy of KubePilot comes from the Microsoft Store, which installs its updates.',
+        installUnavailable: 'This copy of k8Board comes from the Microsoft Store, which installs its updates.',
       })
     );
     const user = setup();
     await host({ type: 'check-updates' });
-    const dlg = await screen.findByRole('dialog', { name: 'KubePilot Update Available' }, SLOW);
+    const dlg = await screen.findByRole('dialog', { name: 'k8Board Update Available' }, SLOW);
     expect(dlg).toHaveTextContent('comes from the Microsoft Store');
     expect(dlg).not.toHaveTextContent('download the installer');
     expect(within(dlg).queryByRole('button', { name: 'Download and Install' })).toBeNull();
@@ -299,7 +299,7 @@ describe('Help → Check for Updates', { timeout: 15000 }, () => {
     await host({ type: 'update-result', status: 'failed', version: '1.4.0', from: '1.3.0' });
     const dlg = await screen.findByRole('dialog', { name: 'Update failed' }, SLOW);
     expect(dlg).toHaveTextContent(
-      'The update to KubePilot v1.4.0 did not complete. Your existing KubePilot installation (v1.3.0) has not been modified.'
+      'The update to k8Board v1.4.0 did not complete. Your existing k8Board installation (v1.3.0) has not been modified.'
     );
   });
 });

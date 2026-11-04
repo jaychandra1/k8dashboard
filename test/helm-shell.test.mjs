@@ -68,7 +68,7 @@ describe('helm terminal — building blocks', () => {
     assert.throws(() => pinnedKubeconfig(loadKc(), null, k8s.KubeConfig), /not in the kubeconfig/);
   });
 
-  test('environment: allowlisted, no KubePilot secrets, pinned to the cluster', () => {
+  test('environment: allowlisted, no k8Board secrets, pinned to the cluster', () => {
     const env = helmShellEnv({
       PATH: '/usr/bin:/bin', HOME: '/home/u', AWS_PROFILE: 'dev', HELM_CACHE_HOME: '/c', KUBECONFIG: '/home/u/.kube/config',
       KUBEPILOT_TOKEN: 'secret-token', KUBEPILOT_SECRET_KEY: 'k', NODE_OPTIONS: '--inspect', RANDOM_THING: 'x',
@@ -86,13 +86,13 @@ describe('helm terminal — building blocks', () => {
     assert.equal(win.PATH, undefined);
     assert.equal(win.HELM_NAMESPACE, 'tools');
     // Windows names are case-insensitive: SYSTEMROOT (as Git Bash passes it) is kept — PowerShell
-    // won't start without it — and any spelling of a KubePilot secret or the pinned variables is replaced.
-    const upper = helmShellEnv({ PATH: 'C:\\Windows', SYSTEMROOT: 'C:\\Windows', WINDIR: 'C:\\Windows', Kubepilot_Token: 'x', Kubeconfig: 'C:\\old' },
+    // won't start without it — and any spelling of a k8Board secret or the pinned variables is replaced.
+    const upper = helmShellEnv({ PATH: 'C:\\Windows', SYSTEMROOT: 'C:\\Windows', WINDIR: 'C:\\Windows', k8Board_Token: 'x', Kubeconfig: 'C:\\old' },
       { kubeconfigPath: 'C:\\t\\k.json', context: 'dev', platform: 'win32' });
     assert.equal(upper.SYSTEMROOT, 'C:\\Windows');
     assert.equal(upper.WINDIR, 'C:\\Windows');
     assert.equal(upper.PATH, 'C:\\Windows');
-    assert.equal(upper.Kubepilot_Token, undefined);
+    assert.equal(upper.k8Board_Token, undefined);
     assert.equal(upper.Kubeconfig, undefined);
     assert.equal(upper.KUBECONFIG, 'C:\\t\\k.json');
   });
@@ -173,7 +173,7 @@ describe('helm terminal — end to end (a real local shell)', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  test('the shell sees only the selected cluster, and no KubePilot token', async () => {
+  test('the shell sees only the selected cluster, and no k8Board token', async () => {
     const info = await (await srv.authed('/api/helm-terminal')).json();
     assert.equal(info.available, true, JSON.stringify(info));
     assert.equal(info.context, 'dev');

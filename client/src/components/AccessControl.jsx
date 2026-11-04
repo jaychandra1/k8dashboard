@@ -10,16 +10,17 @@ import EmptyState from './ui/EmptyState';
 import ErrorState from './ui/ErrorState';
 import useRequest from '../hooks/useRequest';
 import useDocumentTitle from '../hooks/useDocumentTitle';
+import useTabStripScroll from '../hooks/useTabStripScroll';
 import { getJson, p } from '../lib/api';
 import { formatAge, pluralize } from '../lib/format';
 import { XLink, nsLink } from './resources/links';
 
 const TABS = [
-  { key: 'serviceAccounts', label: 'Service Accounts', kind: 'ServiceAccount', rt: 'serviceAccount', cols: ['name', 'namespace', 'secrets', 'age'] },
+  { key: 'serviceAccounts', label: 'ServiceAccounts', kind: 'ServiceAccount', rt: 'serviceAccount', cols: ['name', 'namespace', 'secrets', 'age'] },
   { key: 'roles', label: 'Roles', kind: 'Role', rt: 'role', cols: ['name', 'namespace', 'rules', 'age'] },
-  { key: 'roleBindings', label: 'Role Bindings', kind: 'RoleBinding', rt: 'roleBinding', cols: ['name', 'namespace', 'roleRef', 'subjects', 'age'] },
-  { key: 'clusterRoles', label: 'Cluster Roles', kind: 'ClusterRole', rt: 'clusterRole', cols: ['name', 'rules', 'age'] },
-  { key: 'clusterRoleBindings', label: 'Cluster Role Bindings', kind: 'ClusterRoleBinding', rt: 'clusterRoleBinding', cols: ['name', 'roleRef', 'subjects', 'age'] },
+  { key: 'roleBindings', label: 'RoleBindings', kind: 'RoleBinding', rt: 'roleBinding', cols: ['name', 'namespace', 'roleRef', 'subjects', 'age'] },
+  { key: 'clusterRoles', label: 'ClusterRoles', kind: 'ClusterRole', rt: 'clusterRole', cols: ['name', 'rules', 'age'] },
+  { key: 'clusterRoleBindings', label: 'ClusterRoleBindings', kind: 'ClusterRoleBinding', rt: 'clusterRoleBinding', cols: ['name', 'roleRef', 'subjects', 'age'] },
 ];
 
 const rowKey = (r) => `${r.namespace || ''}/${r.name}`;
@@ -28,6 +29,7 @@ export default function AccessControl({ refreshSignal = 0, onNavigate }) {
   useDocumentTitle('Access Control');
   const uid = useId();
   const [tab, setTab] = useState('serviceAccounts');
+  const tabsRef = useTabStripScroll(tab);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(null); // { name, namespace, kind, resourceType }
   const [yamlTarget, setYamlTarget] = useState(null);
@@ -83,7 +85,7 @@ export default function AccessControl({ refreshSignal = 0, onNavigate }) {
 
   return (
     <div className="resource-viewer">
-      <div className="resource-tabs" role="tablist" aria-label="Access control kinds">
+      <div ref={tabsRef} className="resource-tabs" role="tablist" aria-label="Access control kinds">
         {TABS.map((t, idx) => (
           <button
             key={t.key}

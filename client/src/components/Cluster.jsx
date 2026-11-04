@@ -15,6 +15,88 @@ export function bucketPhases(phases) {
   return counts;
 }
 
+const fmtCores = (milli) => {
+  const c = (Number(milli) || 0) / 1000;
+  return c >= 10 ? c.toFixed(0) : c.toFixed(1).replace(/\.0$/, '');
+};
+const shareOf = (part, total) => (total > 0 ? (part / total) * 100 : 0);
+// Requested share → warning tones (the resource keeps its colour below 75%).
+const loadTone = (pctValue) => (pctValue >= 90 ? 'bad' : pctValue >= 75 ? 'warn' : null);
+
+/**
+ * One resource of the capacity card: what the scheduler has reserved
+ * (requests, light fill) and what is used now (solid fill) of what the nodes
+ * can run, plus the limits' share (above 100% = overcommitted).
+ */
+export function ResourceBar({ label, icon, tone, requested, allocatable, used, limits, fmt, unit = '', verb = 'requested' }) {
+  const req = shareOf(requested, allocatable);
+  const use = used != null ? shareOf(used, allocatable) : null;
+  const lim = limits != null ? shareOf(limits, allocatable) : null;
+  const warn = loadTone(req);
+  const t = warn || tone;
+  const summary = `${label}: ${fmt(requested)} of ${fmt(allocatable)}${unit} ${verb} (${Math.round(req)}%)`
+    + (use != null ? `, ${fmt(used)}${unit} in use` : '')
+    + (lim != null ? `, limits ${Math.round(lim)}% of allocatable` : '');
+  return (
+    <div className="cap-row" role="group" aria-label={summary}>
+      <div className="bar-head">
+        <span className="name"><Icon name={icon} size={14} /> {label}</span>
+        <span className="cap-pct" data-tone={warn || undefined}>{Math.round(req)}%</span>
+      </div>
+      <div className="cap-track" aria-hidden="true">
+        <div className="cap-req" data-tone={t} data-solid={use == null || undefined} style={{ width: `${Math.min(100, req)}%` }} />
+        {use != null && <div className="cap-use" data-tone={t} style={{ width: `${Math.min(100, use)}%` }} />}
+      </div>
+      <div className="cap-sub" aria-hidden="true">
+        <span><b>{fmt(requested)}</b> of {fmt(allocatable)}{unit} {verb}</span>
+        {use != null && <span><b>{fmt(used)}</b>{unit} in use</span>}
+        {lim != null && lim > 0 && (
+          <span className={lim > 100 ? 'cap-over' : undefined} title="The containers' limits added up. Above 100% the nodes are overcommitted: the pods can't all use their limits at once.">
+            limits {Math.round(lim)}%
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Requests / usage vs allocatable for CPU, memory and pod slots. */
+export function CapacityCard({ cap }) {
+  const usage = cap.usage?.available ? cap.usage : null;
+  const waiting = cap.podsUnscheduled || 0;
+  return (
+    <section className="chart-card cap-card" aria-label="Cluster capacity">
+      <div className="chart-card-title">
+        <h2>Cluster Capacity</h2>
+        <span className="total">requested of allocatable</span>
+      </div>
+      <div className="cap-rows">
+        <ResourceBar label="CPU" icon="cpu" tone="info" fmt={fmtCores} unit=" cores"
+          requested={cap.cpuRequestedMilli} allocatable={cap.cpuAllocatableMilli} used={usage?.cpuMilli} limits={cap.cpuLimitsMilli} />
+        <ResourceBar label="Memory" icon="memory" tone="purple" fmt={fmtMem}
+          requested={cap.memRequestedBytes} allocatable={cap.memAllocatableBytes} used={usage?.memBytes} limits={cap.memLimitsBytes} />
+        <ResourceBar label="Pods" icon="pod" tone="cyan" fmt={(n) => String(n ?? 0)} unit=" pods"
+          requested={cap.podsScheduled} allocatable={cap.podsAllocatable} verb="scheduled" />
+      </div>
+      <div className="cap-foot">
+        {usage ? (
+          <span className="cap-legend" aria-hidden="true">
+            <i className="cap-key cap-key-req" /> requested
+            <i className="cap-key cap-key-use" /> in use
+          </span>
+        ) : (
+          <span className="cap-note">Live usage needs metrics-server in the cluster.</span>
+        )}
+        {waiting > 0 && (
+          <span className="cap-note" data-tone="warn">
+            <Icon name="warning" size={13} /> {waiting} {waiting === 1 ? 'pod is' : 'pods are'} waiting for a node with room
+          </span>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function CapacityBar({ label, icon, used, total, unit, tone }) {
   const share = total > 0 ? Math.min(100, (used / total) * 100) : 0;
   return (
@@ -65,7 +147,7 @@ export default function Cluster({ refreshSignal = 0, context, onSummaryLoaded })
   const kpis = data ? [
     { key: 'nodes', label: 'Nodes', value: `${nodesReady}/${nodeTotal}`, sub: 'ready', icon: 'nodes', tone: 'blue' },
     { key: 'cpu', label: 'CPU Cores', value: cap.cpuCapacity ?? '—', sub: `${cap.cpuAllocatable ?? '—'} allocatable`, icon: 'cpu', tone: 'green' },
-    { key: 'memory', label: 'Memory', value: fmtMem(cap.memCapacityBytes), sub: `${fmtMem(cap.memAllocatableBytes)} alloc`, icon: 'memory', tone: 'purple' },
+    { key: 'memory', label: 'Memory', value: fmtMem(cap.memCapacityBytes), sub: `${fmtMem(cap.memAllocatableBytes)} allocatable`, icon: 'memory', tone: 'purple' },
     { key: 'pods', label: 'Pods', value: podTotal, sub: `${counts.running} running`, icon: 'pod', tone: 'cyan' },
     { key: 'namespaces', label: 'Namespaces', value: data.namespaceCount ?? '—', sub: 'total', icon: 'apps', tone: 'yellow' },
   ] : [];
@@ -141,21 +223,24 @@ export default function Cluster({ refreshSignal = 0, context, onSummaryLoaded })
               </div>
             </section>
 
-            <section className="chart-card" aria-label="Cluster capacity">
-              <div className="chart-card-title">
-                <h2>Cluster Capacity</h2>
-                <span className="total">allocatable / total</span>
-              </div>
-              <div className="bars">
-                <CapacityBar label="CPU" icon="cpu" used={cap.cpuAllocatable ?? 0} total={cap.cpuCapacity ?? 0} unit=" cores" tone="info" />
-                <CapacityBar
-                  label="Memory" icon="memory"
-                  used={Math.round((cap.memAllocatableBytes || 0) / 1024 ** 3)}
-                  total={Math.round((cap.memCapacityBytes || 0) / 1024 ** 3)}
-                  unit=" GiB" tone="purple"
-                />
-              </div>
-            </section>
+            {cap.cpuRequestedMilli != null ? <CapacityCard cap={cap} /> : (
+              // A server without the requests data: allocatable vs total.
+              <section className="chart-card" aria-label="Cluster capacity">
+                <div className="chart-card-title">
+                  <h2>Cluster Capacity</h2>
+                  <span className="total">allocatable / total</span>
+                </div>
+                <div className="bars">
+                  <CapacityBar label="CPU" icon="cpu" used={cap.cpuAllocatable ?? 0} total={cap.cpuCapacity ?? 0} unit=" cores" tone="info" />
+                  <CapacityBar
+                    label="Memory" icon="memory"
+                    used={Math.round((cap.memAllocatableBytes || 0) / 1024 ** 3)}
+                    total={Math.round((cap.memCapacityBytes || 0) / 1024 ** 3)}
+                    unit=" GiB" tone="purple"
+                  />
+                </div>
+              </section>
+            )}
           </div>
 
           <div className="cluster-info-container">

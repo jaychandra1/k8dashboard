@@ -3,7 +3,7 @@
 //
 // When the active context is DEMO_CONTEXT, server.js routes every /api/* data
 // and mutation request through handle() below instead of talking to a real
-// cluster. The whole point is that KubePilot is fully explorable with no
+// cluster. The whole point is that k8Board is fully explorable with no
 // kubeconfig, no cluster, and no kubectl.
 //
 // The JSON returned here is shaped to EXACTLY match what the corresponding real
@@ -23,6 +23,12 @@
 // ============================================================================
 
 import yaml from 'js-yaml';
+// Lists use the server's own row shape (lib/resource-format.mjs), so demo and
+// real lists always match.
+import { formatResource } from './lib/resource-format.mjs';
+import { remediationFor, severityCounts } from './lib/security-insights.mjs';
+import { capacityTotals } from './lib/capacity.mjs';
+import { filterEvents, parseWorkload, workloadScope } from './lib/event-scope.mjs';
 
 export const DEMO_CONTEXT = 'demo-cluster';
 export function isDemo(context) {
@@ -43,91 +49,6 @@ const ago = (mins) => new Date(Date.now() - mins * 60_000).toISOString();
 // Slight per-call jitter so live metrics "move" between polls.
 const jitter = (base, pct = 0.12) => Math.max(0, base * (1 + (Math.random() - 0.5) * pct));
 const round1 = (n) => +Number(n).toFixed(1);
-
-// ----------------------------------------------------------------------------
-// Shape helpers copied from server.js so demo lists match real lists exactly.
-// (Kept in sync with server.js formatResource / getResourceStatus / etc.)
-// ----------------------------------------------------------------------------
-function containerState(cs) {
-  if (!cs || !cs.state) return 'unknown';
-  if (cs.state.running) return 'running';
-  if (cs.state.terminated) return cs.state.terminated.exitCode === 0 ? 'running' : 'failed';
-  if (cs.state.waiting) {
-    const reason = cs.state.waiting.reason || '';
-    const bad = /CrashLoopBackOff|Error|ImagePull|InvalidImageName|CreateContainer|RunContainer|CreateContainerConfigError/i.test(reason);
-    return bad ? 'failed' : 'pending';
-  }
-  return 'unknown';
-}
-
-function getResourceStatus(item, kind) {
-  const status = item.status || {};
-  if (kind === 'Pod') return status.phase || 'Unknown';
-  if (kind === 'Deployment' || kind === 'StatefulSet' || kind === 'DaemonSet') {
-    const ready = status.readyReplicas != null ? status.readyReplicas
-      : (status.numberReady != null ? status.numberReady : 0);
-    const desired = status.replicas != null ? status.replicas
-      : (status.desiredNumberScheduled != null ? status.desiredNumberScheduled : 0);
-    return `${ready}/${desired}`;
-  }
-  if (kind === 'Service') return item.spec?.type || 'Unknown';
-  if (kind === 'PersistentVolume' || kind === 'PersistentVolumeClaim') return status.phase || 'Unknown';
-  if (kind === 'StorageClass') return '';
-  return 'Unknown';
-}
-
-function formatResource(item, kind) {
-  const resolvedKind = kind || item.kind;
-  const out = {
-    name: item.metadata.name,
-    namespace: item.metadata.namespace,
-    kind: resolvedKind,
-    createdAt: item.metadata.creationTimestamp,
-    status: getResourceStatus(item, resolvedKind),
-  };
-  if (resolvedKind === 'Pod') {
-    out.node = item.spec?.nodeName || null;
-    out.containerNames = (item.spec?.containers || []).map((c) => c.name);
-    const cs = item.status?.containerStatuses || [];
-    const byName = {};
-    cs.forEach((c) => { byName[c.name] = c; });
-    out.containerStates = (item.spec?.containers || []).map((c) => ({ name: c.name, status: containerState(byName[c.name]) }));
-    out.containers = out.containerNames.length || cs.length;
-    out.restarts = cs.reduce((s, c) => s + (c.restartCount || 0), 0);
-  }
-  if (resolvedKind === 'ConfigMap') {
-    out.dataKeys = Object.keys(item.data || {}).length + Object.keys(item.binaryData || {}).length;
-  }
-  if (resolvedKind === 'Secret') {
-    out.secretType = item.type || 'Opaque';
-    out.dataKeys = Object.keys(item.data || {}).length;
-  }
-  if (resolvedKind === 'ServiceAccount') out.saSecrets = (item.secrets || []).length;
-  if (resolvedKind === 'NetworkPolicy') out.policyTypes = (item.spec?.policyTypes || []).join(', ') || '-';
-  if (resolvedKind === 'Ingress') {
-    out.ingressClass = item.spec?.ingressClassName || '-';
-    out.hosts = (item.spec?.rules || []).map((r) => r.host).filter(Boolean).join(', ') || '-';
-  }
-  if (resolvedKind === 'PersistentVolumeClaim') {
-    out.capacity = item.status?.capacity?.storage || item.spec?.resources?.requests?.storage || '-';
-    out.storageClass = item.spec?.storageClassName || '-';
-    out.volume = item.spec?.volumeName || '-';
-    out.accessModes = (item.spec?.accessModes || []).join(',') || '-';
-  }
-  if (resolvedKind === 'PersistentVolume') {
-    out.capacity = item.spec?.capacity?.storage || '-';
-    out.storageClass = item.spec?.storageClassName || '-';
-    out.reclaimPolicy = item.spec?.persistentVolumeReclaimPolicy || '-';
-    out.claim = item.spec?.claimRef ? `${item.spec.claimRef.namespace}/${item.spec.claimRef.name}` : '-';
-    out.accessModes = (item.spec?.accessModes || []).join(',') || '-';
-  }
-  if (resolvedKind === 'StorageClass') {
-    out.provisioner = item.provisioner || '-';
-    out.reclaimPolicy = item.reclaimPolicy || 'Delete';
-    out.bindingMode = item.volumeBindingMode || 'Immediate';
-  }
-  return out;
-}
 
 // ----------------------------------------------------------------------------
 // Object builders (full-ish Kubernetes manifests). These back the detail drawer
@@ -423,7 +344,7 @@ function emptyNs() {
   return {
     pods: [], services: [], deployments: [], statefulSets: [], daemonSets: [], configMaps: [],
     secrets: [], serviceAccounts: [], ingresses: [], networkPolicies: [], persistentVolumeClaims: [],
-    jobs: [], cronjobs: [], hpas: [], roles: [], roleBindings: [],
+    replicaSets: [], replicationControllers: [], jobs: [], cronJobs: [], hpas: [], roles: [], roleBindings: [],
   };
 }
 
@@ -582,7 +503,7 @@ function podMetric(nsName, podName, cpuMilli, memBytes) {
     // network policy, jobs, cronjobs
     s.networkPolicies.push(makeNetworkPolicy('shop', 'payments-restrict', 'payments'));
     s.jobs.push(makeJob('shop', 'db-migrate-1', { succeeded: 1 }));
-    s.cronjobs.push(makeCronJob('shop', 'nightly-cleanup', '0 2 * * *'));
+    s.cronJobs.push(makeCronJob('shop', 'nightly-cleanup', '0 2 * * *'));
 
     // roles / rolebindings (namespaced RBAC)
     s.roles.push({ apiVersion: 'rbac.authorization.k8s.io/v1', kind: 'Role', metadata: { name: 'shop-reader', namespace: 'shop', uid: uid(), creationTimestamp: ago(4320) }, rules: [{ apiGroups: [''], resources: ['pods', 'services', 'configmaps'], verbs: ['get', 'list', 'watch'] }] });
@@ -658,6 +579,33 @@ function podMetric(nsName, podName, cpuMilli, memBytes) {
   ];
 
   buildArgo();
+})();
+
+// Every Deployment owns a ReplicaSet, named after the one its pods already
+// point to (`<deployment>-<pod-template-hash>`), as on a real cluster.
+(function buildReplicaSets() {
+  const hashOf = (s) => (Math.abs([...s].reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 7)).toString(16) + '00000000').slice(0, 9);
+  for (const [nsName, n] of Object.entries(cluster.ns)) {
+    for (const d of n.deployments) {
+      const name = d.metadata.name;
+      const fromPods = n.pods
+        .map((p) => p.metadata.ownerReferences?.[0])
+        .find((o) => o?.kind === 'ReplicaSet' && o.name.startsWith(`${name}-`))?.name;
+      const rsName = fromPods || `${name}-${hashOf(name)}`;
+      const labels = { ...d.spec.selector.matchLabels, 'pod-template-hash': rsName.slice(name.length + 1) };
+      n.replicaSets.push({
+        apiVersion: 'apps/v1',
+        kind: 'ReplicaSet',
+        metadata: {
+          name: rsName, namespace: nsName, uid: uid(), creationTimestamp: d.metadata.creationTimestamp, labels,
+          annotations: { 'deployment.kubernetes.io/revision': '1' },
+          ownerReferences: [{ apiVersion: 'apps/v1', kind: 'Deployment', name, uid: d.metadata.uid, controller: true, blockOwnerDeletion: true }],
+        },
+        spec: { replicas: d.spec.replicas, selector: { matchLabels: labels }, template: { ...d.spec.template, metadata: { labels } } },
+        status: { replicas: d.status.replicas, readyReplicas: d.status.readyReplicas, availableReplicas: d.status.availableReplicas, fullyLabeledReplicas: d.status.replicas, observedGeneration: 1 },
+      });
+    }
+  }
 })();
 
 // ----------------------------------------------------------------------------
@@ -759,27 +707,45 @@ const emptySummary = () => ({ CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, UNKNOWN: 
 const sevTotal = (s = {}) => (s.CRITICAL || 0) + (s.HIGH || 0) + (s.MEDIUM || 0) + (s.LOW || 0) + (s.UNKNOWN || 0);
 
 function vulnImage(image, summary, workloads, vulns, extra = {}) {
+  const active = extra.active !== false;
   const g = {
     image, repository: image.split(':')[0], tag: image.split(':')[1] || '', digest: '', registry: image.includes('/') ? image.split('/')[0] : '',
-    os: 'debian 12.5', platform: 'debian 12.5', namespace: workloads[0]?.namespace || 'shop', status: 'Scanned',
-    scanner: 'Trivy 0.50.1', scannedAt: ago(180), summary: { ...emptySummary(), ...summary },
-    workloads, vulnerabilities: vulns, secrets: extra.secrets || 0,
+    os: 'debian 12.5', platform: 'debian 12.5', namespace: workloads[0]?.namespace || 'shop', status: active ? 'Scanned' : 'Not running',
+    scanner: 'Trivy 0.50.1', scannedAt: extra.scannedAt || ago(180), summary: { ...emptySummary(), ...summary },
+    workloads: workloads.map((w) => ({ ...w, running: active })), vulnerabilities: vulns, secrets: extra.secrets || 0,
+    active, changes: (extra.changes || []).map((c) => ({ ...c, resolvedBySeverity: severityCounts(c.resolved), introducedBySeverity: severityCounts(c.introduced) })),
   };
   g.criticalCount = g.summary.CRITICAL;
+  g.remediation = remediationFor(vulns);
   return g;
 }
 
 function buildSecurityVulns() {
+  // frontend 1.4.1 → 1.4.2 fixed OpenSSL + libcurl; 1.4.1's ReplicaSet is kept
+  // (scaled to 0) for rollback, so its report is still there — not running.
+  const fixedInFrontend = [
+    { id: 'CVE-2024-5535', severity: 'CRITICAL', pkg: 'libssl3', installedVersion: '3.0.11-1', fixedVersion: '3.0.14-1', title: 'OpenSSL SSL_select_next_proto buffer overread', link: '', score: 9.1 },
+    { id: 'CVE-2024-2398', severity: 'HIGH', pkg: 'libcurl4', installedVersion: '7.88.1-10', fixedVersion: '7.88.1-10+deb12u6', title: 'curl HTTP/2 push headers memory leak', link: '', score: 7.5 },
+    { id: 'CVE-2024-6119', severity: 'HIGH', pkg: 'libssl3', installedVersion: '3.0.11-1', fixedVersion: '3.0.14-1', title: 'OpenSSL possible denial of service in X.509 name checks', link: '', score: 7.5 },
+  ];
+  const frontendStill = [
+    { id: 'CVE-2024-2961', severity: 'HIGH', pkg: 'glibc', installedVersion: '2.36-9', fixedVersion: '2.36-9+deb12u5', title: 'iconv buffer overflow', link: '', score: 8.1 },
+    { id: 'CVE-2023-6246', severity: 'HIGH', pkg: 'glibc', installedVersion: '2.36-9', fixedVersion: '2.36-9+deb12u4', title: '__vsyslog_internal heap overflow', link: '', score: 7.8 },
+  ];
+  const rapidReset = { id: 'CVE-2023-44487', severity: 'CRITICAL', pkg: 'golang.org/x/net', installedVersion: 'v0.12.0', fixedVersion: 'v0.17.0', title: 'HTTP/2 Rapid Reset', link: 'https://nvd.nist.gov/vuln/detail/CVE-2023-44487', score: 7.5 };
   const images = [
     vulnImage('ghcr.io/shop/checkout:1.5.0-rc1', { CRITICAL: 2, HIGH: 4, MEDIUM: 7, LOW: 12 }, [{ kind: 'Deployment', name: 'checkout', namespace: 'shop', container: 'checkout' }], [
       { id: 'CVE-2024-3094', severity: 'CRITICAL', pkg: 'xz-utils', installedVersion: '5.6.0', fixedVersion: '5.6.2', title: 'Backdoor in liblzma (xz) build', link: 'https://nvd.nist.gov/vuln/detail/CVE-2024-3094', score: 10.0 },
-      { id: 'CVE-2023-44487', severity: 'CRITICAL', pkg: 'golang.org/x/net', installedVersion: 'v0.12.0', fixedVersion: 'v0.17.0', title: 'HTTP/2 Rapid Reset', link: 'https://nvd.nist.gov/vuln/detail/CVE-2023-44487', score: 7.5 },
+      rapidReset,
       { id: 'CVE-2024-24790', severity: 'HIGH', pkg: 'stdlib', installedVersion: 'go1.21.5', fixedVersion: 'go1.21.11', title: 'net/netip: unexpected behavior of IPv4-mapped addresses', link: '', score: 8.1 },
-    ], { secrets: 1 }),
-    vulnImage('ghcr.io/shop/frontend:1.4.2', { CRITICAL: 0, HIGH: 2, MEDIUM: 5, LOW: 9 }, [{ kind: 'Deployment', name: 'frontend', namespace: 'shop', container: 'frontend' }], [
-      { id: 'CVE-2024-2961', severity: 'HIGH', pkg: 'glibc', installedVersion: '2.36-9', fixedVersion: '2.36-9+deb12u5', title: 'iconv buffer overflow', link: '', score: 8.1 },
-      { id: 'CVE-2023-6246', severity: 'HIGH', pkg: 'glibc', installedVersion: '2.36-9', fixedVersion: '2.36-9+deb12u4', title: '__vsyslog_internal heap overflow', link: '', score: 7.8 },
-    ]),
+    ], {
+      secrets: 1,
+      changes: [{ workload: 'Deployment checkout', container: 'checkout', namespace: 'shop', revision: 5, previousRevision: 4, previousImage: 'ghcr.io/shop/checkout:1.4.2', resolved: [], introduced: [rapidReset] }],
+    }),
+    vulnImage('ghcr.io/shop/frontend:1.4.2', { CRITICAL: 0, HIGH: 2, MEDIUM: 5, LOW: 9 }, [{ kind: 'Deployment', name: 'frontend', namespace: 'shop', container: 'frontend' }], frontendStill, {
+      changes: [{ workload: 'Deployment frontend', container: 'frontend', namespace: 'shop', revision: 7, previousRevision: 6, previousImage: 'ghcr.io/shop/frontend:1.4.1', resolved: fixedInFrontend, introduced: [] }],
+    }),
+    vulnImage('ghcr.io/shop/frontend:1.4.1', { CRITICAL: 1, HIGH: 4, MEDIUM: 6, LOW: 9 }, [{ kind: 'ReplicaSet', name: 'frontend-5c4d3b2a1', namespace: 'shop', container: 'frontend' }], [...fixedInFrontend, ...frontendStill], { active: false, scannedAt: ago(4320) }),
     vulnImage('postgres:16.2', { CRITICAL: 1, HIGH: 3, MEDIUM: 4, LOW: 20 }, [{ kind: 'StatefulSet', name: 'postgres', namespace: 'shop', container: 'postgres' }], [
       { id: 'CVE-2024-0985', severity: 'CRITICAL', pkg: 'postgresql', installedVersion: '16.2', fixedVersion: '16.3', title: 'PostgreSQL REFRESH MATERIALIZED VIEW race condition', link: '', score: 8.0 },
     ]),
@@ -788,11 +754,32 @@ function buildSecurityVulns() {
     ]),
     vulnImage('nginxdemos/hello:0.3', { CRITICAL: 0, HIGH: 0, MEDIUM: 2, LOW: 4 }, [{ kind: 'Deployment', name: 'hello-web', namespace: 'default', container: 'hello-web' }], []),
   ];
+  return vulnTotals(images, allPods().length);
+}
+
+// Totals the way server.js computes them: running images only, plus what the
+// latest rollouts resolved / introduced.
+function vulnTotals(images, podCount) {
+  const active = images.filter((g) => g.active);
   const total = emptySummary();
-  images.forEach((g) => { for (const k of Object.keys(total)) total[k] += g.summary[k]; });
-  const vulnerable = images.filter((g) => sevTotal(g.summary) > 0).length;
-  const podCount = allPods().length;
-  return { installed: true, images, summary: total, reportCount: images.length, results: { vulnerable, ok: images.length - vulnerable }, scanned: images.length, notScanned: Math.max(0, podCount - images.length) };
+  const resolved = emptySummary();
+  const introduced = emptySummary();
+  let deployments = 0;
+  for (const g of active) {
+    for (const k of Object.keys(total)) total[k] += g.summary[k];
+    for (const c of g.changes) {
+      deployments += 1;
+      for (const k of Object.keys(resolved)) { resolved[k] += c.resolvedBySeverity[k]; introduced[k] += c.introducedBySeverity[k]; }
+    }
+  }
+  const vulnerable = active.filter((g) => sevTotal(g.summary) > 0).length;
+  return {
+    installed: true, images, summary: total, reportCount: images.length, results: { vulnerable, ok: active.length - vulnerable },
+    inactive: images.length - active.length,
+    resolved: { total: sevTotal(resolved), bySeverity: resolved, deployments },
+    introduced: { total: sevTotal(introduced), bySeverity: introduced },
+    scanned: active.length, notScanned: podCount == null ? null : Math.max(0, podCount - active.length),
+  };
 }
 
 function buildConfigChecks() {
@@ -851,6 +838,9 @@ function buildEvents() {
     ev('kube-system', 'Normal', 'LeaderElection', 'Lease/kube-scheduler', 'demo-node-1 became leader', 'default-scheduler', 1, 300),
     ev('default', 'Normal', 'Started', 'Pod/hello-web-6c9d4b7f8-abcde', 'Started container hello-web', 'kubelet', 1, 170),
     ev('shop', 'Normal', 'SuccessfulCreate', 'Job/db-migrate-1', 'Created pod: db-migrate-1-xyz', 'job-controller', 1, 300),
+    // checkout's rollout: Deployment → ReplicaSet → Pod (the workload filter's example).
+    ev('shop', 'Normal', 'ScalingReplicaSet', 'Deployment/checkout', 'Scaled up replica set checkout-7c8f9d6b5 to 2', 'deployment-controller', 1, 46),
+    ev('shop', 'Normal', 'SuccessfulCreate', 'ReplicaSet/checkout-7c8f9d6b5', 'Created pod: checkout-7c8f9d6b5-ck002', 'replicaset-controller', 1, 45),
   ];
 }
 
@@ -867,7 +857,7 @@ const KIND_CANON = {
   configmap: 'ConfigMap', secret: 'Secret', serviceaccount: 'ServiceAccount', ingress: 'Ingress',
   networkpolicy: 'NetworkPolicy', persistentvolumeclaim: 'PersistentVolumeClaim', persistentvolume: 'PersistentVolume',
   storageclass: 'StorageClass', role: 'Role', rolebinding: 'RoleBinding', clusterrole: 'ClusterRole',
-  clusterrolebinding: 'ClusterRoleBinding', job: 'Job', cronjob: 'CronJob', horizontalpodautoscaler: 'HorizontalPodAutoscaler',
+  clusterrolebinding: 'ClusterRoleBinding', job: 'Job', cronjob: 'CronJob', replicaset: 'ReplicaSet', replicationcontroller: 'ReplicationController', horizontalpodautoscaler: 'HorizontalPodAutoscaler',
 };
 const canonKind = (k) => KIND_CANON[String(k || '').toLowerCase()] || k;
 
@@ -875,7 +865,7 @@ const canonKind = (k) => KIND_CANON[String(k || '').toLowerCase()] || k;
 const KIND_COLLECTION = {
   Pod: 'pods', Service: 'services', Deployment: 'deployments', StatefulSet: 'statefulSets', DaemonSet: 'daemonSets',
   ConfigMap: 'configMaps', Secret: 'secrets', ServiceAccount: 'serviceAccounts', Ingress: 'ingresses',
-  NetworkPolicy: 'networkPolicies', PersistentVolumeClaim: 'persistentVolumeClaims', Job: 'jobs', CronJob: 'cronjobs',
+  NetworkPolicy: 'networkPolicies', PersistentVolumeClaim: 'persistentVolumeClaims', Job: 'jobs', CronJob: 'cronJobs', ReplicaSet: 'replicaSets', ReplicationController: 'replicationControllers',
   HorizontalPodAutoscaler: 'hpas', Role: 'roles', RoleBinding: 'roleBindings',
 };
 
@@ -986,7 +976,7 @@ function buildTopology(nsName) {
   for (const ss of n.statefulSets) addNode('StatefulSet', ss.metadata.name, wlReady(ss));
   for (const ds of n.daemonSets) addNode('DaemonSet', ds.metadata.name, 'Ready');
   for (const j of n.jobs) addNode('Job', j.metadata.name, j.status?.succeeded ? 'Ready' : 'Pending');
-  for (const cj of n.cronjobs) addNode('CronJob', cj.metadata.name, 'Active');
+  for (const cj of n.cronJobs) addNode('CronJob', cj.metadata.name, 'Active');
   for (const pod of n.pods) {
     const pid = addNode('Pod', pod.metadata.name, pod.status?.phase || 'Unknown');
     const owner = (pod.metadata.ownerReferences || [])[0];
@@ -1157,13 +1147,17 @@ export function handle(req, res) {
     if (method === 'GET' && sl[1] === 'resources' && seg[2]) {
       const nsName = decodeURIComponent(seg[2]);
       const n = cluster.ns[nsName];
-      if (!n) return json({ pods: [], services: [], deployments: [], statefulSets: [], daemonSets: [], configMaps: [], secrets: [], serviceAccounts: [], ingresses: [], networkPolicies: [], persistentVolumeClaims: [] });
+      if (!n) return json({ pods: [], services: [], deployments: [], statefulSets: [], daemonSets: [], replicaSets: [], replicationControllers: [], jobs: [], cronJobs: [], configMaps: [], secrets: [], serviceAccounts: [], ingresses: [], networkPolicies: [], persistentVolumeClaims: [] });
       return json({
         pods: n.pods.map((x) => formatResource(x, 'Pod')),
         services: n.services.map((x) => formatResource(x, 'Service')),
         deployments: n.deployments.map((x) => formatResource(x, 'Deployment')),
         statefulSets: n.statefulSets.map((x) => formatResource(x, 'StatefulSet')),
         daemonSets: n.daemonSets.map((x) => formatResource(x, 'DaemonSet')),
+        replicaSets: n.replicaSets.map((x) => formatResource(x, 'ReplicaSet')),
+        replicationControllers: n.replicationControllers.map((x) => formatResource(x, 'ReplicationController')),
+        jobs: n.jobs.map((x) => formatResource(x, 'Job')),
+        cronJobs: n.cronJobs.map((x) => formatResource(x, 'CronJob')),
         configMaps: n.configMaps.map((x) => formatResource(x, 'ConfigMap')),
         secrets: n.secrets.map((x) => formatResource(x, 'Secret')),
         serviceAccounts: n.serviceAccounts.map((x) => formatResource(x, 'ServiceAccount')),
@@ -1311,7 +1305,7 @@ export function handle(req, res) {
       const nsName = q.namespace && q.namespace !== 'all' ? q.namespace : null;
       if (nsName) {
         const images = built.images.filter((g) => g.workloads.some((w) => w.namespace === nsName));
-        return json({ ...built, images });
+        return json({ ...built, ...vulnTotals(images, null), notScanned: built.notScanned });
       }
       return json(built);
     }
@@ -1434,24 +1428,39 @@ function clusterSummary() {
   }
   const phases = { Running: 0, Pending: 0, Succeeded: 0, Failed: 0, Unknown: 0 };
   let podTotal = 0;
-  for (const po of allPods()) { const ph = po.status?.phase || 'Unknown'; phases[ph] = (phases[ph] || 0) + 1; podTotal++; }
+  // Requests / limits vs allocatable and node usage, like server.js.
+  const reserved = capacityTotals();
+  cluster.nodes.forEach(reserved.addNode);
+  for (const po of allPods()) { const ph = po.status?.phase || 'Unknown'; phases[ph] = (phases[ph] || 0) + 1; podTotal++; reserved.addPod(po); }
+  const used = cluster.nodes.map((n) => nodeMetricNow(n.metadata.name)).filter(Boolean);
+  const usage = { available: true, cpuMilli: Math.round(used.reduce((s, m) => s + m.cpuMilli, 0)), memBytes: Math.round(used.reduce((s, m) => s + m.memBytes, 0)) };
   return {
     currentContext: DEMO_CONTEXT, serverVersion: 'v1.29.4', platform: 'linux/amd64',
     contexts: [DEMO_CONTEXT], clusters: [DEMO_CONTEXT], nodes: nodeSummary, roles,
-    capacity: { cpuCapacity: +cpuCapacity.toFixed(1), cpuAllocatable: +cpuAllocatable.toFixed(1), memCapacityBytes: memCapacity, memAllocatableBytes: memAllocatable },
+    capacity: { cpuCapacity: +cpuCapacity.toFixed(1), cpuAllocatable: +cpuAllocatable.toFixed(1), memCapacityBytes: memCapacity, memAllocatableBytes: memAllocatable, ...reserved.result(), usage },
     versions: [...versions], osImages: [...osImages], pods: { total: podTotal, phases }, namespaceCount: cluster.nsMeta.length,
   };
 }
 
+// Same filters as server.js (lib/event-scope.mjs): type, q, workload, namespaces.
 function eventsResponse(nsName, q) {
   const page = parseInt(q.page) || 1;
   const limit = Math.min(parseInt(q.limit) || 50, 100);
+  const single = nsName && nsName !== 'all' ? nsName : null;
   let events = buildEvents();
-  if (nsName && nsName !== 'all') events = events.filter((e) => e.namespace === nsName);
+  if (single) events = events.filter((e) => e.namespace === single);
   events.sort((a, b) => new Date(b.lastTimestamp) - new Date(a.lastTimestamp));
-  const total = events.length;
+  const workload = q.workload ? parseWorkload(q.workload) : null;
+  const n = single ? cluster.ns[single] : null;
+  const scope = workload && n ? workloadScope(workload, { replicaSets: n.replicaSets, pods: n.pods, jobs: n.jobs, hpas: n.hpas }) : null;
+  const namespaces = !single && q.namespaces ? String(q.namespaces).split(',') : null;
+  const filtered = filterEvents(events, { type: q.type || '', q: q.q || '', namespaces, scope });
+  const total = filtered.length;
   const start = (page - 1) * limit;
-  return { events: events.slice(start, start + limit), pagination: { page, limit, total, pages: Math.ceil(total / limit) } };
+  return {
+    events: filtered.slice(start, start + limit), pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    unfiltered: events.length, ...(workload ? { workload: `${workload.kind}/${workload.name}` } : {}),
+  };
 }
 
 function demoLogs(nsName, pod, q) {
@@ -1619,7 +1628,7 @@ export function shellSession(ws, meta = {}) {
     '\r\n\x1b[90mTry: helm list -A, helm version, helm repo add, helm install, kubectl config current-context\x1b[0m\r\n\r\n',
   ].join('') : [
     '\r\n\x1b[1;36m╭──────────────────────────────────────────────╮\x1b[0m',
-    '\r\n\x1b[1;36m│\x1b[0m  KubePilot demo shell (synthetic pod)           \x1b[1;36m│\x1b[0m',
+    '\r\n\x1b[1;36m│\x1b[0m  k8Board demo shell (synthetic pod)           \x1b[1;36m│\x1b[0m',
     '\r\n\x1b[1;36m╰──────────────────────────────────────────────╯\x1b[0m',
     `\r\n\x1b[90mConnected to ${meta.namespace || 'shop'}/${meta.pod || 'pod'}${meta.container ? ' [' + meta.container + ']' : ''}. This is a demo — no real cluster.\x1b[0m`,
     "\r\n\x1b[90mTry: ls, pwd, whoami, cat <file>, env, help, clear, exit\x1b[0m\r\n\r\n",

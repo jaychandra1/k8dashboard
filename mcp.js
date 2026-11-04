@@ -8,7 +8,7 @@
 // caching. Read tools are always available; write/destructive tools are gated
 // behind MCP_ALLOW_WRITE=1 (off by default) so an agent can't mutate a cluster
 // unless the operator opts in. Every self-HTTP call carries the app's bearer
-// token plus `X-KubePilot-Source: mcp`, so the server enforces the write gate on
+// token plus `X-k8Board-Source: mcp`, so the server enforces the write gate on
 // mutation routes itself — the tool registration here is a convenience, the
 // server is the authority.
 //
@@ -73,7 +73,7 @@ export function createMcpServer({ version, allowWrite, apiBase, token, baseURL }
         .join('&');
       if (qs) url += (url.includes('?') ? '&' : '?') + qs;
     }
-    const headers = { 'X-KubePilot-Source': 'mcp' };
+    const headers = { 'X-k8Board-Source': 'mcp' };
     if (bearer) headers.Authorization = `Bearer ${bearer}`;
     if (body) headers['Content-Type'] = 'application/json';
     const r = await fetch(url, {
@@ -94,7 +94,7 @@ export function createMcpServer({ version, allowWrite, apiBase, token, baseURL }
   };
 
   const server = new McpServer({
-    name: 'kubepilot',
+    name: 'k8board',
     version: version || process.env.APP_VERSION || packageVersion() || '0.0.0',
   });
 

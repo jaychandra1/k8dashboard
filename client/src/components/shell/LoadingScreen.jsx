@@ -1,4 +1,4 @@
-// Branded loading screen: the detailed KubePilot artwork (gentle pulse, off
+// Branded loading screen: the detailed k8Board artwork (gentle pulse, off
 // under prefers-reduced-motion), "Getting the data…" (+ cluster name when
 // known) and a thin indeterminate bar. Announced once via role=status.
 // Used at startup, over <main> during a context switch, and by the Cluster

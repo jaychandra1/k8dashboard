@@ -1,4 +1,4 @@
-// Electron main process for KubePilot.
+// Electron main process for k8Board.
 //
 // Responsibilities:
 //   1. Repair PATH — a Finder-launched .app inherits only a minimal PATH, so
@@ -19,7 +19,14 @@ const { app } = require('electron');
 const path = require('path');
 const { pathToFileURL } = require('url');
 
-// --- 0. CLI mode: `KubePilot --token-helper <eks|azure> …` -----------------
+// k8Board was called KubePilot, and its Electron profile keeps that folder name
+// (%APPDATA%\KubePilot, ~/Library/Application Support/KubePilot, ~/.config/KubePilot).
+// On Windows the data key that seals the app's secrets is unwrapped with that
+// profile's os_crypt key, and theme / preferences live there too: a profile
+// named after the new product would lose them all on update. Users never see it.
+const PROFILE_NAME = 'KubePilot';
+
+// --- 0. CLI mode: `k8Board --token-helper <eks|azure> …` -----------------
 // Kubeconfig users written by the cloud imports (lib/paths.mjs execEntry) exec
 // the packaged binary with this flag. The RunAsNode fuse is off, so
 // ELECTRON_RUN_AS_NODE can't turn the app into node; instead we run the ESM
@@ -38,7 +45,7 @@ function readSecretKey(create) {
   const { safeStorage } = require('electron');
   const { loadSecretKey } = require('./secret-key.cjs');
   const file = path.join(require('os').homedir(), '.config', 'kubepilot', 'secret.key');
-  return loadSecretKey({ file, safeStorage, create, warn: (m) => console.warn(`[KubePilot] ${m}`) });
+  return loadSecretKey({ file, safeStorage, create, warn: (m) => console.warn(`[k8Board] ${m}`) });
 }
 
 // The Azure helper can't share the GUI's Chromium profile: while the app is
@@ -59,9 +66,7 @@ function useHelperProfile() {
     // (app.getPath('userData') and ('appData') both throw), so resolve the GUI
     // profile the way Electron does on Windows: %APPDATA%\<productName>.
     appData = process.env.APPDATA || path.join(require('os').homedir(), 'AppData', 'Roaming');
-    const pkg = require(path.join(__dirname, '..', 'package.json'));
-    name = pkg.productName || pkg.name;
-    if (!name) return false;
+    name = PROFILE_NAME;
   } catch {
     return false;
   }
@@ -93,7 +98,7 @@ const keyFingerprint = (b64) => require('crypto').createHash('sha256').update(St
 
 function runTokenHelper(argv) {
   const [helper, ...args] = argv;
-  const fail = (message) => process.stderr.write(`kubepilot token-helper: ${message}\n`, () => app.exit(1));
+  const fail = (message) => process.stderr.write(`k8board token-helper: ${message}\n`, () => app.exit(1));
   // CLI mode: any error must end the process with a message on stderr, never
   // Electron's "A JavaScript error occurred in the main process" dialog, which
   // would block kubectl while it waits for a token.
@@ -172,7 +177,7 @@ let clustersKey = ''; // JSON of `clusters` as last rendered into the menu
 let updateHost = null;
 let pendingHostEvents = [];
 const debug = (...args) => {
-  if (process.env.KUBEPILOT_DEBUG) console.debug('[KubePilot]', ...args);
+  if (process.env.KUBEPILOT_DEBUG) console.debug('[k8Board]', ...args);
 };
 
 // --- 1. PATH repair -------------------------------------------------------
@@ -254,8 +259,8 @@ const ENV_EXACT = new Set([
   'ALLOWED_ORIGINS',
   'RATE_LIMIT_MAX',
 ]);
-// K8DASHBOARD_ / K8SIGHT_ are the previous product names; lib/paths.mjs still
-// reads them as fallbacks, so they are forwarded too.
+// KUBEPILOT_ / K8DASHBOARD_ / K8SIGHT_ are the previous product names;
+// lib/paths.mjs still reads them as fallbacks, so they are forwarded too.
 const ENV_PREFIXES = [
   'LLM_',
   'MCP_',
@@ -263,6 +268,7 @@ const ENV_PREFIXES = [
   'AZURE_',
   'GOOGLE_',
   'KUBE',
+  'K8BOARD_',
   'KUBEPILOT_',
   'K8DASHBOARD_',
   'K8SIGHT_',
@@ -339,7 +345,7 @@ function helperCanOpenSecrets(key) {
       fs.writeFileSync(tmp, JSON.stringify({ version, key: fingerprint, helper, checkedAt: new Date().toISOString() }), { mode: 0o600 });
       fs.renameSync(tmp, file);
     } catch { /* checked again next launch */ }
-    if (!helper) console.warn('[KubePilot] token helper cannot open sealed secrets; Azure sign-ins stay unencrypted');
+    if (!helper) console.warn('[k8Board] token helper cannot open sealed secrets; Azure sign-ins stay unencrypted');
   });
   return false;
 }
@@ -387,7 +393,7 @@ function startServer({ fixedPath, port, token }) {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
   } catch (err) {
-    dialog.showErrorBox('KubePilot', `Failed to start the backend:\n${err.message}`);
+    dialog.showErrorBox('k8Board', `Failed to start the backend:\n${err.message}`);
     app.quit();
     return;
   }
@@ -419,7 +425,7 @@ function startServer({ fixedPath, port, token }) {
           (stderrTail.trim() ? `\n\n${stderrTail.trim().split('\n').slice(-4).join('\n')}` : '');
       restartBackend(detail).then((ok) => {
         if (ok || app.isQuitting) return;
-        dialog.showErrorBox('KubePilot', `${detail}\n\nKubePilot tried to restart it ${MAX_RESTARTS} times without success. Relaunch the app.`);
+        dialog.showErrorBox('k8Board', `${detail}\n\nk8Board tried to restart it ${MAX_RESTARTS} times without success. Relaunch the app.`);
         app.quit();
       });
     }
@@ -441,7 +447,7 @@ async function restartBackend(reason) {
   restartTimes.push(now);
   restarting = true;
   try {
-    console.warn(`[KubePilot] ${reason} Restarting the backend (${restartTimes.length}/${MAX_RESTARTS}).`);
+    console.warn(`[k8Board] ${reason} Restarting the backend (${restartTimes.length}/${MAX_RESTARTS}).`);
     backendPort = await findFreePort(backendPort || PREFERRED_PORT);
     backendOrigin = `http://127.0.0.1:${backendPort}`;
     startServer({ fixedPath: resolveUserPath(), port: backendPort, token: authToken });
@@ -452,7 +458,7 @@ async function restartBackend(reason) {
     }
     return ready;
   } catch (err) {
-    console.error(`[KubePilot] backend restart failed: ${err.message}`);
+    console.error(`[k8Board] backend restart failed: ${err.message}`);
     return false;
   } finally {
     restarting = false;
@@ -524,7 +530,7 @@ function createWindow() {
     height: 900,
     minWidth: 960,
     minHeight: 600,
-    title: 'KubePilot',
+    title: 'k8Board',
     // Match the app's dark surface — no separate gray macOS title bar. On
     // macOS `hiddenInset` floats the traffic lights over the (black) content;
     // the frontend adds a draggable top strip via the `is-electron` class.
@@ -724,7 +730,7 @@ async function boot() {
   // Unwrap (or, on first run, create) the secrets key before the backend starts.
   if (!secretKeyLoaded) {
     secretKeyLoaded = true;
-    try { secretKey = readSecretKey(true); } catch (err) { console.warn(`[KubePilot] secret key unavailable: ${err.message}`); }
+    try { secretKey = readSecretKey(true); } catch (err) { console.warn(`[k8Board] secret key unavailable: ${err.message}`); }
     if (secretKey) azureSealing = helperCanOpenSecrets(secretKey);
   }
 
@@ -733,17 +739,17 @@ async function boot() {
   backendPort = await findFreePort(PREFERRED_PORT);
   backendOrigin = `http://127.0.0.1:${backendPort}`;
   if (backendPort !== PREFERRED_PORT) {
-    console.warn(`[KubePilot] port ${PREFERRED_PORT} is busy; backend will use ${backendPort}`);
+    console.warn(`[k8Board] port ${PREFERRED_PORT} is busy; backend will use ${backendPort}`);
   }
 
   if (!updateHost) {
     try {
       updateHost = await createUpdateHost({ app, rootDir: serverRoot() });
-      // A Windows update installs after KubePilot quits; report how it went.
+      // A Windows update installs after k8Board quits; report how it went.
       const previous = updateHost.previousResult();
       if (previous) notifyRendererWhenReady({ type: 'update-result', ...previous });
     } catch (err) {
-      console.warn(`[KubePilot] updater unavailable: ${err.message}`);
+      console.warn(`[k8Board] updater unavailable: ${err.message}`);
     }
   }
 
@@ -759,7 +765,7 @@ async function boot() {
     mainWindow.loadURL(`${backendOrigin}/#token=${authToken}`);
   } else if (serverProcess) {
     dialog.showErrorBox(
-      'KubePilot',
+      'k8Board',
       `The backend did not become ready on port ${backendPort} within ${READY_TIMEOUT_MS / 1000}s.\n` +
         'Check the log output and relaunch the app.'
     );
@@ -768,6 +774,8 @@ async function boot() {
 }
 
 // --- App lifecycle --------------------------------------------------------
+// Before anything opens the profile (the single-instance lock included).
+try { app.setPath('userData', path.join(app.getPath('appData'), PROFILE_NAME)); } catch { /* keep Electron's default */ }
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
@@ -813,7 +821,7 @@ app.on('before-quit', () => {
   stopServer();
 });
 
-// Help → Check for Updates → "Later" (Windows): the verified installer runs as KubePilot quits.
+// Help → Check for Updates → "Later" (Windows): the verified installer runs as k8Board quits.
 app.on('will-quit', () => {
   if (updateHost) updateHost.onWillQuit();
 });

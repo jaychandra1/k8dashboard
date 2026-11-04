@@ -1,6 +1,6 @@
 name: Build & Release
 
-# Build the KubePilot desktop app for macOS, Windows and Linux in parallel, then
+# Build the k8Board desktop app for macOS, Windows and Linux in parallel, then
 # publish a GitHub Release on the PUBLIC repo jaychandra1/KubePilot (installers +
 # SHA256SUMS.txt + CycloneDX SBOM) and push the Docker image to
 # ghcr.io/jaychandra1/kubepilot. The source stays in this private repo.
@@ -252,6 +252,21 @@ jobs:
           pattern: kubepilot-*
           merge-multiple: true
 
+      # k8Board was called KubePilot until 1.7, and the copies of KubePilot still
+      # installed look for KubePilot-<os>… files. Publish each installer under
+      # that name too (same bytes, listed in the signed SHA256SUMS) so they can
+      # update. Drop this step once nobody runs a KubePilot build any more.
+      - name: Legacy-named copies for KubePilot updaters
+        shell: bash
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for f in k8Board-*.dmg k8Board-*.exe k8Board-*.AppImage k8Board-*.deb; do
+            cp -- "$f" "KubePilot-${f#k8Board-}"
+          done
+          ls -l
+
       - name: Generate SHA256SUMS.txt
         shell: bash
         working-directory: dist
@@ -316,16 +331,16 @@ jobs:
             echo "Using the CHANGELOG.md section for ${VERSION}"
           else
             echo "::warning::CHANGELOG.md has no '## [${VERSION}]' section — using a one-line release body"
-            echo "KubePilot ${VERSION} — desktop installers for macOS (Apple Silicon), Windows and Linux." > notes.md
+            echo "k8Board ${VERSION} — desktop installers for macOS (Apple Silicon), Windows and Linux." > notes.md
           fi
           {
-            echo "# KubePilot ${VERSION}"
+            echo "# k8Board ${VERSION}"
             echo
             cat notes.md
             echo
             echo "---"
             echo
-            echo "Checksums are in \`SHA256SUMS.txt\`, signed with KubePilot's release key (\`SHA256SUMS.txt.sig\`, verified by the in-app updater); the CycloneDX SBOM is \`kubepilot-${TAG}.cdx.json\`."
+            echo "Checksums are in \`SHA256SUMS.txt\`, signed with k8Board's release key (\`SHA256SUMS.txt.sig\`, verified by the in-app updater); the CycloneDX SBOM is \`kubepilot-${TAG}.cdx.json\`."
             echo "Container image: \`ghcr.io/jaychandra1/kubepilot:${TAG}\`."
             echo "Built from \`${SRC}@${SHA:0:12}\`."
           } > release-body.md
@@ -337,9 +352,9 @@ jobs:
           repository: jaychandra1/KubePilot
           token: ${{ secrets.RELEASE_TOKEN }}
           tag_name: ${{ needs.verify.outputs.tag }}
-          # No target_commitish: KubePilot holds no source, so the tag is created
+          # No target_commitish: k8Board holds no source, so the tag is created
           # on its default branch (the repo must have at least one commit).
-          name: KubePilot ${{ needs.verify.outputs.version }}
+          name: k8Board ${{ needs.verify.outputs.version }}
           draft: false
           make_latest: true
           generate_release_notes: false
@@ -419,9 +434,9 @@ jobs:
         with:
           images: ${{ steps.img.outputs.name }}
           # metadata-action defaults source/url/documentation to the workflow's
-          # own (private) repo; point them at the public KubePilot repo instead.
+          # own (private) repo; point them at the public k8Board repo instead.
           labels: |
-            org.opencontainers.image.title=KubePilot
+            org.opencontainers.image.title=k8Board
             org.opencontainers.image.description=Browse and operate Kubernetes clusters from your kubeconfig — dashboards, logs, shell, topology, Helm, Argo CD, Security Center.
             org.opencontainers.image.source=https://github.com/jaychandra1/KubePilot
             org.opencontainers.image.url=https://github.com/jaychandra1/KubePilot
@@ -567,7 +582,7 @@ jobs:
         shell: pwsh
         run: |
           $appx = (Get-Content package.json -Raw | ConvertFrom-Json).build.appx
-          if ($appx.identityName -eq 'KubePilot.Desktop' -or $appx.publisher -eq 'CN=KubePilot') {
+          if ($appx.identityName -eq 'k8Board.Desktop' -or $appx.publisher -eq 'CN=k8Board') {
             Write-Output "::error::package.json build.appx still has the placeholder identity. Copy Package/Identity/Name, Package/Identity/Publisher and Package/Properties/PublisherDisplayName from Partner Center (Product management -> Product identity) into build.appx identityName, publisher and publisherDisplayName."
             exit 1
           }

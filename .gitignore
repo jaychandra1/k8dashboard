@@ -20,7 +20,7 @@ release/
 out/
 
 # Generated Electron icons are kept in the repo (CI needs them);
-# only build/icon.svg is the source, icon.png / icon.icns are generated
+# the sources are build/source/k8board-icon*.svg (scripts/generate-icons.cjs); icon.png / icon.ico are generated
 # but intentionally committed — so nothing under build/ is ignored here.
 
 # ------------------------------------------------------------------

@@ -98,6 +98,10 @@ export default function ViewOutlet({
           onNamespaceChange={onNamespaceChange}
           onNavigate={nav}
           refreshSignal={refreshSignal}
+          type={route.query.type}
+          search={route.query.q}
+          workload={route.query.workload}
+          onFiltersChange={(patch) => setQuery(patch)}
         />
       );
     case 'preferences':

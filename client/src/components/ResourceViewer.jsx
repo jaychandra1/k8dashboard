@@ -18,8 +18,13 @@ import ErrorState from './ui/ErrorState';
 import Modal, { ConfirmModal } from './ui/Modal';
 import useRequest from '../hooks/useRequest';
 import useDocumentTitle from '../hooks/useDocumentTitle';
+import useTabStripScroll from '../hooks/useTabStripScroll';
 import { getJson, postJson, del, p, errorMessage } from '../lib/api';
-import { labelFor, isClusterScoped } from '../lib/kinds';
+import { byKey, labelFor, isClusterScoped } from '../lib/kinds';
+import { eventsLink, navigateVia } from './resources/links';
+
+// Kinds whose events (with those of what they own) the Events page can show.
+const EVENT_SCOPED = new Set(['pod', 'deployment', 'statefulSet', 'daemonSet', 'job', 'cronJob']);
 import { pluralize } from '../lib/format';
 import { askLabel, aiToolIcon } from '../aiConfig';
 import { columnsFor, rowToneFor } from './resources/columns';
@@ -87,6 +92,7 @@ export default function ResourceViewer({
   const toast = useToast();
   const uid = useId();
   const { label, icon, singular } = labelFor(resourceType);
+  const tabsRef = useTabStripScroll(resourceType);
   useDocumentTitle(label);
 
   const namespace = selectedNamespaces.includes('all') || selectedNamespaces.length !== 1 ? 'all' : selectedNamespaces[0];
@@ -198,6 +204,9 @@ export default function ResourceViewer({
     } else if (LOGGABLE.has(resourceType)) {
       items.push({ icon: 'logs', label: 'Logs', onSelect: () => openLogs(res) });
     }
+    if (EVENT_SCOPED.has(resourceType) && res.namespace && onNavigate) {
+      items.push({ icon: 'events', label: 'View events', onSelect: () => navigateVia(onNavigate, eventsLink(res.namespace, byKey[resourceType].apiKind, res.name)) });
+    }
     items.push({ icon: 'configuration', label: 'Edit YAML', onSelect: () => openYaml(res) });
     if (SCALABLE.has(resourceType)) items.push({ icon: 'scale', label: 'Scale…', onSelect: () => openScale(res) });
     if (RESTARTABLE.has(resourceType)) items.push({ icon: 'refresh', label: 'Restart', onSelect: () => openRestart(res) });
@@ -288,7 +297,7 @@ export default function ResourceViewer({
   return (
     <div className="resource-viewer">
       {isTabbed && (
-        <div className="resource-tabs" role="tablist" aria-label="Resource types">
+        <div ref={tabsRef} className="resource-tabs" role="tablist" aria-label="Resource types">
           {TAB_KEYS.map((key, idx) => {
             const active = resourceType === key;
             const meta = labelFor(key);

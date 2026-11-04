@@ -37,15 +37,15 @@ export const RESOURCE_TYPES = [
   T('deployment', 'Deployments', 'Deployment', 'Deployment', 'deployment', 'workloads'),
   T('statefulSet', 'StatefulSets', 'StatefulSet', 'StatefulSet', 'statefulSet', 'workloads'),
   T('daemonSet', 'DaemonSets', 'DaemonSet', 'DaemonSet', 'daemonSet', 'workloads'),
-  T('replicaSet', 'Replica Sets', 'ReplicaSet', 'ReplicaSet', 'replicaSet', 'workloads'),
-  T('replicationController', 'Replication Controllers', 'ReplicationController', 'ReplicationController', 'replicationController', 'workloads'),
+  T('replicaSet', 'ReplicaSets', 'ReplicaSet', 'ReplicaSet', 'replicaSet', 'workloads'),
+  T('replicationController', 'ReplicationControllers', 'ReplicationController', 'ReplicationController', 'replicationController', 'workloads'),
   T('job', 'Jobs', 'Job', 'Job', 'job', 'workloads'),
-  T('cronJob', 'Cron Jobs', 'CronJob', 'CronJob', 'cronJob', 'workloads'),
+  T('cronJob', 'CronJobs', 'CronJob', 'CronJob', 'cronJob', 'workloads'),
 
   // Network
   T('service', 'Services', 'Service', 'Service', 'service', 'network'),
   T('ingress', 'Ingress', 'Ingress', 'Ingress', 'ingress', 'network', { plural: 'ingresses' }),
-  T('networkPolicy', 'Network Policies', 'NetworkPolicy', 'NetworkPolicy', 'networkPolicy', 'network', { plural: 'networkPolicies' }),
+  T('networkPolicy', 'NetworkPolicies', 'NetworkPolicy', 'NetworkPolicy', 'networkPolicy', 'network', { plural: 'networkPolicies' }),
 
   // Storage
   T('persistentVolume', 'PersistentVolumes', 'PersistentVolume', 'PersistentVolume', 'persistentVolume', 'storage', { clusterScoped: true }),

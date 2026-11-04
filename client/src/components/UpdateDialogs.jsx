@@ -54,7 +54,7 @@ export default function UpdateDialogs() {
       else if (d.type === 'check-updates') setUpdateOpen(true);
       else if (d.type === 'update-result') {
         if (d.status === 'installed')
-          toast.success(`KubePilot was updated to ${v(d.version)}.`, { title: 'Update installed' });
+          toast.success(`k8Board was updated to ${v(d.version)}.`, { title: 'Update installed' });
         else if (d.status === 'failed') setResult(d);
       }
     };
@@ -94,7 +94,7 @@ export default function UpdateDialogs() {
         }
       >
         <p className="update-text">
-          The update to KubePilot {v(result?.version)} did not complete. Your existing KubePilot installation
+          The update to k8Board {v(result?.version)} did not complete. Your existing k8Board installation
           {result?.from ? ` (${v(result.from)})` : ''} has not been modified.
         </p>
       </Modal>
@@ -117,7 +117,7 @@ export function ReleaseNotesDialog({ open, onClose }) {
         setSt({
           loading: false,
           release: null,
-          error: errorMessage(err, 'KubePilot could not load the release notes.'),
+          error: errorMessage(err, 'k8Board could not load the release notes.'),
         });
     }
   }, []);
@@ -131,7 +131,7 @@ export function ReleaseNotesDialog({ open, onClose }) {
     <Modal
       open={open}
       onClose={onClose}
-      title="KubePilot Release Notes"
+      title="k8Board Release Notes"
       icon="details"
       size="lg"
       className="release-notes-modal"
@@ -185,7 +185,7 @@ function failureView(err) {
     return { title: 'No compatible installer', action: 'release' };
   if (code === 'verification_failed' || code === 'verification_unavailable')
     return { title: 'Update verification failed', action: null };
-  if (code === 'unsupported') return { title: "KubePilot can't install this update", action: 'release' };
+  if (code === 'unsupported') return { title: "k8Board can't install this update", action: 'release' };
   if (stage === 'check' || !stage) return { title: 'Unable to check for updates', action: 'check' };
   if (stage === 'download') return { title: 'Download failed', action: 'download' };
   if (stage === 'restart') return { title: 'Restart failed', action: null };
@@ -208,7 +208,7 @@ export function UpdateDialog({ open, onClose, onShowNotes }) {
     } catch (err) {
       setReqError({
         code: err?.code || 'error',
-        message: errorMessage(err, 'KubePilot could not reach its update service.'),
+        message: errorMessage(err, 'k8Board could not reach its update service.'),
       });
       return null;
     } finally {
@@ -280,7 +280,7 @@ export function UpdateDialog({ open, onClose, onShowNotes }) {
       <div className="update-alert" role="alert">
         <p>{err.message}</p>
         {(err.code === 'install_failed' || err.code === 'installer_launch_failed') && (
-          <p className="update-muted">Your existing KubePilot installation has not been modified.</p>
+          <p className="update-muted">Your existing k8Board installation has not been modified.</p>
         )}
       </div>
     );
@@ -310,7 +310,7 @@ export function UpdateDialog({ open, onClose, onShowNotes }) {
       </>
     );
   } else if (phase === 'up-to-date') {
-    title = 'KubePilot is up to date';
+    title = 'k8Board is up to date';
     icon = 'check';
     body = (
       <p className="update-text">
@@ -323,12 +323,12 @@ export function UpdateDialog({ open, onClose, onShowNotes }) {
       </Button>
     );
   } else if (phase === 'available') {
-    title = 'KubePilot Update Available';
+    title = 'k8Board Update Available';
     icon = 'download';
     const released = fmtDate(latest?.publishedAt);
     body = (
       <>
-        <p className="update-text">A new version of KubePilot is available.</p>
+        <p className="update-text">A new version of k8Board is available.</p>
         <dl className="update-versions">
           <dt>Installed version</dt>
           <dd>{v(current)}</dd>
@@ -385,14 +385,14 @@ export function UpdateDialog({ open, onClose, onShowNotes }) {
       </>
     );
   } else if (phase === 'downloading' || phase === 'verifying' || phase === 'installing') {
-    title = 'Updating KubePilot';
+    title = 'Updating k8Board';
     icon = 'download';
     const total = s.progress?.total || s.asset?.size || 0;
     const received = s.progress?.received || 0;
     const pct = phase === 'downloading' && total ? Math.min(100, Math.floor((received / total) * 100)) : null;
     const label =
       phase === 'downloading'
-        ? `Downloading KubePilot ${v(latest?.version)}…`
+        ? `Downloading k8Board ${v(latest?.version)}…`
         : phase === 'verifying'
           ? 'Verifying update…'
           : 'Installing update…';
@@ -440,10 +440,10 @@ export function UpdateDialog({ open, onClose, onShowNotes }) {
     icon = 'download';
     body = (
       <>
-        <p className="update-text">KubePilot {v(latest?.version)} has been downloaded and verified.</p>
+        <p className="update-text">k8Board {v(latest?.version)} has been downloaded and verified.</p>
         <p className="update-text">
-          To install it, KubePilot closes, installs the update and opens again automatically. Choose{' '}
-          <b>Later</b> to install it the next time you quit KubePilot.
+          To install it, k8Board closes, installs the update and opens again automatically. Choose{' '}
+          <b>Later</b> to install it the next time you quit k8Board.
         </p>
       </>
     );
@@ -454,7 +454,7 @@ export function UpdateDialog({ open, onClose, onShowNotes }) {
           onClick={async () => {
             const st = await call('post', '/api/app/update/install', { when: 'on-quit' });
             if (st?.phase === 'scheduled') {
-              toast.info(`KubePilot ${v(latest?.version)} will be installed when you quit KubePilot.`);
+              toast.info(`k8Board ${v(latest?.version)} will be installed when you quit k8Board.`);
               onClose();
             }
           }}
@@ -476,7 +476,7 @@ export function UpdateDialog({ open, onClose, onShowNotes }) {
     icon = 'check';
     body = (
       <p className="update-text">
-        KubePilot {v(latest?.version)} will be installed the next time you quit KubePilot.
+        k8Board {v(latest?.version)} will be installed the next time you quit k8Board.
       </p>
     );
     footer = (
@@ -489,8 +489,8 @@ export function UpdateDialog({ open, onClose, onShowNotes }) {
     icon = 'check';
     body = (
       <>
-        <p className="update-text">KubePilot {v(latest?.version)} has been installed successfully.</p>
-        <p className="update-text">Restart KubePilot to complete the update.</p>
+        <p className="update-text">k8Board {v(latest?.version)} has been installed successfully.</p>
+        <p className="update-text">Restart k8Board to complete the update.</p>
         {s.dryRun && (
           <p className="update-note" role="note">
             Dry run: nothing was actually installed.
@@ -512,11 +512,11 @@ export function UpdateDialog({ open, onClose, onShowNotes }) {
       </>
     );
   } else if (phase === 'restarting') {
-    title = s.dryRun ? 'Dry run complete' : 'Restarting KubePilot';
+    title = s.dryRun ? 'Dry run complete' : 'Restarting k8Board';
     icon = 'refresh';
     body = s.dryRun ? (
       <p className="update-text">
-        Dry run: KubePilot {v(latest?.version)} was verified, but nothing was installed and KubePilot will not
+        Dry run: k8Board {v(latest?.version)} was verified, but nothing was installed and k8Board will not
         restart.
       </p>
     ) : (
@@ -524,8 +524,8 @@ export function UpdateDialog({ open, onClose, onShowNotes }) {
         inline
         label={
           s.installMode === 'on-restart'
-            ? 'KubePilot is closing to install the update and will open again automatically…'
-            : 'Restarting KubePilot…'
+            ? 'k8Board is closing to install the update and will open again automatically…'
+            : 'Restarting k8Board…'
         }
       />
     );

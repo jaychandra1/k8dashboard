@@ -1,4 +1,4 @@
-// The MCP write gate: mcp.js calls the REST API with `X-KubePilot-Source: mcp`.
+// The MCP write gate: mcp.js calls the REST API with `X-k8Board-Source: mcp`.
 // While MCP write access is disabled (the default), every mutating route must
 // refuse those calls with 403 — both against a real context and in demo mode
 // (the KUBEPILOT_DEMO=1 test fixture, where the demo interceptor answers
@@ -25,8 +25,8 @@ const post = (p, body, headers = {}) =>
 const APPLY = { yaml: 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: x\n  namespace: default\n' };
 
 describe('MCP write gate (writes disabled)', () => {
-  test('POST /api/apply with X-KubePilot-Source: mcp → 403 mcp_write_disabled', async () => {
-    const res = await post('/api/apply', APPLY, { 'X-KubePilot-Source': 'mcp' });
+  test('POST /api/apply with X-k8Board-Source: mcp → 403 mcp_write_disabled', async () => {
+    const res = await post('/api/apply', APPLY, { 'X-k8Board-Source': 'mcp' });
     assert.equal(res.status, 403);
     const body = await res.json();
     assert.equal(body.code, 'mcp_write_disabled');
@@ -50,7 +50,7 @@ describe('MCP write gate (writes disabled)', () => {
   });
 
   test('DELETE / scale / rollout routes are gated too', async () => {
-    const h = { 'X-KubePilot-Source': 'mcp' };
+    const h = { 'X-k8Board-Source': 'mcp' };
     const del = await srv.authed('/api/resource/default/deployment/web', { method: 'DELETE', headers: h });
     assert.equal(del.status, 403);
   });
@@ -59,12 +59,12 @@ describe('MCP write gate (writes disabled)', () => {
     const enter = await post('/api/config/context', { contextName: 'demo-cluster' });
     assert.equal(enter.status, 200);
 
-    const res = await post('/api/apply', APPLY, { 'X-KubePilot-Source': 'mcp' });
+    const res = await post('/api/apply', APPLY, { 'X-k8Board-Source': 'mcp' });
     assert.equal(res.status, 403);
     assert.equal((await res.json()).code, 'mcp_write_disabled');
 
     // Reads from MCP are fine.
-    const list = await srv.authed('/api/resources/default', { headers: { 'X-KubePilot-Source': 'mcp' } });
+    const list = await srv.authed('/api/resources/default', { headers: { 'X-k8Board-Source': 'mcp' } });
     assert.equal(list.status, 200);
   });
 });

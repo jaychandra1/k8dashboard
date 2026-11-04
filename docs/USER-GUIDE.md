@@ -1,4 +1,4 @@
-# KubePilot — User & Release Guide
+# k8Board — User & Release Guide
 
 This guide covers three things: **running and using the application**, **developing it locally**, and **producing a new release version** (desktop installers and the Docker image).
 
@@ -22,7 +22,7 @@ Current version: `1.2.0` (see the `VERSION` file). Node.js **22 or newer** is re
 
 **A. Desktop app (recommended for laptops)**
 
-Download the installer for your OS from the [KubePilot Releases](https://github.com/jaychandra1/KubePilot/releases) page (`KubePilot-macos.dmg` for Apple Silicon, `KubePilot-windows.exe`, `KubePilot-linux.AppImage` or `.deb`) and open it.
+Download the installer for your OS from the [k8Board Releases](https://github.com/jaychandra1/KubePilot/releases) page (`k8Board-macos.dmg` for Apple Silicon, `k8Board-windows.exe`, `k8Board-linux.AppImage` or `.deb`) and open it.
 
 The desktop app generates a fresh random access token every launch, starts its backend on a free local port, and opens the UI already logged in. There is nothing to configure.
 
@@ -41,7 +41,7 @@ npm start
 The server prints a **login URL** at boot:
 
 ```
-KubePilot listening on http://127.0.0.1:3001  —  open http://127.0.0.1:3001/#token=<token>
+k8Board listening on http://127.0.0.1:3001  —  open http://127.0.0.1:3001/#token=<token>
 ```
 
 Open that exact URL. The UI moves the token from the URL into session storage and removes it from the address bar. If you open `http://127.0.0.1:3001` without the token, the UI shows a **Connect** dialog where you can paste it.
@@ -70,7 +70,7 @@ Keep the port published on `127.0.0.1`. If you must expose it on a network, put 
 
 When the app starts it shows one of:
 
-- **Connect a cluster** — no kubeconfig was found. Either enter the path to a kubeconfig file, or use **Add cluster** to import an **AWS EKS** or **Azure AKS** cluster straight from your cloud account (KubePilot signs you in and writes the kubeconfig; no CLI needed).
+- **Connect a cluster** — no kubeconfig was found. Either enter the path to a kubeconfig file, or use **Add cluster** to import an **AWS EKS** or **Azure AKS** cluster straight from your cloud account (k8Board signs you in and writes the kubeconfig; no CLI needed).
 - **Could not connect to the cluster** — a kubeconfig was loaded but its credentials failed. Use **Add cluster** to onboard an EKS or AKS cluster, switch to another context, or fix the kubeconfig and press **Retry**. Authentication failures are classified for you (expired token, unreachable API server, TLS error, missing auth plugin) with a one-click or copyable fix.
 - The dashboard — the current kubeconfig context loaded. You land on the **Cluster Overview** (`#/cluster`): nodes, CPU/memory capacity, pod health, Kubernetes version and the kubeconfig's contexts and clusters. While the data is fetched the app shows a branded loading screen ("Getting the data from <context>…").
 
@@ -84,7 +84,7 @@ After a switch the app returns to the **Cluster Overview** of the new cluster (t
 
 ### 1.4 Getting around
 
-- **Sidebar** — the KubePilot brand, version and the Preferences gear at the top; then Cluster, Nodes, Namespaces, Topology; Workloads (Overview, Pods, Deployments, StatefulSets, DaemonSets, ReplicaSets, Jobs, CronJobs…); Config; Network; Storage; Events, Helm, Access Control, Argo CD (shown when installed), Security Center, Custom Resources. Every item is a real link, so keyboard navigation, middle-click and "open in new tab" work.
+- **Sidebar** — the k8Board brand, version and the Preferences gear at the top; then Cluster, Nodes, Namespaces, Topology; Workloads (Overview, Pods, Deployments, StatefulSets, DaemonSets, ReplicaSets, Jobs, CronJobs…); Config; Network; Storage; Events, Helm, Access Control, Argo CD (shown when installed), Security Center, Custom Resources. Every item is a real link, so keyboard navigation, middle-click and "open in new tab" work.
 - **Cluster menu** — the button at the top of the sidebar with the current context name (hover it for the full name when it is cut short): pinned clusters (check = current), All contexts (inline list or submenu) + Search contexts…, Pin/Unpin, Add cluster ▸ (see §1.3). Fully keyboard operable (Enter or ↓ opens, arrows move, Esc closes). In the desktop app the same list is in the native **Clusters** menu.
 - **Landing page** — the **Cluster Overview** (`#/cluster`) opens on start and after every cluster switch. The **Overview** under Workloads (`#/overview`) is the pod-health / workload-counts dashboard.
 - **Command palette** — `⌘K` (`Ctrl+K` on Windows/Linux), or the `⌘ K` button in the toolbar, jumps to any view, switches context (the same contexts as the top-bar cluster selector), refreshes, opens Preferences or changes the theme. Type to filter, arrows to move, Enter to run.
@@ -197,7 +197,7 @@ Stdio bridge (for agents that launch a command):
 - **AWS EKS** — sign in with IAM Identity Center (SSO), access keys or an assumed role; discover clusters across accounts and regions; import them. SSO sign-ins are saved as a refreshable `sso-session` in `~/.aws/config`, so they renew on their own until your Identity Center session ends (see §1.12).
 - **Azure AKS** — sign in through your system browser (works with Conditional Access) or the `az` CLI; discover across subscriptions; import.
 
-Imported contexts are merged into your kubeconfig. The existing file is **backed up** (`config.kubepilot-backup-<timestamp>`) before the first write of a session, written atomically with mode `0600`, and never overwritten if it cannot be parsed. Imported clusters authenticate at runtime through bundled token helpers, so `aws`, `az` and `kubelogin` are not needed afterwards. The kubeconfig `exec` entry runs `KubePilot --token-helper eks|azure …` (the desktop app re-enters its own binary in a CLI mode) or `node eks-token.js …` / `node azure-token.js …` when running from source or Docker; `kubectl` works with the same entry. Entries written by an older build, or pointing at an app binary that has since moved or been renamed, are **repaired automatically** the next time the kubeconfig is loaded (a backup is taken first, one log line per repaired user). If your AWS SSO session has expired, the connect screen says so and offers **Sign in with AWS SSO**, which reopens the AWS flow. After you sign in, the cluster list confirms the account and role you signed in as and marks each cluster: **Uses this sign-in** (already added — it reconnects with the refreshed session, nothing to do), **Added** with a checkbox (added with other credentials — select it to switch it to this sign-in), or **Name in use** (a different cluster already has that name; it is never overwritten). With nothing selected the button is **Done**, which reconnects and closes.
+Imported contexts are merged into your kubeconfig. The existing file is **backed up** (`config.kubepilot-backup-<timestamp>`) before the first write of a session, written atomically with mode `0600`, and never overwritten if it cannot be parsed. Imported clusters authenticate at runtime through bundled token helpers, so `aws`, `az` and `kubelogin` are not needed afterwards. The kubeconfig `exec` entry runs `k8Board --token-helper eks|azure …` (the desktop app re-enters its own binary in a CLI mode) or `node eks-token.js …` / `node azure-token.js …` when running from source or Docker; `kubectl` works with the same entry. Entries written by an older build, or pointing at an app binary that has since moved or been renamed, are **repaired automatically** the next time the kubeconfig is loaded (a backup is taken first, one log line per repaired user). If your AWS SSO session has expired, the connect screen says so and offers **Sign in with AWS SSO**, which reopens the AWS flow. After you sign in, the cluster list confirms the account and role you signed in as and marks each cluster: **Uses this sign-in** (already added — it reconnects with the refreshed session, nothing to do), **Added** with a checkbox (added with other credentials — select it to switch it to this sign-in), or **Name in use** (a different cluster already has that name; it is never overwritten). With nothing selected the button is **Done**, which reconnects and closes.
 
 ### 1.9 Configuration reference
 
@@ -232,7 +232,7 @@ App data lives in `~/.config/kubepilot` (token, assistant config, scan cache). O
 | Helm view empty | The cluster has no Helm-managed releases (v3 Secrets storage). |
 | "All namespaces" slow the first time | One request per namespace; results are cached. Pick a namespace for faster loads. |
 | Port 3001 in use | Set `PORT=<other>` (the desktop app picks a free port automatically). |
-| Check for Updates: "Unable to check for updates" | KubePilot could not reach `api.github.com` (offline, a proxy, or GitHub's anonymous rate limit of 60 requests/hour per IP — the dialog says when to retry). |
+| Check for Updates: "Unable to check for updates" | k8Board could not reach `api.github.com` (offline, a proxy, or GitHub's anonymous rate limit of 60 requests/hour per IP — the dialog says when to retry). |
 
 ### 1.11 Release notes and updates (desktop app)
 
@@ -241,12 +241,12 @@ The desktop app's **Help** menu (after *Window*) has two items:
 - **Show Release Notes** — the notes of the newest stable release on [jaychandra1/KubePilot](https://github.com/jaychandra1/KubePilot/releases), rendered in the app; **View on GitHub** opens the release in your browser.
 - **Check for Updates** — compares the running version (the `VERSION` file) with the newest stable GitHub release using semantic-version ordering. Drafts and prereleases (`-alpha`, `-beta`, `-rc`, …) are ignored. Nothing is downloaded until you choose **Download and Install**.
 
-When you do, KubePilot picks the one release file built for your OS, CPU and install type, downloads it to the OS cache folder (`%LOCALAPPDATA%\kubepilot-updater`, `~/Library/Caches/kubepilot-updater`, `~/.cache/kubepilot-updater`), and checks its **SHA-256** against both the digest GitHub reports for the file and the release's `SHA256SUMS.txt`. A file that doesn't match is deleted and never run. Then:
+When you do, k8Board picks the one release file built for your OS, CPU and install type, downloads it to the OS cache folder (`%LOCALAPPDATA%\kubepilot-updater`, `~/Library/Caches/kubepilot-updater`, `~/.cache/kubepilot-updater`), and checks its **SHA-256** against both the digest GitHub reports for the file and the release's `SHA256SUMS.txt`. A file that doesn't match is deleted and never run. Then:
 
 | Installed as | How the update is installed |
 |---|---|
-| Windows installer (`KubePilot-windows.exe`) | **Install and Restart** closes KubePilot, runs the installer silently (per-user, no administrator prompt) and reopens KubePilot when it has finished; **Later** installs it the next time you quit. On the next start KubePilot tells you whether the update completed. |
-| macOS app in a writable folder | The new `KubePilot.app` is copied next to the old one and swapped in; the old one is restored if the swap fails. If the folder needs an administrator, macOS asks for one. Then **Restart Now** or **Later**. |
+| Windows installer (`k8Board-windows.exe`) | **Install and Restart** closes k8Board, runs the installer silently (per-user, no administrator prompt) and reopens k8Board when it has finished; **Later** installs it the next time you quit. On the next start k8Board tells you whether the update completed. |
+| macOS app in a writable folder | The new `k8Board.app` is copied next to the old one and swapped in; the old one is restored if the swap fails. If the folder needs an administrator, macOS asks for one. Then **Restart Now** or **Later**. |
 | Linux AppImage | The AppImage file is replaced in place; then **Restart Now** or **Later**. |
 | Linux `.deb` | `pkexec dpkg -i` (polkit asks for an administrator password); then **Restart Now** or **Later**. |
 
@@ -256,15 +256,15 @@ A development build (`npm run app`), an unpacked copy (`release/win-unpacked`), 
 
 ### 1.12 AWS sign-in and expired sessions
 
-**Sessions renew on their own.** When you sign in to IAM Identity Center (from *Add cluster → AWS EKS* or the "AWS session expired" dialog), KubePilot stores the login exactly like `aws configure sso`: an `[sso-session]` block in `~/.aws/config`, its token in `~/.aws/sso/cache/`, and a refresh token. The AWS SDK — and therefore KubePilot's EKS token helper, the AWS CLI and kubectl — renews the short-lived access token from it without a browser. KubePilot also renews the sessions behind your EKS contexts before they run out (at launch and every 5 minutes). You only sign in again when the Identity Center session itself ends; how long that lasts is set by your AWS administrator (IAM Identity Center → Settings → Authentication → session duration; 8 hours by default).
+**Sessions renew on their own.** When you sign in to IAM Identity Center (from *Add cluster → AWS EKS* or the "AWS session expired" dialog), k8Board stores the login exactly like `aws configure sso`: an `[sso-session]` block in `~/.aws/config`, its token in `~/.aws/sso/cache/`, and a refresh token. The AWS SDK — and therefore k8Board's EKS token helper, the AWS CLI and kubectl — renews the short-lived access token from it without a browser. k8Board also renews the sessions behind your EKS contexts before they run out (at launch and every 5 minutes). You only sign in again when the Identity Center session itself ends; how long that lasts is set by your AWS administrator (IAM Identity Center → Settings → Authentication → session duration; 8 hours by default).
 
 **When a session has ended**, the startup dialog shows the cluster (provider, account, role, when it ended) with **Sign in with AWS**:
 
-- In the desktop app this opens your AWS access portal in your browser; approve the request and KubePilot reconnects by itself — nothing to type. (It uses a one-time `http://127.0.0.1:<port>/oauth/callback` redirect, the AWS CLI's default flow.)
-- **Use a sign-in code instead** shows a code to confirm on the AWS page — the right choice if the browser can't reach this machine, and what a KubePilot *server* always uses.
+- In the desktop app this opens your AWS access portal in your browser; approve the request and k8Board reconnects by itself — nothing to type. (It uses a one-time `http://127.0.0.1:<port>/oauth/callback` redirect, the AWS CLI's default flow.)
+- **Use a sign-in code instead** shows a code to confirm on the AWS page — the right choice if the browser can't reach this machine, and what a k8Board *server* always uses.
 - Nothing starts on its own: you can instead pick any other cluster from the list (grouped by provider — AWS, Azure, GKE, on-prem…), or use **Add cluster** for AWS EKS, Azure AKS or a kubeconfig file (GKE, on-prem, kind…).
 
-**Your existing profiles.** An SSO profile written in the older format (`sso_start_url` / `sso_region` inside the profile) is moved to the session format the next time you sign in to its start URL: those two lines become `sso_session = <name>`; account, role, region, comments and other settings are kept. Before KubePilot first changes `~/.aws/config` it saves a copy next to it (`config.kubepilot-backup-<time>`). A session you created with `aws configure sso` is reused as is. Tools from before late 2022 (AWS CLI v1, old SDKs) don't understand `sso-session`; current AWS CLI v2, SDKs and Terraform do.
+**Your existing profiles.** An SSO profile written in the older format (`sso_start_url` / `sso_region` inside the profile) is moved to the session format the next time you sign in to its start URL: those two lines become `sso_session = <name>`; account, role, region, comments and other settings are kept. Before k8Board first changes `~/.aws/config` it saves a copy next to it (`config.kubepilot-backup-<time>`). A session you created with `aws configure sso` is reused as is. Tools from before late 2022 (AWS CLI v1, old SDKs) don't understand `sso-session`; current AWS CLI v2, SDKs and Terraform do.
 
 ---
 
@@ -371,7 +371,7 @@ npm run app:pack      # macOS only: unpacked .app in release/ for quick testing
 npm run app           # run the Electron shell against the current source
 ```
 
-Outputs in `release/`: `KubePilot-macos.dmg` (Apple Silicon), `KubePilot-windows.exe` (NSIS), `KubePilot-linux.AppImage` and `KubePilot-linux.deb`. Packaging for macOS requires a Mac; Windows requires Windows (or Wine), Linux requires Linux. Builds are ad-hoc signed; to notarize, obtain a Developer ID, set `hardenedRuntime: true` in `package.json` (the entitlements file is already in `build/`) and provide signing credentials.
+Outputs in `release/`: `k8Board-macos.dmg` (Apple Silicon), `k8Board-windows.exe` (NSIS), `k8Board-linux.AppImage` and `k8Board-linux.deb`. Packaging for macOS requires a Mac; Windows requires Windows (or Wine), Linux requires Linux. Builds are ad-hoc signed; to notarize, obtain a Developer ID, set `hardenedRuntime: true` in `package.json` (the entitlements file is already in `build/`) and provide signing credentials.
 
 ### 3.3 Building the Docker image locally
 
@@ -395,13 +395,13 @@ The image is multi-stage: the client is built, production dependencies are insta
 Help → Check for Updates (§1.11) reads the **latest stable** release of `releaseRepository` in `package.json` (`jaychandra1/KubePilot`). For it to offer an update:
 
 - **Tag** `v<semver>` (the workflow enforces `v$(cat VERSION)`). A release that is a draft, marked *pre-release*, or tagged `-alpha`/`-beta`/`-rc`… is skipped.
-- **Assets** named `KubePilot-<os>[-<arch>].<ext>` — exactly what `artifactName` in `package.json` produces: `KubePilot-windows.exe`, `KubePilot-macos.dmg`, `KubePilot-linux.AppImage`, `KubePilot-linux.deb`. Unsuffixed files are taken to be the one architecture the workflow builds per OS (Windows **x64**, macOS **arm64**, Linux **x64**). To ship another architecture, publish it with an `-x64` / `-arm64` suffix (e.g. `KubePilot-windows-arm64.exe`); a suffixed file always wins over the unsuffixed one. An optional version segment (`KubePilot-1.4.0-macos-arm64.dmg`) is accepted too.
+- **Assets** named `k8Board-<os>[-<arch>].<ext>` — exactly what `artifactName` in `package.json` produces: `k8Board-windows.exe`, `k8Board-macos.dmg`, `k8Board-linux.AppImage`, `k8Board-linux.deb`. Unsuffixed files are taken to be the one architecture the workflow builds per OS (Windows **x64**, macOS **arm64**, Linux **x64**). To ship another architecture, publish it with an `-x64` / `-arm64` suffix (e.g. `k8Board-windows-arm64.exe`); a suffixed file always wins over the unsuffixed one. An optional version segment (`k8Board-1.4.0-macos-arm64.dmg`) is accepted too.
 - **Checksums**: `SHA256SUMS.txt` (generated by the release job) listing every installer. GitHub's own per-asset SHA-256 digest is used as well; if both exist they must agree, and an installer with neither is refused.
 - Releases aren't code-signed today, so these checksums are the integrity check. Signing the Windows installer and notarizing the macOS app (§3.2) would add a publisher check on top; until then the SHA-256 protects against corrupted or swapped downloads, not against a compromised release repository.
 
 **Testing an update end to end without touching your own install:**
 
-1. Create a scratch public repo (e.g. `<you>/kubepilot-update-test`) and publish a release there with a **higher** version than the build you'll test, attaching the installer for your platform (named as above) and a matching `SHA256SUMS.txt` (`sha256sum KubePilot-*.* > SHA256SUMS.txt`).
+1. Create a scratch public repo (e.g. `<you>/kubepilot-update-test`) and publish a release there with a **higher** version than the build you'll test, attaching the installer for your platform (named as above) and a matching `SHA256SUMS.txt` (`sha256sum k8Board-*.* > SHA256SUMS.txt`).
 2. Install an older packaged build on a test machine or VM (not your daily install).
 3. Start it with `KUBEPILOT_UPDATE_REPO=<you>/kubepilot-update-test`. Add `KUBEPILOT_UPDATE_DRY_RUN=1` to go through check → download → verify → "install" while the main process only logs what it would run.
 4. Without the dry-run flag, the full flow installs the test release; check that the app restarts on the new version (Windows reports the result on the next start).

@@ -21,7 +21,7 @@ const stubLog = () => {
   return { lines, info: (msg, f) => lines.info.push({ msg, ...f }), warn: (msg, f) => lines.warn.push({ msg, ...f }), error: () => {}, debug: () => {} };
 };
 
-const MAC_APP = '/Applications/KubePilot.app/Contents/MacOS/KubePilot';
+const MAC_APP = '/Applications/k8Board.app/Contents/MacOS/k8Board';
 const OLD_EXE = 'C:\\Users\\me\\AppData\\Local\\Programs\\K8Sight\\K8Sight.exe'; // gone from disk
 const OLD_HELPER = 'C:\\Users\\me\\AppData\\Local\\Programs\\K8Sight\\resources\\app\\eks-token.js';
 
@@ -29,7 +29,7 @@ function fixture() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kubepilot-repair-'));
   tmpDirs.push(dir);
   // A present "app binary" for the legacy-env case.
-  const presentExe = path.join(dir, 'KubePilot.exe');
+  const presentExe = path.join(dir, 'k8Board.exe');
   fs.writeFileSync(presentExe, '');
   const doc = {
     apiVersion: 'v1', kind: 'Config', 'current-context': 'stale',
@@ -112,7 +112,7 @@ describe('repairExecEntries (Electron runtime)', () => {
     const doc = yaml.load(fs.readFileSync(file, 'utf8'));
     doc.users = [{ name: 'moved', user: { exec: {
       apiVersion: 'client.authentication.k8s.io/v1beta1',
-      command: path.join(dir, 'gone', 'KubePilot'),
+      command: path.join(dir, 'gone', 'k8Board'),
       args: [TOKEN_HELPER_FLAG, 'eks', '--cluster', 'x', '--region', 'eu-west-1'],
       interactiveMode: 'Never', provideClusterInfo: false,
     } } }];
@@ -182,10 +182,10 @@ describe('staleReason / deriveHelperInvocation', () => {
     assert.equal(staleReason(undefined), null);
   });
   test('missing command wins; legacy env only counts with an app binary', () => {
-    assert.equal(staleReason({ command: '/x/KubePilot', args: [TOKEN_HELPER_FLAG, 'eks'] }, { commandExists: missing }), 'command-missing');
+    assert.equal(staleReason({ command: '/x/k8Board', args: [TOKEN_HELPER_FLAG, 'eks'] }, { commandExists: missing }), 'command-missing');
     assert.equal(staleReason({ command: '/x/node', args: ['/y/eks-token.js'], env: [{ name: 'ELECTRON_RUN_AS_NODE', value: '1' }] }, { commandExists: exists }), null);
     assert.equal(staleReason({ command: 'C:\\P\\k8dashboard.exe', args: ['C:\\P\\resources\\app\\eks-token.js'], env: [{ name: 'ELECTRON_RUN_AS_NODE', value: '1' }] }, { commandExists: exists }), 'legacy-run-as-node');
-    assert.equal(staleReason({ command: '/opt/KubePilot/resources/app/../KubePilot', args: [TOKEN_HELPER_FLAG, 'eks'] }, { commandExists: exists }), null);
+    assert.equal(staleReason({ command: '/opt/k8Board/resources/app/../k8Board', args: [TOKEN_HELPER_FLAG, 'eks'] }, { commandExists: exists }), null);
   });
   test('recovers helper kind and flags from every historical shape', () => {
     assert.deepEqual(deriveHelperInvocation({ args: ['/a/eks-token.js', '--cluster', 'c', '--region', 'r'] }), { helper: 'eks', args: ['--cluster', 'c', '--region', 'r'] });

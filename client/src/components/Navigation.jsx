@@ -138,10 +138,10 @@ const Navigation = forwardRef(function Navigation({
       <div className="nav-header">
         <div className="nav-brand">
           <div className="nav-brand-logo" aria-hidden="true">
-            <img className="nav-brand-img" src="/logo.png" alt="" width="30" height="30" decoding="async" />
+            <img className="nav-brand-img" src="/logo-mark.png" alt="" width="30" height="30" decoding="async" />
           </div>
           <div className="nav-brand-text">
-            <span className="nav-brand-title">KubePilot</span>
+            <span className="nav-brand-title">k8Board</span>
             {typeof __APP_VERSION__ !== 'undefined' && (
               <span className="nav-brand-sub">
                 <span className="nav-brand-version">v{__APP_VERSION__}</span>

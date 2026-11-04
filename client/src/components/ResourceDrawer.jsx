@@ -13,7 +13,10 @@ import { byKey, byApiKind, kindIcon } from '../lib/kinds';
 import { statusTone } from '../lib/status';
 import { formatAge, fmtCpu, fmtMem, fmtMemMi, decodeB64, cpuToMillicores, parseQuantity } from '../lib/format';
 import {announce, afterPaint } from '../lib/a11y';
-import { XLink, nsLink, nodeLink, resourceLink } from './resources/links';
+import { XLink, eventsLink, navigateVia, nsLink, nodeLink, resourceLink } from './resources/links';
+
+// Kinds the Events page can scope to (with what they own).
+const EVENT_KINDS = new Set(['Pod', 'Deployment', 'StatefulSet', 'DaemonSet', 'Job', 'CronJob']);
 
 // Sum a resource across containers only if every container specifies it
 const sumRes = (containers, kind, res, parse) => {
@@ -259,7 +262,9 @@ export default function ResourceDrawer({
   (spec.volumes || []).forEach((v) => { if (v.secret?.secretName) secretNames.push(v.secret.secretName); });
   (spec.imagePullSecrets || []).forEach((s) => s.name && secretNames.push(s.name));
 
-  const displayStatus = status.phase || resource.status || '';
+  // The list's status (kubectl-style for pods: CrashLoopBackOff, Init:1/2…) over
+  // the bare phase, so the drawer and the row never disagree.
+  const displayStatus = (typeof resource.status === 'string' && resource.status) || status.phase || '';
   const tone = statusTone(kind, displayStatus);
 
   // Action availability: new callbacks first, legacy onOpenTab/onAction as fallback.
@@ -291,6 +296,10 @@ export default function ResourceDrawer({
         <div className="drawer-actions">
           {(isPod || kind === 'Deployment') && doLogs && <Button variant="ghost" iconOnly icon="logs" ariaLabel={`Logs for ${name}`} className="drawer-action-btn" onClick={doLogs} />}
           {isPod && doTerminal && <Button variant="ghost" iconOnly icon="terminal" ariaLabel={`Open terminal in ${name}`} className="drawer-action-btn" onClick={doTerminal} />}
+          {EVENT_KINDS.has(kind) && onNavigate && (resource.namespace || meta.namespace) && (
+            <Button variant="ghost" iconOnly icon="events" ariaLabel={`Events of ${name}`} title="Events" className="drawer-action-btn"
+              onClick={() => navigateVia(onNavigate, eventsLink(resource.namespace || meta.namespace, kind, name))} />
+          )}
           {doYaml && <Button variant="ghost" iconOnly icon="configuration" ariaLabel={`Edit YAML of ${name}`} className="drawer-action-btn" onClick={doYaml} />}
           {doScale && <Button variant="ghost" iconOnly icon="scale" ariaLabel={`Scale ${name}`} className="drawer-action-btn" onClick={doScale} />}
           {doRestart && <Button variant="ghost" iconOnly icon="refresh" ariaLabel={`Rollout restart ${name}`} className="drawer-action-btn" onClick={doRestart} />}

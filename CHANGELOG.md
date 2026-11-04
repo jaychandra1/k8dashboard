@@ -6,6 +6,24 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- **KubePilot is now k8Board, with a new icon.** The new name appears in:
+  - the app, its window and menus;
+  - the installers, Start menu and Dock;
+  - the MCP setup snippets (`claude mcp add … k8board`);
+  - the website, README and docs.
+
+  The icon is a glass tile with a glowing cube cluster. Its tile is transparent, so it works on dark and light taskbars and themes. Small sizes (taskbar, tray, sidebar, favicon) use a simplified single cube that stays crisp. All icons are generated from the SVGs in `build/source/` (`npx electron scripts/generate-icons.cjs`, then `scripts/generate-appx-assets.cjs`).
+
+  **Existing installs update in place and keep everything.** These internal identifiers keep the KubePilot name on purpose; `test/rename-compat.test.mjs` guards them:
+  - **Release files:** releases also carry `KubePilot-<os>…` copies of each installer, listed in the signed checksums. Installed KubePilot versions look for that name, and new versions accept either.
+  - **Signed text:** the release signature still covers "KubePilot release <version>", the text every installed version verifies.
+  - **App ID and Linux package:** the app ID (`com.kubepilot.desktop`) and the Linux package name (`kubepilot`) are unchanged. Windows and `.deb` upgrades replace the old install instead of adding a second app.
+  - **Data folders:** `~/.config/kubepilot` and the Electron profile folder keep their names. Clusters, tokens, preferences and the Windows-encrypted secrets stay where they are.
+  - **Imported clusters:** kubeconfig entries for imported EKS/AKS clusters that point at the old executable are repointed at the new one on first load.
+  - **Environment variables:** `KUBEPILOT_*` still work; `K8BOARD_*` is read first.
+  - **Repository:** releases stay at `jaychandra1/KubePilot`.
+
 ### Added
 - **Edit custom resources.** A custom resource instance (Custom Resources → group → kind → instance) now opens in the same YAML editor as built-in resources. Edit it, then Apply (⌘S / Ctrl+S, after a confirmation) and it is server-side applied like the built-in editor (`kubectl apply --server-side`). The YAML must be the same object (apiVersion, a kind of that resource type, name and namespace), so a paste can't change something else. AI agents can edit only while MCP write access is on. New route: `PUT /api/customresource/:group/:version/:plural/:name`.
 
@@ -19,9 +37,80 @@ All notable changes to this project are documented here. The format follows
   - a list of package upgrades (installed → upgrade to, and the vulnerabilities each fixes), biggest wins first.
 
   The Overview's critical list gains a **Fix available** column ("6 of 8").
+- **What each rollout fixed.** The Security Center compares each Deployment's running image with its previous image and shows the difference:
+  - a **Since last version** column ("▼ 3 fixed", "▲ 1 new") on the Overview, and a **Change** column on the Images tab;
+  - a **Fixed since last version** chart on the Overview, by severity;
+  - a **Fixed since the previous version** table: each workload, the image change (old → new) and the revisions;
+  - a section in the image's details listing every vulnerability fixed or introduced.
+
+  A config-only rollout (same image) is skipped, so the comparison is always against the last image that was actually different.
+- **Filter events by namespace, workload, type and text.** The Events page has a filter bar:
+  - the namespace picker the other pages use;
+  - a **workload** picker;
+  - **All / Warnings**;
+  - a search over message, reason, object, namespace and source.
+
+  Filters run on the server before paging, so they search every event, not just the first page. "Load more" goes past the first 100. Filters stay in the URL, so the back button and links keep them.
+
+  **Workload filter:** it includes everything the workload owns, because a Deployment's own events are only "Scaled up replica set…" and the useful ones are on its ReplicaSets and Pods:
+  - **Deployment:** its ReplicaSets and their Pods, plus its autoscaler;
+  - **StatefulSet:** its Pods and volume claims;
+  - **CronJob:** its Jobs and their Pods;
+  - **DaemonSet / Job:** their Pods.
+
+  The ReplicaSets and Pods a rollout already deleted are matched by their generated names, since their events are often the ones that explain a failed rollout. **View events** in the row menu and the details drawer of Pods and workloads opens the page filtered to that object. New `/api/events` parameters: `type`, `q`, `workload`, `namespaces` (`lib/event-scope.mjs`, shared with demo mode).
+- **Cluster Capacity shows the room actually left.** The dashboard card used to compare allocatable with total, which is always about 100%. It now shows, for CPU, memory and pod slots:
+  - how much the scheduled pods **request** of what the nodes can run (the share that decides whether new pods fit);
+  - what is **in use** right now (with metrics-server);
+  - the **limits'** share, flagged above 100% (overcommitted).
+
+  Bars turn amber at 75% requested and red at 90%. The card also says when pods are waiting for a node with room. Requests are added up the way `kubectl describe node` does: the bigger of the app containers and the largest init container, plus native sidecars and pod overhead. Finished and unscheduled pods don't count. The summary API gains `cpuRequestedMilli`, `memRequestedBytes`, `cpuLimitsMilli`, `memLimitsBytes`, `podsScheduled`, `podsAllocatable`, `podsUnscheduled` and `usage` (`lib/capacity.mjs`, shared with demo mode).
 
 ### Fixed
+- **Vulnerabilities a developer already fixed still showed in the Security Center.** A Deployment keeps its old ReplicaSets (scaled to 0) for rollback, and the Trivy Operator keeps their reports. So after an image was replaced, its old findings stayed in "Latest critical vulnerabilities" and in every total. Only images that are running now are listed and counted. Replaced ones sit behind a "Show N images no longer running" toggle, marked **Not running**, and their details explain why they're still there. Each image's counts now come from its de-duplicated findings: an image used by several workloads was counted once per workload. When a tag is re-pushed, its row shows the findings of the digest that runs.
+- **A crash-looping pod showed a green "Running" badge.** Pod status was the bare phase. It now reads like `kubectl get pods`: CrashLoopBackOff, ImagePullBackOff, ContainerCreating, OOMKilled, Completed, Init:1/2, Init:Error, Terminating, Evicted. Those pods now get a red or amber badge, the red row accent, and the right slice in the Overview's pod chart. Native sidecars (init containers with `restartPolicy: Always`) don't hold a pod in Init. The raw phase is still on each row as `phase`.
+- **The Pods table's Status column was off-screen at 1280 px wide.** It was the last column, so you had to scroll sideways to see it. It now follows Namespace, close to kubectl's column order.
+- **The tab strip above Workloads, Access Control and Argo CD** showed a thick scrollbar under the tabs once they overflowed, and the last tabs were cut off. It now scrolls with the mouse wheel and keyboard, fades on whichever side has more tabs, and keeps the selected tab in view.
+- **UI polish from a full screen-by-screen review:**
+  - **Status:**
+    - Ready/desired counts are coloured: "1/2" amber, "0/1" red with the row accent, "0/0" (scaled down) muted. Every Deployment used to look the same grey.
+    - The pod drawer shows the same status as the list (CrashLoopBackOff, not the phase).
+  - **Tables:**
+    - **Services** show Type as a chip (it isn't a status) and their Ports (`80/TCP, 443:30443/TCP`), never addresses.
+    - **Jobs and CronJobs** put Status after Namespace.
+    - The last column takes the spare width, so few-column tables (Deployments, Services) stay compact.
+    - Header checkboxes and numeric column labels line up with their cells.
+    - **Events:** messages wrap, so Count and Age fit at 1280 px. The page header matches the other list pages.
+  - **Headers and controls:**
+    - **One page-header height everywhere**, aligned with the sidebar brand block.
+    - **Top-bar controls** are all 32 px.
+    - **Namespace pickers** are 32 px with the app's chevron, replacing a text ▼ and the OS select arrow.
+  - **Bottom panel:** Logs and YAML no longer repeat its full-screen and close buttons. The YAML editor keeps its own Close, which asks before discarding edits.
+  - **Graphs (Topology and Argo CD):**
+    - The zoom controls and node icons keep their intended size.
+    - A fitted graph leaves room for the zoom controls, so nodes no longer sit under them.
+    - Long kind labels end with an ellipsis.
+  - **Argo CD:** the dashboard's sync and health badges line up in columns.
+  - **Fonts:** buttons and selects use the app font. The Preferences nav, the theme switch and the Topology chips fell back to Arial.
+  - **Preferences:**
+    - The Cloud Integrations buttons line up across cards.
+    - MCP code blocks fill the column and wrap, with Copy at the top right.
+    - The close button no longer shifts when the page scrolls.
+  - **Names and wording:**
+    - Kind names follow Kubernetes: ReplicaSets, ReplicationControllers, CronJobs, NetworkPolicies, ServiceAccounts, RoleBindings, ClusterRoles, ClusterRoleBindings.
+    - The dashboard's memory card says "allocatable", like the CPU card.
+  - **Rendering:**
+    - No white square where two scrollbars meet.
+    - No hairline under highlighted rows.
+- **Image names in the Security tables were unreadable.** Long registry prefixes (an ECR host is about 50 characters) filled the cell, so every row looked the same and the image's own name was cut off. Tables now show the image's name and tag first, with the registry and path dimmed underneath, and the whole reference on hover. AWS account IDs in registry hosts are masked (`••••8296.dkr.ecr…`) here, in the details drawer and in table captions.
+- **Replica Sets, Jobs, Cron Jobs and Replication Controllers were always empty.** These four views had no data source: the server never listed them, and their rows couldn't be opened in the details drawer or the YAML editor. They are now listed with useful columns:
+  - **Replica Sets / Replication Controllers:** desired, current, ready, controlling workload.
+  - **Jobs:** completions, duration, owning Cron Job, and Complete / Running / Failed / Suspended status.
+  - **Cron Jobs:** schedule, last run, active jobs, and Scheduled / Active / Suspended status.
+
+  Their details and YAML open like other resources. The list-row format now lives in one module shared by the server and demo mode (`lib/resource-format.mjs`), so the two can't drift apart again. Demo mode also lists a ReplicaSet for each Deployment.
 - **Deleting a line in the YAML editor now deletes it in the cluster.** Apply used server-side apply, which only removes fields KubePilot itself set. A field set by another tool stayed put: an annotation from `kubectl annotate` or an earlier `kubectl apply` came straight back after you removed it and applied. Both YAML editors (built-in and custom resources) now replace the object with the edited YAML, like `kubectl edit`/`replace`. It's still conditional on the version you loaded (a 409 "changed since you loaded it" otherwise), and the editor now hides `managedFields` like `kubectl get -o yaml`.
+- **Recent scan errors** in the Trivy progress banner showed only the start of a failed scan's output: INFO/WARN lines, cut off before the actual error. They now show the scanner's `FATAL`/`ERROR` line, without timestamps, and identical failures are listed once. The operator's routine, retried errors are left out, such as "failed marking old reports for immediate deletion … not found" after a rollout removes an old ReplicaSet. New hints cover scans running out of disk and image tags that no longer exist.
 - The Security Center's **Not Scanned** count compared the number of pods with the number of scanned images. It now counts the running images that have no report yet, matched per workload and container the way the operator scans.
 - **The pod terminal works without kubectl.** On a machine without kubectl it closed at once, with only "disconnected", because the server refused the session and a browser can't show why. It now opens the same interactive shell through KubePilot's built-in Kubernetes client: typing, colours, resizing, exit codes and the pod's default container all work. kubectl is still used when it's installed. If a session can't open, the terminal says why in plain words ("the pod or container no longer exists", "your user isn't allowed to open a shell in this pod (needs pods/exec)", "the cluster's API server didn't answer"), without hostnames or addresses.
 - "Some kinds could not be loaded: deployments (fetch failed)" now gives the reason ("connection timed out", "DNS lookup failed", …).

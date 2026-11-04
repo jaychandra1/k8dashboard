@@ -22,6 +22,9 @@ export default function useGraphViewport({
   panStep = 40,
   padding = 40,
   maxFitZoom = 1,
+  // Room kept free on the right for the zoom controls (.topo-controls: 18px
+  // inset + 44px wide), so a fitted graph never sits under them.
+  controlsGutter = 64,
 } = {}) {
   const initX = initial.x; const initY = initial.y;
   const [zoom, setZoom] = useState(1);
@@ -47,15 +50,15 @@ export default function useGraphViewport({
     const c = contentRef.current;
     const cs = canvasSize();
     if (!cs || !(c.width > 0) || !(c.height > 0)) { setZoom(1); setPan({ x: initX, y: initY }); return; }
-    const avail = { w: Math.max(50, cs.width - padding * 2), h: Math.max(50, cs.height - padding * 2) };
+    const avail = { w: Math.max(50, cs.width - padding * 2 - controlsGutter), h: Math.max(50, cs.height - padding * 2) };
     const z = clamp(+Math.min(avail.w / c.width, avail.h / c.height, maxFitZoom).toFixed(3), min, max);
     setZoom(z);
     setPan({
-      x: Math.round((cs.width - c.width * z) / 2),
+      x: Math.round((cs.width - controlsGutter - c.width * z) / 2),
       y: Math.round(Math.max(padding, (cs.height - c.height * z) / 2)),
     });
     userAdjusted.current = false;
-  }, [initX, initY, padding, maxFitZoom, min, max]);
+  }, [initX, initY, padding, maxFitZoom, min, max, controlsGutter]);
 
   /** Tell the viewport how big the drawn content is; refits unless the user has adjusted the view. */
   const setContent = useCallback((size) => {
