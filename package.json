@@ -33,8 +33,9 @@
     "dist:bundled-trivy": "npm run fetch:trivy && npm run build && electron-builder --publish never -c.extraResources.from=bin -c.extraResources.to=bin -c.extraResources.filter=trivy*"
   },
   "overrides": {
-    "qs": "^6.16.0",
-    "global-agent": "^4.1.3"
+    "qs": "^6.17.1",
+    "global-agent": "^4.1.3",
+    "minimatch@>=7.0.0 <11.0.1": "^11.0.4"
   },
   "dependencies": {
     "@aws-crypto/sha256-js": "^5.2.0",
@@ -45,24 +46,24 @@
     "@aws-sdk/credential-providers": "^3.1127.0",
     "@aws-sdk/signature-v4": "^3.370.0",
     "@kubernetes/client-node": "^2.0.0",
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@smithy/protocol-http": "^5.6.2",
     "@smithy/shared-ini-file-loader": "^4.7.2",
     "@smithy/signature-v4": "^5.7.3",
     "compression": "^1.8.1",
     "cors": "^2.8.5",
-    "express": "^4.18.2",
+    "express": "^4.22.3",
     "express-rate-limit": "^8.7.0",
     "js-yaml": "^4.1.0",
     "node-pty": "^1.1.0",
     "ws": "^8.21.1",
-    "zod": "^4.4.3"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@electron/fuses": "^2.1.3",
     "@eslint/js": "^9.39.5",
     "concurrently": "^8.2.0",
-    "electron": "^44.0.0",
+    "electron": "^44.10.2",
     "electron-builder": "^26.15.3",
     "eslint": "^9.39.5",
     "eslint-plugin-react": "^7.37.5",

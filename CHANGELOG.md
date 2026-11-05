@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Security
+- **All 35 dependency vulnerabilities GitHub reported are fixed** (`npm audit`: 0 in the app and in the client). Updates within the same major version only:
+  - **Shipped in the app:** Electron 44.0.0 → 44.10.2 (8 advisories, including the mitigation for the compromised eMudhra certificates); Express 4.22.3 with body-parser 1.20.9 (denial of service via a compressed request body) and qs 6.17.1; zod 4.6.7 (memory exhaustion on oversized input); the MCP SDK 1.32.2 with hono 4.13.16, @hono/node-server 2.1.6 and fast-uri 3.1.9; axios 1.21.0 with follow-redirects 1.16.2 (credential headers kept on cross-origin redirects).
+  - **Developer tools:** Vite 8.3.6, Vitest 5.1.0, jsdom 30.1.3 with undici 8.12.4.
+  - **Installer builder:** electron-builder 26.18.1 still depends on vulnerable `minimatch` versions, so `package.json` overrides only those (`minimatch@>=7.0.0 <11.0.1` → 11.0.4); the older, unaffected 3.x and 5.x copies are left alone.
+  - The minimum versions in `package.json` were raised to the fixed ones, so a fresh install can't fall back.
+
 ### Changed
 - **Clearer sidebar sections.** The sidebar now reads **Overview** (Dashboard, Nodes, Namespaces, Topology), **Resources** (Workloads, Network, Storage, Config), **Operations** (Events, Helm, Access Control) and **Integrations** (Argo CD, Security Center). The "Cluster" item is now **Dashboard**, in the sidebar and the command palette; its URL (`#/cluster`), icon and page are unchanged. Labels live in `client/src/lib/kinds.js` (`NAV_HEADINGS`, `navLabel`).
 - **KubePilot is now K8Board, with a new icon.** In the app and on the website the name is shown as a wordmark: "K", a small "8", "Board" (`client/src/components/ui/Brand.jsx`). It still reads and copies as "K8Board"; plain text (window titles, messages, files) uses "K8Board". The new name appears in:
