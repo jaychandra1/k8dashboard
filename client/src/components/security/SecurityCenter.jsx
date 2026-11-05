@@ -21,7 +21,7 @@ const TABS = [['overview', 'Overview'], ['images', 'Images'], ['resources', 'Res
 const TAB_KEYS = TABS.map(([k]) => k);
 const WHAT = { overview: 'vulnerability reports', images: 'vulnerability reports', resources: 'configuration audit reports', roles: 'RBAC assessment reports' };
 
-export default function SecurityCenter({ view, onViewChange, refreshSignal = 0, namespaces = [], onNavigate }) {
+export default function SecurityCenter({ view, onViewChange, refreshSignal = 0, namespaces = [], onNavigate, context }) {
   const id = useId();
   const [localTab, setLocalTab] = useState('overview');
   const tab = view && TAB_KEYS.includes(view) ? view : localTab;
@@ -190,14 +190,14 @@ export default function SecurityCenter({ view, onViewChange, refreshSignal = 0, 
                 <>
                   {tab === 'overview' && <VulnTable vuln={vuln} ns={ns} q={q} onSelect={(d) => setDetail({ type: 'image', data: d })} selected={detail?.type === 'image' ? detail.data : null} criticalOnly refetching={activeReq.refetching} />}
                   {tab === 'images' && <VulnTable vuln={vuln} ns={ns} q={q} onSelect={(d) => setDetail({ type: 'image', data: d })} selected={detail?.type === 'image' ? detail.data : null} refetching={activeReq.refetching} />}
-                  {tab === 'resources' && (scanMode ? <OperatorNote feature="Resource best-practice checks" /> : <ChecksTable data={configReq.data} ns={ns} q={q} onSelect={(d) => setDetail({ type: 'checks', data: d })} selected={detail?.type === 'checks' ? detail.data : null} label="resource" refetching={configReq.refetching} />)}
-                  {tab === 'roles' && (scanMode ? <OperatorNote feature="RBAC risk analysis" /> : <ChecksTable data={rbacReq.data} ns={ns} q={q} onSelect={(d) => setDetail({ type: 'checks', data: d })} selected={detail?.type === 'checks' ? detail.data : null} label="role" refetching={rbacReq.refetching} />)}
+                  {tab === 'resources' && (scanMode ? <OperatorNote feature="Resource best-practice checks" /> : <ChecksTable data={configReq.data} ns={ns} q={q} onSelect={(d) => setDetail({ type: 'checks', data: d, which: 'config' })} selected={detail?.type === 'checks' ? detail.data : null} label="resource" refetching={configReq.refetching} />)}
+                  {tab === 'roles' && (scanMode ? <OperatorNote feature="RBAC risk analysis" /> : <ChecksTable data={rbacReq.data} ns={ns} q={q} onSelect={(d) => setDetail({ type: 'checks', data: d, which: 'rbac' })} selected={detail?.type === 'checks' ? detail.data : null} label="role" refetching={rbacReq.refetching} />)}
                 </>
               )}
             </>
           )}
         </div>
-        {detail && <FindingDrawer detail={detail} onClose={() => setDetail(null)} onNavigate={onNavigate} />}
+        {detail && <FindingDrawer detail={detail} onClose={() => setDetail(null)} onNavigate={onNavigate} context={context} />}
       </div>
     </div>
   );

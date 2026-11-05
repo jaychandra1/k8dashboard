@@ -706,7 +706,37 @@ function parseArgoApp(a) {
 const emptySummary = () => ({ CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, UNKNOWN: 0 });
 const sevTotal = (s = {}) => (s.CRITICAL || 0) + (s.HIGH || 0) + (s.MEDIUM || 0) + (s.LOW || 0) + (s.UNKNOWN || 0);
 
-function vulnImage(image, summary, workloads, vulns, extra = {}) {
+// Base-image (Debian) packages in the demo data; everything else is an
+// application dependency (a Go binary), as Trivy classifies them.
+const DEMO_OS_PKGS = new Set(['libssl3', 'libcurl4', 'glibc', 'xz-utils', 'postgresql']);
+const demoClass = (v) => (DEMO_OS_PKGS.has(v.pkg)
+  ? { class: 'os-pkgs', packageType: 'debian', target: 'image (debian 12.5)', ...v }
+  : { class: 'lang-pkgs', packageType: 'gobinary', packagePath: `usr/local/bin/${v.pkg === 'grafana' ? 'grafana' : 'app'}`, ...v });
+
+// Advisory text for the demo findings (the report download's details).
+const DEMO_ADVISORIES = {
+  'CVE-2024-3094': ['Malicious code was hidden in the upstream release tarballs of xz 5.6.0 and 5.6.1. The build process injects it into liblzma, which can let an attacker interfere with SSH authentication on affected systems.', '2024-03-29', 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H'],
+  'CVE-2023-44487': ['The HTTP/2 protocol allows a client to cancel requests immediately after opening them. Repeating this quickly ("Rapid Reset") makes the server do work for streams that never complete, exhausting its resources.', '2023-10-10', 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H'],
+  'CVE-2024-24790': ['The Is methods of net/netip.Addr (IsPrivate, IsLoopback and others) did not handle IPv4-mapped IPv6 addresses as expected, so address checks could return the wrong answer.', '2024-06-04', 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N'],
+  'CVE-2024-5535': ['Calling SSL_select_next_proto with an empty supported-client protocol list can read past the end of a buffer, which may leak memory contents to a peer or crash the process.', '2024-06-27', 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:H'],
+  'CVE-2024-2398': ['When an HTTP/2 server pushes too many headers, libcurl fails to free memory it allocated for them, so a malicious server can make a client leak memory.', '2024-03-27', 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H'],
+  'CVE-2024-6119': ['Checking certain X.509 names (otherName subject alternative names) can read an invalid memory address, crashing applications that verify certificates.', '2024-09-03', 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H'],
+  'CVE-2024-2961': ['iconv() in glibc can write past the end of its output buffer when converting to the ISO-2022-CN-EXT character set, which can crash an application or overwrite an adjacent variable.', '2024-04-17', 'CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H'],
+  'CVE-2023-6246': ['A heap-based buffer overflow in __vsyslog_internal (used by syslog and vsyslog) can be triggered by a long program name, letting a local user gain root privileges.', '2024-01-31', 'CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H'],
+  'CVE-2024-0985': ['A late privilege drop in REFRESH MATERIALIZED VIEW CONCURRENTLY lets an object creator run SQL functions as the command issuer, for example a superuser.', '2024-02-08', 'CVSS:3.1/AV:N/AC:H/PR:L/UI:R/S:U/C:H/I:H/A:H'],
+  'CVE-2024-1313': ['Users outside an organization could delete a snapshot that belongs to another organization by guessing its key, because the snapshot API did not check which organization the user belongs to.', '2024-03-26', 'CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:H/A:N'],
+};
+const demoDetail = (v) => {
+  const [description, publishedDate, cvssVector] = DEMO_ADVISORIES[v.id] || [`${v.title}.`, '', ''];
+  return {
+    id: v.id, pkg: v.pkg, installedVersion: v.installedVersion, description, publishedDate, lastModifiedDate: publishedDate,
+    ...(cvssVector ? { cvssVector, cvssScore: v.score, cvssSource: 'nvd' } : {}),
+    links: [...new Set([v.link || `https://nvd.nist.gov/vuln/detail/${v.id}`, `https://avd.aquasec.com/nvd/${v.id.toLowerCase()}`])],
+  };
+};
+
+function vulnImage(image, summary, workloads, vulnList, extra = {}) {
+  const vulns = vulnList.map(demoClass);
   const active = extra.active !== false;
   const g = {
     image, repository: image.split(':')[0], tag: image.split(':')[1] || '', digest: '', registry: image.includes('/') ? image.split('/')[0] : '',
@@ -786,9 +816,9 @@ function buildConfigChecks() {
   const mk = (kind, name, namespace, summary, checks) => ({ kind, name, namespace, createdAt: ago(200), scannedAt: ago(180), scanner: 'Trivy 0.50.1', labels: 3, summary: { ...emptySummary(), ...summary }, checks });
   const resources = [
     mk('Deployment', 'payments', 'shop', { HIGH: 1, MEDIUM: 2 }, [
-      { id: 'KSV012', title: 'Runs as root user', severity: 'HIGH', category: 'Security', message: 'Container should not run as root; set runAsNonRoot: true', remediation: 'Add securityContext.runAsNonRoot: true' },
-      { id: 'KSV018', title: 'No memory limit set', severity: 'MEDIUM', category: 'Resources', message: 'Container does not define a memory limit', remediation: 'Set resources.limits.memory' },
-      { id: 'KSV020', title: 'Runs with a low user ID', severity: 'MEDIUM', category: 'Security', message: 'Force running with UID > 10000', remediation: 'Set runAsUser > 10000' },
+      { id: 'KSV012', title: 'Runs as root user', severity: 'HIGH', category: 'Security', message: 'Container should not run as root; set runAsNonRoot: true', remediation: 'Add securityContext.runAsNonRoot: true', description: 'A container that runs as root can do more damage if it is compromised, and makes a container breakout far more serious. Run it as a non-root user.' },
+      { id: 'KSV018', title: 'No memory limit set', severity: 'MEDIUM', category: 'Resources', message: 'Container does not define a memory limit', remediation: 'Set resources.limits.memory', description: 'Without a memory limit, one container can use all of a node\'s memory and get other workloads evicted, or be used to deny service to the node.' },
+      { id: 'KSV020', title: 'Runs with a low user ID', severity: 'MEDIUM', category: 'Security', message: 'Force running with UID > 10000', remediation: 'Set runAsUser > 10000', description: 'Low user IDs can collide with users on the host. Running with a high UID lowers the risk if the container escapes to the node.' },
     ]),
     mk('Deployment', 'checkout', 'shop', { HIGH: 1, LOW: 1 }, [
       { id: 'KSV001', title: 'Can elevate privileges', severity: 'HIGH', category: 'Security', message: 'allowPrivilegeEscalation should be false', remediation: 'Set securityContext.allowPrivilegeEscalation: false' },
@@ -807,8 +837,8 @@ function buildRbacChecks() {
   const mk = (kind, name, namespace, summary, checks) => ({ kind, name, namespace, createdAt: ago(200), scannedAt: ago(180), scanner: 'Trivy 0.50.1', labels: 2, summary: { ...emptySummary(), ...summary }, checks });
   const resources = [
     mk('ClusterRole', 'shop-deployer', '', { HIGH: 1, MEDIUM: 1 }, [
-      { id: 'KSV045', title: 'Wildcard verbs on resources', severity: 'HIGH', category: 'RBAC', message: 'ClusterRole grants "*" verbs on deployments/pods', remediation: 'Grant only the specific verbs required' },
-      { id: 'KSV041', title: 'Manage secrets', severity: 'MEDIUM', category: 'RBAC', message: 'Role can read secrets cluster-wide', remediation: 'Scope secret access to specific namespaces' },
+      { id: 'KSV045', title: 'Wildcard verbs on resources', severity: 'HIGH', category: 'RBAC', message: 'ClusterRole grants "*" verbs on deployments/pods', remediation: 'Grant only the specific verbs required', description: 'A wildcard verb grants every action, including ones added in later Kubernetes versions. List only the verbs the subject needs.' },
+      { id: 'KSV041', title: 'Manage secrets', severity: 'MEDIUM', category: 'RBAC', message: 'Role can read secrets cluster-wide', remediation: 'Scope secret access to specific namespaces', description: 'Reading secrets in every namespace exposes all credentials stored in the cluster, including service account tokens.' },
     ]),
     mk('Cluster', 'cluster-admin-binding', '', { CRITICAL: 1 }, [
       { id: 'KSV044', title: 'system:masters group binding', severity: 'CRITICAL', category: 'RBAC', message: 'Binding grants cluster-admin to system:masters', remediation: 'Avoid binding cluster-admin broadly' },
@@ -1308,6 +1338,11 @@ export function handle(req, res) {
         return json({ ...built, ...vulnTotals(images, null), notScanned: built.notScanned });
       }
       return json(built);
+    }
+    if (method === 'GET' && p === '/api/security/vulnerabilities/details') {
+      const img = buildSecurityVulns().images.find((g) => g.image === q.image);
+      if (!img) return json({ image: q.image || '', source: 'operator', available: false, details: [], remediation: null });
+      return json({ image: img.image, source: 'operator', available: true, details: img.vulnerabilities.map(demoDetail), remediation: img.remediation });
     }
     if (method === 'GET' && p === '/api/security/checks') {
       return json(q.kind === 'rbac' ? buildRbacChecks() : buildConfigChecks());

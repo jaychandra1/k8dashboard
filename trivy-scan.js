@@ -24,6 +24,7 @@ import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { childEnv } from './lib/child-env.mjs';
+import { cliDetail, uniqueDetails } from './lib/vuln-details.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -255,7 +256,9 @@ export function assertImageRef(image) {
   return image;
 }
 
-// Scan one image → { os, summary, vulnerabilities[] } in our model's shape.
+// Scan one image → { os, summary, vulnerabilities[], details[] } in our model's
+// shape. `details` (descriptions, dates, CVSS vectors, references) is kept apart
+// from the list: only the downloaded report reads it.
 export async function scanImage(image) {
   assertImageRef(image);
   const args = ['image', '--quiet', '--format', 'json', '--scanners', 'vuln,secret', '--timeout', '5m', '--', image];
@@ -264,6 +267,7 @@ export async function scanImage(image) {
   const summary = emptySummary();
   const seen = new Set();
   const vulnerabilities = [];
+  const details = [];
   const secretsList = [];
   for (const r of (rep.Results || [])) {
     for (const v of (r.Vulnerabilities || [])) {
@@ -276,7 +280,10 @@ export async function scanImage(image) {
         installedVersion: v.InstalledVersion || '', fixedVersion: v.FixedVersion || '',
         title: v.Title || v.Description || '', link: v.PrimaryURL || (v.References || [])[0] || '',
         score: v.CVSS?.nvd?.V3Score || v.CVSS?.redhat?.V3Score,
+        // base image (os-pkgs) vs application dependency (lang-pkgs), and where
+        class: r.Class || '', packageType: r.Type || '', packagePath: v.PkgPath || '', target: r.Target || '',
       });
+      details.push(cliDetail(v));
     }
     for (const s of (r.Secrets || [])) {
       secretsList.push({ ruleID: s.RuleID || '', severity: (s.Severity || 'UNKNOWN').toUpperCase(), title: s.Title || '', target: r.Target || '', line: s.StartLine });
@@ -285,7 +292,7 @@ export async function scanImage(image) {
   const cfg = rep.Metadata?.ImageConfig || {};
   const platform = [cfg.os, cfg.architecture].filter(Boolean).join('/');
   const os = rep.Metadata?.OS ? `${rep.Metadata.OS.Family || ''} ${rep.Metadata.OS.Name || ''}`.trim() : '';
-  return { os, platform, summary, secrets: secretsList.length, secretsList, vulnerabilities };
+  return { os, platform, summary, secrets: secretsList.length, secretsList, vulnerabilities, details: uniqueDetails(details) };
 }
 
 // ---- scan state, one per kube context --------------------------------------
@@ -293,7 +300,7 @@ export async function scanImage(image) {
 // can report it; a scan of cluster A never blocks starting one on cluster B.
 const idleState = (context) => ({
   running: false, done: false, phase: 'idle', context: context ?? null, total: 0, scanned: 0, startedAt: null, finishedAt: null,
-  error: null, images: null, summary: emptySummary(), results: { ok: 0, vulnerable: 0 }, cancelled: false,
+  error: null, images: null, details: null, summary: emptySummary(), results: { ok: 0, vulnerable: 0 }, cancelled: false,
 });
 export const scanStates = new Map(); // context → state
 export function getScanState(context) {
@@ -308,7 +315,7 @@ export let scanState = getScanState(null);
 function resetScan(state) {
   Object.assign(state, {
     running: true, done: false, phase: 'preparing', total: 0, scanned: 0, startedAt: new Date().toISOString(),
-    finishedAt: null, error: null, images: null, summary: emptySummary(), results: { ok: 0, vulnerable: 0 }, cancelled: false,
+    finishedAt: null, error: null, images: null, details: {}, summary: emptySummary(), results: { ok: 0, vulnerable: 0 }, cancelled: false,
   });
 }
 
@@ -348,6 +355,7 @@ export async function startScan(byImage, context) {
             summary: scan.summary, criticalCount: scan.summary.CRITICAL, workloads, vulnerabilities: scan.vulnerabilities,
             secrets: scan.secrets || 0, secretsList: scan.secretsList || [], scanError: scan.error,
           });
+          state.details[image] = scan.details || [];
           state.scanned++;
           // Stream partial results so the UI fills in while the scan runs.
           out.sort((a, b) => (b.summary.CRITICAL - a.summary.CRITICAL) || (b.summary.HIGH - a.summary.HIGH));
@@ -368,7 +376,7 @@ export async function startScan(byImage, context) {
       const results = { vulnerable, ok: out.length - vulnerable };
       Object.assign(state, { running: false, done: true, phase: 'done', finishedAt, images: out, summary: total, results });
       // Persist so the results are there after an app restart.
-      persistScan(context, { images: out, summary: total, results, scanned: state.scanned, total: state.total, finishedAt });
+      persistScan(context, { images: out, details: state.details, summary: total, results, scanned: state.scanned, total: state.total, finishedAt });
     } catch (e) {
       Object.assign(state, { running: false, done: true, phase: state.cancelled ? 'cancelled' : 'error', error: (e.message || 'scan failed').split('\n')[0], finishedAt: new Date().toISOString() });
     }

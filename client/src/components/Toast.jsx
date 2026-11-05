@@ -24,6 +24,11 @@ export function useToast() {
   return ctx;
 }
 
+/** Like useToast, but null outside a <ToastProvider> (components also rendered on their own). */
+export function useOptionalToast() {
+  return useContext(ToastContext);
+}
+
 const AUTO_DISMISS = { success: 3500, info: 4500, warning: 6000, error: 0 }; // 0 = sticky
 const ICON = { success: 'check', info: 'details', warning: 'warning', error: 'warning' };
 

@@ -52,6 +52,7 @@ import { formatResource } from './lib/resource-format.mjs';
 import { capacityTotals, nodeUsage } from './lib/capacity.mjs';
 import { filterEvents, parseWorkload, workloadScope } from './lib/event-scope.mjs';
 import { failureHints, operatorLogErrors, remediationFor, reportTarget, revisionChanges, runningReportCheck, scanCoverage, scanUnits, severityCounts } from './lib/security-insights.mjs';
+import { operatorDetail, uniqueDetails } from './lib/vuln-details.mjs';
 import { createSsoLogin, adoptSsoLogin, refreshSsoToken, profileSsoInfo, sessionsForProfiles, sessionTokenState, awsConfigPath } from './lib/aws-sso.mjs';
 
 // node-pty powers the pod terminal (a real PTY bridged to `kubectl exec`). Load
@@ -3035,6 +3036,51 @@ app.get('/api/security/vulnerabilities', async (req, res) => {
   }
 });
 
+// One image's findings in full, for the downloadable vulnerability report:
+// each finding's description, published / modified dates, CVSS vector and
+// reference links (left out of /api/security/vulnerabilities, where they would
+// be most of the payload), and the image's remediation summary. From the Trivy
+// Operator's reports when it is installed, else the built-in scan.
+//   GET /api/security/vulnerabilities/details?image=<ref>[&namespace=<ns>]
+//   → { image, source: 'operator' | 'builtin', available, details[], remediation }
+const IMAGE_REF = /^[\w.\-/:@+]{1,512}$/;
+app.get('/api/security/vulnerabilities/details', async (req, res) => {
+  const image = typeof req.query.image === 'string' ? req.query.image : '';
+  if (!IMAGE_REF.test(image)) return bad(res, 'image');
+  const ns = typeof req.query.namespace === 'string' && req.query.namespace !== 'all' ? req.query.namespace : '';
+  if (ns && !isDnsLabel(ns)) return bad(res, 'namespace');
+  try {
+    const items = await listTrivy('vulnerabilityreports');
+    if (items !== null) {
+      const reports = nsReports(items, ns || null).filter((r) => trivyImageOf(r.report) === image);
+      const vulns = reports.flatMap((r) => r.report?.vulnerabilities || []);
+      const seen = new Set();
+      const list = vulns.map(trivyVuln).filter((v) => {
+        const k = `${v.id}|${v.pkg}|${v.installedVersion}`;
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+      return res.json({
+        image, source: 'operator', available: reports.length > 0,
+        details: uniqueDetails(vulns.map(operatorDetail)), remediation: remediationFor(list),
+      });
+    }
+    // The built-in scan: live for this context, else the one saved on disk.
+    const s = scanStateFor(currentContext);
+    const live = (!s.context || s.context === currentContext) && s.images ? s : null;
+    const scan = live || await loadScanFor(currentContext);
+    const img = (scan?.images || []).find((g) => g.image === image);
+    const details = scan?.details?.[image];
+    res.json({
+      image, source: 'builtin', available: Array.isArray(details),
+      details: Array.isArray(details) ? details : [], remediation: img ? remediationFor(img.vulnerabilities || []) : null,
+    });
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
 // Scan progress — the operator scans in the background and reports nothing of
 // its own: is it running, how many scans are in flight, how much of what runs
 // in the cluster has a report, and why scans fail (scan job conditions, scan
@@ -3141,6 +3187,10 @@ app.get('/api/security/checks', async (req, res) => {
       const failed = (rep.checks || []).filter((c) => c.success === false).map((c) => ({
         id: c.checkID || c.id || '', title: c.title || '', severity: sev(c.severity),
         category: c.category || '', message: (c.messages || [])[0] || c.description || '', remediation: c.remediation || '',
+        // In full for the downloadable report: every message (one per
+        // container / rule that failed) and the check's description.
+        messages: (Array.isArray(c.messages) ? c.messages : []).filter((m) => typeof m === 'string').slice(0, 50).map((m) => m.slice(0, 1000)),
+        description: typeof c.description === 'string' ? c.description.slice(0, 2000) : '',
       })).sort((a, b) => order[a.severity] - order[b.severity]);
       if (!failed.length) continue;
       resources.push({

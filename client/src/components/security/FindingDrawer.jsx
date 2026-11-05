@@ -13,6 +13,7 @@ import { navToNamespace, navToPods, navToResource } from '../shared/nav';
 import { withKeys } from '../shared/keys';
 import { SevPill, SevFilter, sevSegments, sevTotal, worstSeverity } from './severity';
 import Remediation from './Remediation';
+import ReportDownload from './ReportDownload';
 import Badge from '../ui/Badge';
 import { displayImage, splitImage } from './ImageName';
 
@@ -84,7 +85,7 @@ function LinkButton({ onClick, children }) {
  * Escape (or the close button, or an outside click) closes it and focus
  * returns to where it was.
  */
-export default function FindingDrawer({ detail, onClose, onNavigate }) {
+export default function FindingDrawer({ detail, onClose, onNavigate, context }) {
   const id = useId();
   const ref = useRef(null);
   const isImage = detail.type === 'image';
@@ -117,9 +118,16 @@ export default function FindingDrawer({ detail, onClose, onNavigate }) {
         <h2 id={`${id}-title`} className="sec-drawer-title">
           {isImage ? <><span className="sec-kind">OciImage</span> {displayImage(d.image)}</> : <><span className="sec-kind">{d.kind}</span> {d.name}</>}
         </h2>
-        <Tooltip content="Close">
-          <Button variant="ghost" size="sm" iconOnly icon="close" ariaLabel="Close finding details" className="sec-drawer-x" onClick={onClose} />
-        </Tooltip>
+        <div className="sec-drawer-actions">
+          <ReportDownload
+            subject={isImage ? { type: 'image', data: d } : { type: 'checks', data: d, which: detail.which }}
+            context={context}
+            disabled={isImage && !!d.pending}
+          />
+          <Tooltip content="Close">
+            <Button variant="ghost" size="sm" iconOnly icon="close" ariaLabel="Close finding details" className="sec-drawer-x" onClick={onClose} />
+          </Tooltip>
+        </div>
       </div>
       <div className="sec-drawer-body">
         {isImage

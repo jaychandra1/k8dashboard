@@ -146,6 +146,14 @@ Select several rows with the checkboxes to run **bulk Restart / Delete** from th
 - **Custom Resources** — a lazy-loaded tree of CRDs → instances (arrow keys expand/collapse), with YAML detail.
 - **Argo CD** (auto-detected) — dashboard, applications with sync/health filters, resource tree, history, projects, application sets, repositories, clusters. Sync, Refresh and Delete ask for confirmation; cascade delete requires typing the app name.
 - **Security Center** — image CVEs, configuration and RBAC checks, exposed secrets. Reads Trivy Operator reports if present, otherwise runs Trivy (downloaded on first use, see §1.1). Start a scan from the Scan panel; progress is announced and polled while the view is visible.
+  **Download a report** to share with the team that owns an image, a resource or a role: open it, then the **download icon** in the drawer's header (next to ×):
+  - **PDF report** (desktop app): A4, page numbers, ready to attach to an email or ticket.
+  - **HTML report**: one self-contained file that opens in any browser (print it to save a PDF from the browser version).
+  - **CSV spreadsheet**: one row per finding, for Excel or a Jira import.
+
+  The reports carry no product name or logo. A resource (Resources tab) gets a **configuration audit report** and a role (Roles tab) an **RBAC assessment report**: an executive summary with the overall risk, the resource's details, what to change for each failed check, a card for each critical and high one (every finding, the check's description and how to fix it), the full table and an appendix. An image gets a **vulnerability report**, below.
+
+  The report always holds **every** finding, whatever the drawer is filtered to: an executive summary with the overall risk and the counts per severity, image details, recommended actions with the full package-upgrade list, a detail card for each critical and high CVE (description, CVSS score and vector, published date, references), the complete findings table, exposed secrets (where, never the value), what changed since the previous version, and an appendix on severity ratings and how the scan was done. Account IDs, IP addresses and internal host names are masked, as in the app; the image digest still identifies it exactly. The file is named after the image, e.g. `vulnerability-report_bo-backend_release-359_2026-11-05.pdf`.
 - **Events** — cluster or namespace events with links to the involved objects.
 
 ### 1.7 Keyboard shortcuts

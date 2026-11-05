@@ -145,13 +145,14 @@ if (tokenHelperAt !== -1) {
   return;
 }
 
-const { BrowserWindow, shell, dialog, Menu, session, utilityProcess } = require('electron');
+const { BrowserWindow, shell, dialog, Menu, session, utilityProcess, ipcMain } = require('electron');
 const os = require('os');
 const net = require('net');
 const http = require('http');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 const { createUpdateHost } = require('./update-host.cjs');
+const { registerReportPdf } = require('./report-pdf.cjs');
 
 const PREFERRED_PORT = 3001; // used when free — keeps documented MCP URLs stable
 // Microsoft Store → Library / updates (Help → Check for Updates on a Store install).
@@ -541,8 +542,10 @@ function createWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      // No preload script exists and the renderer is a plain web app talking
-      // to the backend over HTTP, so the Chromium sandbox can stay on.
+      // The renderer is a plain web app talking to the backend over HTTP. Its
+      // only bridge to this process is the sandboxed preload's report-to-PDF
+      // call (electron/preload.cjs), so the Chromium sandbox stays on.
+      preload: path.join(__dirname, 'preload.cjs'),
       sandbox: true,
       webviewTag: false,
       devTools: !app.isPackaged,
@@ -600,8 +603,16 @@ function createWindow() {
   });
 }
 
+// Report PDFs (electron/report-pdf.cjs): only the app's own page — the main
+// window's top frame on the backend origin — may ask for one.
+function isAppPage(event) {
+  const wc = mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null;
+  const frame = event?.senderFrame;
+  return !!wc && event.sender === wc && !!frame && frame === wc.mainFrame && isBackendUrl(frame.url);
+}
+
 // --- Native "Clusters" menu -----------------------------------------------
-// The main process has no preload/IPC. It reads the same backend the renderer
+// Apart from the report-PDF call, the main process has no IPC. It reads the same backend the renderer
 // uses (with the token it generated) and tells the renderer what happened via
 // a DOM event the app listens for:
 //   window.dispatchEvent(new CustomEvent('kubepilot:host', { detail }))
@@ -803,6 +814,7 @@ if (!gotLock) {
     session.defaultSession.setPermissionCheckHandler(() => false);
 
     Menu.setApplicationMenu(buildMenu());
+    registerReportPdf({ ipcMain, BrowserWindow, session, isAllowedSender: isAppPage });
     boot();
 
     app.on('activate', () => {

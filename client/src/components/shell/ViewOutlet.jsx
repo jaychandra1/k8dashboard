@@ -86,7 +86,7 @@ export default function ViewOutlet({
     case 'accessControl':
       return <AccessControl onNavigate={nav} refreshSignal={refreshSignal} />;
     case 'security':
-      return <SecurityCenter namespaces={namespaces} onNavigate={nav} view={subView} onViewChange={onSubViewChange} refreshSignal={refreshSignal} />;
+      return <SecurityCenter namespaces={namespaces} onNavigate={nav} view={subView} onViewChange={onSubViewChange} refreshSignal={refreshSignal} context={configStatus?.currentContext} />;
     case 'argocd':
       return <ArgoCD onNavigate={nav} view={subView} onViewChange={onSubViewChange} refreshSignal={refreshSignal} />;
     case 'events':

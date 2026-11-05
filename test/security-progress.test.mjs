@@ -3,6 +3,7 @@
 // running in the cluster and the VulnerabilityReports.
 //   GET /api/security/progress        what the operator is doing, and why scans fail
 //   GET /api/security/vulnerabilities coverage per (workload, container) + remediation
+//   GET /api/security/vulnerabilities/details  one image's advisory details (report download)
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -28,7 +29,12 @@ const REPORTS = [{
     artifact: { repository: 'acme/web', tag: '1.2' }, os: { family: 'alpine', name: '3.18.0' },
     summary: { criticalCount: 1, highCount: 1, mediumCount: 0, lowCount: 0 },
     vulnerabilities: [
-      { vulnerabilityID: 'CVE-2026-1', severity: 'CRITICAL', resource: 'openssl', installedVersion: '3.1.0-r0', fixedVersion: '3.1.4-r0', class: 'os-pkgs', title: 'openssl bug' },
+      {
+        vulnerabilityID: 'CVE-2026-1', severity: 'CRITICAL', resource: 'openssl', installedVersion: '3.1.0-r0', fixedVersion: '3.1.4-r0', class: 'os-pkgs', title: 'openssl bug',
+        description: 'A crafted certificate makes the parser read past its buffer.', publishedDate: '2026-01-10T00:00:00Z', lastModifiedDate: '2026-02-01T00:00:00Z',
+        primaryLink: 'https://avd.aquasec.com/nvd/cve-2026-1', links: ['https://nvd.nist.gov/vuln/detail/CVE-2026-1', 'javascript:alert(1)'],
+        cvss: { nvd: { V3Vector: 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H', V3Score: 9.8 } }, cvsssource: 'nvd',
+      },
       { vulnerabilityID: 'CVE-2026-2', severity: 'HIGH', resource: 'openssl', installedVersion: '3.1.0-r0', fixedVersion: '3.1.2-r0', class: 'os-pkgs' },
     ],
   },
@@ -44,6 +50,19 @@ const REPORTS = [{
       { vulnerabilityID: 'CVE-2026-1', severity: 'CRITICAL', resource: 'openssl', installedVersion: '3.1.0-r0', fixedVersion: '3.1.4-r0' },
       { vulnerabilityID: 'CVE-2026-2', severity: 'HIGH', resource: 'openssl', installedVersion: '3.1.0-r0', fixedVersion: '3.1.2-r0' },
       { vulnerabilityID: 'CVE-2025-9', severity: 'CRITICAL', resource: 'libcurl', installedVersion: '8.1.0-r0', fixedVersion: '8.4.0-r0' },
+    ],
+  },
+}];
+const CONFIG_AUDIT = [{
+  metadata: { namespace: 'shop', name: 'replicaset-web-7f9', labels: labels('shop', 'ReplicaSet', 'web-7f9', ''), creationTimestamp: '2026-10-23T09:00:00Z' },
+  report: {
+    updateTimestamp: '2026-10-23T09:31:00Z', scanner: { name: 'Trivy', version: '0.58.1' },
+    summary: { criticalCount: 0, highCount: 1, mediumCount: 0, lowCount: 0 },
+    checks: [
+      { checkID: 'KSV012', title: 'Runs as root user', severity: 'HIGH', category: 'Kubernetes Security Check', success: false,
+        description: 'Force the running image to run as a non-root user.', remediation: 'Set securityContext.runAsNonRoot to true.',
+        messages: ["Container 'app' of ReplicaSet 'web-7f9' should set 'securityContext.runAsNonRoot' to true", "Container 'sidecar' of ReplicaSet 'web-7f9' should set 'securityContext.runAsNonRoot' to true"] },
+      { checkID: 'KSV011', title: 'CPU not limited', severity: 'LOW', category: 'Kubernetes Security Check', success: true },
     ],
   },
 }];
@@ -83,6 +102,7 @@ function fakeKubeApi() {
       case '/apis/apps/v1/replicasets': return list(REPLICA_SETS);
       case '/apis/aquasecurity.github.io/v1alpha1/vulnerabilityreports': return list(REPORTS);
       case '/apis/aquasecurity.github.io/v1alpha1/exposedsecretreports': return list([]);
+      case '/apis/aquasecurity.github.io/v1alpha1/configauditreports': return list(CONFIG_AUDIT);
       default: return json({ kind: 'Status', code: 404 }, 404);
     }
   });
@@ -165,6 +185,53 @@ contexts:
     assert.deepEqual(c.introduced, []);
     assert.deepEqual(v.resolved, { total: 1, bySeverity: { CRITICAL: 1, HIGH: 0, MEDIUM: 0, LOW: 0, UNKNOWN: 0 }, deployments: 1 });
     assert.equal(v.introduced.total, 0);
+  });
+
+  test('details: one image\'s advisory text, dates, CVSS vector and http(s) references, plus its remediation', async () => {
+    const r = await srv.authed('/api/security/vulnerabilities/details?image=acme/web:1.2');
+    assert.equal(r.status, 200);
+    const d = await r.json();
+    assert.deepEqual([d.image, d.source, d.available], ['acme/web:1.2', 'operator', true]);
+    assert.equal(d.details.length, 2);
+    const c = d.details.find((x) => x.id === 'CVE-2026-1');
+    assert.deepEqual(c, {
+      id: 'CVE-2026-1', pkg: 'openssl', installedVersion: '3.1.0-r0',
+      description: 'A crafted certificate makes the parser read past its buffer.',
+      publishedDate: '2026-01-10T00:00:00Z', lastModifiedDate: '2026-02-01T00:00:00Z',
+      cvssVector: 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H', cvssScore: 9.8, cvssSource: 'nvd',
+      links: ['https://avd.aquasec.com/nvd/cve-2026-1', 'https://nvd.nist.gov/vuln/detail/CVE-2026-1'],
+    });
+    assert.deepEqual(d.remediation.upgrades.map((u) => [u.pkg, u.upgradeTo]), [['openssl', '3.1.4-r0']]);
+    // Another image's reports are not mixed in.
+    const old = await (await srv.authed('/api/security/vulnerabilities/details?image=acme/web:1.1')).json();
+    assert.deepEqual(old.details.map((x) => x.id).sort(), ['CVE-2025-9', 'CVE-2026-1', 'CVE-2026-2']);
+    const none = await (await srv.authed('/api/security/vulnerabilities/details?image=acme/nope:1')).json();
+    assert.deepEqual([none.available, none.details], [false, []]);
+  });
+
+  test('details: the image reference and namespace are validated', async () => {
+    for (const q of ['', 'image=', 'image=a%20b', `image=${'a'.repeat(513)}`, 'image=acme/web:1.2&namespace=Bad_NS']) {
+      const r = await srv.authed(`/api/security/vulnerabilities/details?${q}`);
+      assert.equal(r.status, 400, q);
+    }
+  });
+
+  test('checks: failed checks only, each with every message and its description (for the report)', async () => {
+    const c = await (await srv.authed('/api/security/checks?kind=config')).json();
+    assert.equal(c.resources.length, 1);
+    const [r] = c.resources;
+    assert.deepEqual([r.kind, r.name, r.namespace, r.scanner], ['ReplicaSet', 'web-7f9', 'shop', 'Trivy 0.58.1']);
+    assert.equal(r.checks.length, 1);
+    assert.deepEqual(r.checks[0], {
+      id: 'KSV012', title: 'Runs as root user', severity: 'HIGH', category: 'Kubernetes Security Check',
+      message: "Container 'app' of ReplicaSet 'web-7f9' should set 'securityContext.runAsNonRoot' to true",
+      remediation: 'Set securityContext.runAsNonRoot to true.',
+      messages: [
+        "Container 'app' of ReplicaSet 'web-7f9' should set 'securityContext.runAsNonRoot' to true",
+        "Container 'sidecar' of ReplicaSet 'web-7f9' should set 'securityContext.runAsNonRoot' to true",
+      ],
+      description: 'Force the running image to run as a non-root user.',
+    });
   });
 
   test('a namespace filter narrows coverage', async () => {
