@@ -28,6 +28,12 @@
 //      nested Mach-O first (frameworks, helpers, dylibs, the unpacked `.node`
 //      addon) and then the app bundle, inside-out, as codesign requires.
 //
+//   3. Linux: a `kubepilot` symlink next to the `k8board` executable. Before
+//      the rename the program was /opt/K8Board/kubepilot, and a KubePilot .deb
+//      install restarts itself from that path after its updater installs the
+//      K8Board package (which replaces the kubepilot one). The link keeps that
+//      one restart working; it can go once nobody runs a KubePilot build.
+//
 // To move to Developer ID signing + notarization later: set `mac.identity`,
 // flip `mac.hardenedRuntime` to true (build/entitlements.mac.plist is already
 // wired up in package.json) and delete step 2 — electron-builder then signs and
@@ -45,7 +51,28 @@ exports.default = async function afterPack(context) {
 
   await applyFuses(context, platform, appName);
   if (platform === 'darwin') adHocSign(path.join(context.appOutDir, `${appName}.app`));
+  if (platform === 'linux') legacyLinuxExecutable(context);
 };
+
+// ---------------------------------------------------------------------------
+// 3. Linux: the executable's name before the rename, as a relative symlink
+// ---------------------------------------------------------------------------
+const LEGACY_LINUX_EXECUTABLE = 'kubepilot';
+
+function legacyLinuxExecutable(context) {
+  const exe = context.packager.executableName;
+  if (!exe || exe === LEGACY_LINUX_EXECUTABLE) return;
+  const link = path.join(context.appOutDir, LEGACY_LINUX_EXECUTABLE);
+  try {
+    fs.rmSync(link, { force: true });
+    fs.symlinkSync(exe, link); // relative: resolves inside the install folder
+    console.log(`  • legacy executable link  ${LEGACY_LINUX_EXECUTABLE} -> ${exe}`);
+  } catch (err) {
+    // Windows hosts may not allow symlinks; release builds run on Linux runners.
+    if (process.platform !== 'linux') console.warn(`  • skipped the legacy executable link (${err.code || err.message}): only needed in release builds`);
+    else throw err;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // 1. Fuses

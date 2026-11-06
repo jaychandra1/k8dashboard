@@ -7,10 +7,10 @@
     "email": "kubepilot.dashboard@gmail.com"
   },
   "license": "MIT",
-  "desktopName": "kubepilot",
+  "desktopName": "k8board",
   "type": "module",
   "main": "electron/main.cjs",
-  "releaseRepository": "jaychandra1/KubePilot",
+  "releaseRepository": "jaychandra1/K8Board",
   "scripts": {
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "server": "node server.js",
@@ -30,7 +30,8 @@
     "app:dist": "npm run build && electron-builder --mac",
     "dist": "npm run build && electron-builder --publish never",
     "mcp": "node mcp-stdio.js",
-    "dist:bundled-trivy": "npm run fetch:trivy && npm run build && electron-builder --publish never -c.extraResources.from=bin -c.extraResources.to=bin -c.extraResources.filter=trivy*"
+    "dist:bundled-trivy": "npm run fetch:trivy && npm run build && electron-builder --publish never -c.extraResources.from=bin -c.extraResources.to=bin -c.extraResources.filter=trivy*",
+    "dist:store": "npm run build && electron-builder --win appx --publish never"
   },
   "overrides": {
     "qs": "^6.17.1",
@@ -39,24 +40,24 @@
   },
   "dependencies": {
     "@aws-crypto/sha256-js": "^5.2.0",
-    "@aws-sdk/client-eks": "^3.1127.0",
-    "@aws-sdk/client-sso": "^3.1127.0",
-    "@aws-sdk/client-sso-oidc": "^3.1127.0",
-    "@aws-sdk/client-sts": "^3.1127.0",
-    "@aws-sdk/credential-providers": "^3.1127.0",
+    "@aws-sdk/client-eks": "^3.1163.0",
+    "@aws-sdk/client-sso": "^3.1163.0",
+    "@aws-sdk/client-sso-oidc": "^3.1163.0",
+    "@aws-sdk/client-sts": "^3.1163.0",
+    "@aws-sdk/credential-providers": "^3.1163.0",
     "@aws-sdk/signature-v4": "^3.370.0",
-    "@kubernetes/client-node": "^2.0.0",
+    "@kubernetes/client-node": "^2.0.2",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "@smithy/protocol-http": "^5.6.2",
     "@smithy/shared-ini-file-loader": "^4.7.2",
-    "@smithy/signature-v4": "^5.7.3",
+    "@smithy/signature-v4": "^5.7.5",
     "compression": "^1.8.1",
     "cors": "^2.8.5",
-    "express": "^4.22.3",
-    "express-rate-limit": "^8.7.0",
-    "js-yaml": "^4.1.0",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.3",
+    "js-yaml": "^5.5.0",
     "node-pty": "^1.1.0",
-    "ws": "^8.21.1",
+    "ws": "^8.22.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {
@@ -68,8 +69,8 @@
     "eslint": "^9.39.5",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "globals": "^17.12.0",
-    "prettier": "^3.9.8"
+    "globals": "^17.14.0",
+    "prettier": "^3.9.10"
   },
   "build": {
     "appId": "com.kubepilot.desktop",
@@ -130,7 +131,8 @@
       "target": [
         "AppImage",
         "deb"
-      ]
+      ],
+      "executableName": "k8board"
     },
     "win": {
       "icon": "build/icon.ico",
@@ -154,7 +156,7 @@
       "minVersion": "10.0.17763.0",
       "maxVersionTested": "10.0.26100.0",
       "customExtensionsPath": "build/appx-extensions.xml",
-      "artifactName": "${productName}-windows-store.${ext}"
+      "artifactName": "${productName}-windows-store.msix"
     },
     "nsis": {
       "shortcutName": "K8Board",
@@ -164,6 +166,7 @@
       "installerHeaderIcon": "build/icon.ico"
     },
     "deb": {
+      "packageName": "k8board",
       "fpm": [
         "--replaces",
         "k8dashboard",
@@ -176,7 +179,11 @@
         "--conflicts",
         "k8s-manager-ui",
         "--conflicts",
-        "k8sight"
+        "k8sight",
+        "--replaces",
+        "kubepilot",
+        "--conflicts",
+        "kubepilot"
       ]
     },
     "electronLanguages": [

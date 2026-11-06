@@ -27,6 +27,11 @@ import {
   refreshSsoToken,
   sessionTokenState,
   tokenCacheDoc,
+  isProductionSession,
+  legacyProfilesOf,
+  setProfileSession,
+  removeUnusedSession,
+  signOutSession,
   REGISTERED_REDIRECT_URI,
   resultPage,
 } from '../lib/aws-sso.mjs';
@@ -378,6 +383,33 @@ sso_role_name = ReadOnly
     assert.deepEqual(sessionsForProfiles(conv.text, ['sso-241533118296', 'other-portal', 'nope']), [name]);
   });
 
+  test('production sessions: separate from the shared one, never picked for anything else', () => {
+    const shared = ensureSsoSession('', { startUrl: START, ssoRegion: 'us-east-1' });
+    const prod = ensureSsoSession(shared.text, { startUrl: START, ssoRegion: 'us-east-1', production: true });
+    assert.deepEqual([shared.name, prod.name, prod.created], ['kubepilot-d-906600a9b0', 'kubepilot-d-906600a9b0-production', true]);
+    assert.equal(isProductionSession(prod.name), true);
+    assert.equal(isProductionSession(shared.name), false);
+    assert.equal(ensureSsoSession(prod.text, { startUrl: START, ssoRegion: 'us-east-1' }).name, 'kubepilot-d-906600a9b0');
+    assert.equal(ensureSsoSession(prod.text, { startUrl: START, ssoRegion: 'us-east-1', production: true }).created, false);
+  });
+
+  test('a profile moves to another session (from either format); an unused session block is dropped', () => {
+    const text = [
+      '[sso-session kubepilot-d-906600a9b0-production]', `sso_start_url = ${START}`, 'sso_region = us-east-1', '',
+      '[profile legacy]', `sso_start_url = ${START}`, 'sso_region = us-east-1', 'sso_account_id = 444455556666', 'sso_role_name = Admin', 'region = eu-west-1', '',
+      '[profile kept]', 'region = us-east-1', '',
+    ].join('\n');
+    assert.deepEqual(legacyProfilesOf(text, START), ['legacy']);
+    const moved = setProfileSession(text, 'legacy', 'kubepilot-d-906600a9b0-production');
+    const p = parseAwsConfig(moved).sections.get('profile:legacy').values;
+    assert.deepEqual(p, { sso_session: 'kubepilot-d-906600a9b0-production', sso_account_id: '444455556666', sso_role_name: 'Admin', region: 'eu-west-1' });
+    assert.equal(removeUnusedSession(moved, 'kubepilot-d-906600a9b0-production'), moved, 'still in use: kept');
+    const back = setProfileSession(moved, 'legacy', 'kubepilot-d-906600a9b0');
+    const cleaned = removeUnusedSession(back, 'kubepilot-d-906600a9b0-production');
+    assert.equal(parseAwsConfig(cleaned).sections.has('sso-session:kubepilot-d-906600a9b0-production'), false);
+    assert.equal(parseAwsConfig(cleaned).sections.get('profile:kept').values.region, 'us-east-1', 'everything else stays');
+  });
+
   test('upsert: adds a profile, or replaces only its SSO keys', () => {
     const added = upsertSsoProfile('', {
       name: 'sso-1',
@@ -411,9 +443,19 @@ sso_role_name = ReadOnly
     assert.equal(saveAwsConfig(file, 'v2\n'), true);
     assert.equal(saveAwsConfig(file, 'v2\n'), false, 'no change, no write');
     saveAwsConfig(file, 'v3\n');
-    const backups = fs.readdirSync(dir).filter((f) => f.startsWith('config.kubepilot-backup-'));
+    const backups = fs.readdirSync(dir).filter((f) => f.startsWith('config.k8board-backup-'));
     assert.equal(backups.length, 1);
     assert.equal(fs.readFileSync(path.join(dir, backups[0]), 'utf8'), 'original\n');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('a backup from before the rename (.kubepilot-backup-…) counts as the backup', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kp-awscfg-'));
+    const file = path.join(dir, 'config');
+    fs.writeFileSync(file, 'original\n');
+    fs.writeFileSync(path.join(dir, 'config.kubepilot-backup-20261001-120000'), 'original\n');
+    saveAwsConfig(file, 'v2\n');
+    assert.deepEqual(fs.readdirSync(dir).filter((f) => f.includes('-backup-')), ['config.kubepilot-backup-20261001-120000']);
     fs.rmSync(dir, { recursive: true, force: true });
   });
 });
@@ -429,13 +471,21 @@ describe('storing a sign-in, renewing it, and the AWS SDK reading it', () => {
   });
   const result = { startUrl: START, ssoRegion: 'us-east-1', ...TOKENS, ...REG };
 
-  test('adopt: session block, converted profile, refreshable cache (session + start-URL copy)', () => {
-    const out = adoptSsoLogin(result);
+  test('adopt for a profile: its session, only that profile converted, a refreshable token for that session only', () => {
+    fs.appendFileSync(process.env.AWS_CONFIG_FILE, `\n[profile other-account]\nsso_start_url = ${START}\nsso_region = us-east-1\nsso_account_id = 111122223333\nsso_role_name = Dev\n`);
+    const out = adoptSsoLogin(result, { profile: 'sso-241533118296' });
     assert.deepEqual(out, {
       sessionName: 'kubepilot-d-906600a9b0',
+      production: false,
       converted: ['sso-241533118296'],
       created: true,
+      legacyProfiles: ['other-account'],
     });
+    // The other legacy profile is untouched, and nothing is copied to the start-URL cache it reads.
+    const other = parseAwsConfig(fs.readFileSync(process.env.AWS_CONFIG_FILE, 'utf8')).sections.get('profile:other-account').values;
+    assert.equal(other.sso_start_url, START);
+    assert.equal(other.sso_session, undefined);
+    assert.equal(fs.existsSync(cacheFile(START)), false, 'no start-URL copy');
     const cfg = parseAwsConfig(fs.readFileSync(process.env.AWS_CONFIG_FILE, 'utf8'));
     assert.equal(cfg.sections.get('profile:sso-241533118296').values.sso_session, 'kubepilot-d-906600a9b0');
     const tok = readCache('kubepilot-d-906600a9b0');
@@ -451,16 +501,50 @@ describe('storing a sign-in, renewing it, and the AWS SDK reading it', () => {
     ]);
     assert.equal(tok.refreshToken, 'refresh-1');
     assert.match(tok.expiresAt, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
-    assert.equal(readCache(START).accessToken, 'access-1');
     assert.equal(
-      fs.readdirSync(path.join(home, '.aws')).filter((f) => f.startsWith('config.kubepilot-backup-')).length,
+      fs.readdirSync(path.join(home, '.aws')).filter((f) => f.startsWith('config.k8board-backup-')).length,
       1
     );
     assert.equal(sessionTokenState('kubepilot-d-906600a9b0').refreshable, true);
   });
 
+  test('adopt without a profile (the add-cluster wizard): the shared session, no profile changed', () => {
+    const out = adoptSsoLogin(result);
+    assert.deepEqual([out.sessionName, out.converted, out.legacyProfiles], ['kubepilot-d-906600a9b0', [], ['sso-241533118296']]);
+    assert.equal(parseAwsConfig(fs.readFileSync(process.env.AWS_CONFIG_FILE, 'utf8')).sections.get('profile:sso-241533118296').values.sso_session, undefined);
+  });
+
+  test('a production profile: its sign-in goes to its own session; a sign-in for another cluster never reaches it', () => {
+    fs.writeFileSync(process.env.AWS_CONFIG_FILE, [
+      '[sso-session kubepilot-d-906600a9b0]', `sso_start_url = ${START}`, 'sso_region = us-east-1', '',
+      '[sso-session kubepilot-d-906600a9b0-production]', `sso_start_url = ${START}`, 'sso_region = us-east-1', '',
+      '[profile dev]', 'sso_session = kubepilot-d-906600a9b0', 'sso_account_id = 111122223333', 'sso_role_name = Dev', '',
+      '[profile prod]', 'sso_session = kubepilot-d-906600a9b0-production', 'sso_account_id = 444455556666', 'sso_role_name = Admin', '',
+    ].join('\n'));
+    const dev = adoptSsoLogin(result, { profile: 'dev' });
+    assert.deepEqual([dev.sessionName, dev.production], ['kubepilot-d-906600a9b0', false]);
+    assert.equal(sessionTokenState('kubepilot-d-906600a9b0').signedIn, true);
+    assert.equal(sessionTokenState('kubepilot-d-906600a9b0-production').signedIn, false, 'the dev sign-in did not reach prod');
+    const prod = adoptSsoLogin({ ...result, accessToken: 'access-prod' }, { profile: 'prod' });
+    assert.deepEqual([prod.sessionName, prod.production], ['kubepilot-d-906600a9b0-production', true]);
+    assert.equal(readCache('kubepilot-d-906600a9b0-production').accessToken, 'access-prod');
+    assert.equal(readCache('kubepilot-d-906600a9b0').accessToken, 'access-1', 'and the prod sign-in did not touch dev');
+    // The wizard never puts a new profile on the production session.
+    assert.equal(adoptSsoLogin(result).sessionName, 'kubepilot-d-906600a9b0');
+  });
+
+  test('sign-out: the session\'s token is gone (and an old start-URL copy of the same sign-in)', () => {
+    adoptSsoLogin(result, { profile: 'sso-241533118296' });
+    fs.writeFileSync(cacheFile(START), JSON.stringify(readCache('kubepilot-d-906600a9b0'))); // as older versions wrote it
+    assert.deepEqual(signOutSession('kubepilot-d-906600a9b0'), { signedOut: true });
+    assert.equal(fs.existsSync(cacheFile('kubepilot-d-906600a9b0')), false);
+    assert.equal(fs.existsSync(cacheFile(START)), false);
+    assert.equal(sessionTokenState('kubepilot-d-906600a9b0').signedIn, false);
+    assert.deepEqual(signOutSession('kubepilot-d-906600a9b0'), { signedOut: false });
+  });
+
   test('renewal: only near expiry, rotates the refresh token, reports a finished session as expired', async () => {
-    adoptSsoLogin(result);
+    adoptSsoLogin(result, { profile: 'sso-241533118296' });
     // AWS rotates refresh tokens: only the latest one is accepted.
     let valid = 'refresh-1';
     const oidc = fakeOidc({
@@ -482,7 +566,7 @@ describe('storing a sign-in, renewing it, and the AWS SDK reading it', () => {
       refreshToken: 'refresh-1',
     });
     assert.equal(readCache('kubepilot-d-906600a9b0').refreshToken, 'refresh-2');
-    assert.equal(readCache(START).accessToken, 'access-2', 'start-URL copy kept in step');
+    assert.equal(fs.existsSync(cacheFile(START)), false, 'renewing a session never writes a start-URL copy');
     // The old refresh token is now rejected → the session needs a browser sign-in.
     const tok = readCache('kubepilot-d-906600a9b0');
     fs.writeFileSync(
@@ -505,7 +589,7 @@ describe('storing a sign-in, renewing it, and the AWS SDK reading it', () => {
   });
 
   test('the AWS SDK reads our session and renews it itself (sso-session format compatibility)', async () => {
-    adoptSsoLogin(result);
+    adoptSsoLogin(result, { profile: 'sso-241533118296' });
     const { fromSso } = await import('@aws-sdk/token-providers');
     const fresh = await fromSso({ profile: 'sso-241533118296', ignoreCache: true })();
     assert.equal(fresh.token, 'access-1');

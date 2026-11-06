@@ -22,7 +22,7 @@
 // dependency is added.
 // ============================================================================
 
-import yaml from 'js-yaml';
+import yaml from './lib/yaml.mjs';
 // Lists use the server's own row shape (lib/resource-format.mjs), so demo and
 // real lists always match.
 import { formatResource } from './lib/resource-format.mjs';

@@ -24,7 +24,7 @@
 #
 # The app reads your local kubeconfig (default ~/.kube/config, or $KUBECONFIG).
 # Every request to the API needs the bearer token the server prints at boot
-# ("open http://127.0.0.1:3001/#token=…"); set KUBEPILOT_TOKEN to choose it.
+# ("open http://127.0.0.1:3001/#token=…"); set K8BOARD_TOKEN to choose it.
 #
 set -euo pipefail
 

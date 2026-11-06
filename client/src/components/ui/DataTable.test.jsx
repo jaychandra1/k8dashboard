@@ -122,12 +122,20 @@ describe('DataTable', () => {
   });
 
   it('virtualises large lists with spacer rows', () => {
-    // jsdom has no layout; the virtualiser measures the scroll container via offsetHeight.
-    const desc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight');
-    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, get: () => 600 });
+    // jsdom has no layout: give the scroll container a 600px viewport. The
+    // virtualiser reads clientHeight (virtual-core ≥ 3.19; offsetHeight before).
+    const props = ['clientHeight', 'offsetHeight'];
+    const saved = props.map((p) => [p, Object.getOwnPropertyDescriptor(HTMLElement.prototype, p)]);
+    for (const p of props) Object.defineProperty(HTMLElement.prototype, p, { configurable: true, get: () => 600 });
     const many = Array.from({ length: 500 }, (_, i) => ({ name: `p${i}`, namespace: 'n', status: 'Running', age: i }));
-    render(<DataTable columns={columns} rows={many} rowKey={rowKey} />);
-    if (desc) Object.defineProperty(HTMLElement.prototype, 'offsetHeight', desc);
+    try {
+      render(<DataTable columns={columns} rows={many} rowKey={rowKey} />);
+    } finally {
+      for (const [p, d] of saved) {
+        if (d) Object.defineProperty(HTMLElement.prototype, p, d);
+        else delete HTMLElement.prototype[p];
+      }
+    }
     const table = screen.getByRole('table');
     expect(table).toHaveAttribute('aria-rowcount', '500');
     const tbody = screen.getAllByRole('rowgroup')[1];

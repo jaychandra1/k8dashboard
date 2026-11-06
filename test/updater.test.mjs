@@ -62,7 +62,7 @@ function fakeFetch(routes) {
   return fn;
 }
 
-const REPO = 'jaychandra1/KubePilot';
+const REPO = 'jaychandra1/K8Board';
 const API = `https://api.github.com/repos/${REPO}`;
 const DL = `https://github.com/${REPO}/releases/download`;
 
@@ -974,15 +974,18 @@ describe('installers (mocked — nothing is installed)', () => {
       }),
       { kind: 'appimage', appPath: '/home/u/Apps/K8Board.AppImage' }
     );
+    // The .deb is "k8board"; an install from before the rename is "kubepilot".
+    for (const [execPath, pkg] of [['/opt/K8Board/k8board', 'k8board'], ['/opt/K8Board/kubepilot', 'kubepilot']]) {
+      assert.equal(
+        detectInstall({ platform: 'linux', isPackaged: true, execPath, env: {}, existsSync: exists(new Set([`/var/lib/dpkg/info/${pkg}.list`])) }).kind,
+        'deb',
+        pkg
+      );
+    }
     assert.equal(
-      detectInstall({
-        platform: 'linux',
-        isPackaged: true,
-        execPath: '/opt/K8Board/kubepilot',
-        env: {},
-        existsSync: exists(new Set(['/var/lib/dpkg/info/kubepilot.list'])),
-      }).kind,
-      'deb'
+      detectInstall({ platform: 'linux', isPackaged: true, execPath: '/opt/K8Board/k8board', env: {}, existsSync: exists(new Set()) }).kind,
+      null,
+      'not installed by dpkg'
     );
     assert.equal(
       macBundlePath('/Applications/K8Board.app/Contents/MacOS/K8Board'),

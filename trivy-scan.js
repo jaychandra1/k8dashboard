@@ -156,7 +156,7 @@ export async function trivyAvailable() {
 // Opt-in only (TRIVY_VERSION=latest): ask GitHub for the newest release.
 async function latestVersion() {
   try {
-    const r = await fetch('https://api.github.com/repos/aquasecurity/trivy/releases/latest', { headers: { 'user-agent': 'kubepilot' }, signal: AbortSignal.timeout(8000) });
+    const r = await fetch('https://api.github.com/repos/aquasecurity/trivy/releases/latest', { headers: { 'user-agent': 'k8board' }, signal: AbortSignal.timeout(8000) });
     const j = await r.json();
     const v = String(j.tag_name || '').replace(/^v/, '');
     return /^\d+\.\d+\.\d+$/.test(v) ? v : TRIVY_VERSION;

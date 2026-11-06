@@ -6,13 +6,13 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import yaml from 'js-yaml';
+import yaml from './lib/yaml.mjs';
 import { fileURLToPath } from 'url';
 import { EKSClient, ListClustersCommand, DescribeClusterCommand } from '@aws-sdk/client-eks';
 import { STSClient, GetCallerIdentityCommand, AssumeRoleCommand } from '@aws-sdk/client-sts';
 import { SSOClient, ListAccountsCommand, ListAccountRolesCommand, GetRoleCredentialsCommand } from '@aws-sdk/client-sso';
 import { loadSharedConfigFiles, loadSsoSessionData } from '@smithy/shared-ini-file-loader';
-import { awsConfigPath, ensureSsoSession, profileSsoInfo, saveAwsConfig, upsertSsoProfile } from './lib/aws-sso.mjs';
+import { awsConfigPath, ensureSsoSession, isProductionSession, profileSsoInfo, saveAwsConfig, upsertSsoProfile } from './lib/aws-sso.mjs';
 import { execEntry } from './lib/paths.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -92,7 +92,7 @@ export async function resolveCredentials(method, opts = {}) {
     if (!roleArn) throw new Error('Role ARN is required');
     // Base credentials come from the ambient chain / source profile.
     const sts = new STSClient({ region: region || 'us-east-1', ...(opts.sourceProfile ? { profile: opts.sourceProfile } : {}) });
-    const out = await sts.send(new AssumeRoleCommand({ RoleArn: roleArn, RoleSessionName: sessionName || 'kubepilot', DurationSeconds: 3600 }));
+    const out = await sts.send(new AssumeRoleCommand({ RoleArn: roleArn, RoleSessionName: sessionName || 'k8board', DurationSeconds: 3600 }));
     const c = out.Credentials;
     return { credentials: { accessKeyId: c.AccessKeyId, secretAccessKey: c.SecretAccessKey, sessionToken: c.SessionToken }, region };
   }
@@ -178,7 +178,7 @@ function backupKubeconfigOnce(p) {
   if (kubeconfigBackedUp) return;
   if (fs.existsSync(p)) {
     const ts = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
-    const backup = `${p}.kubepilot-backup-${ts}`;
+    const backup = `${p}.k8board-backup-${ts}`;
     fs.copyFileSync(p, backup);
     try { fs.chmodSync(backup, 0o600); } catch { /* best effort */ }
   }
@@ -310,8 +310,6 @@ export async function saveSsoProfile(name, { startUrl, ssoRegion, accountId, rol
 
   const configFile = awsConfigPath();
   let text = fs.existsSync(configFile) ? fs.readFileSync(configFile, 'utf8') : '';
-  const session = ensureSsoSession(text, { startUrl: url, ssoRegion: sr });
-  text = session.text;
   let chosen = base;
   for (let i = 2; ; i++) {
     const info = profileSsoInfo(text, chosen);
@@ -320,7 +318,18 @@ export async function saveSsoProfile(name, { startUrl, ssoRegion, accountId, rol
     if (!taken) break;
     chosen = `${base}-${i}`;
   }
-  text = upsertSsoProfile(text, { name: chosen, sessionName: session.name, accountId: acct, roleName: role, region: rg });
+  // A profile marked production keeps its separate session when re-imported;
+  // anything else uses the start URL's shared session.
+  const current = profileSsoInfo(text, chosen);
+  let sessionName;
+  if (current?.startUrl === url && isProductionSession(current.sessionName)) {
+    sessionName = current.sessionName;
+  } else {
+    const session = ensureSsoSession(text, { startUrl: url, ssoRegion: sr });
+    text = session.text;
+    sessionName = session.name;
+  }
+  text = upsertSsoProfile(text, { name: chosen, sessionName, accountId: acct, roleName: role, region: rg });
   saveAwsConfig(configFile, text);
   // Stale static keys under the same name (written by older versions) would
   // take precedence over the SSO config — drop them.

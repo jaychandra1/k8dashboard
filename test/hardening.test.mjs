@@ -51,6 +51,7 @@ describe('child process environment', () => {
   test("childEnv drops K8Board's secrets (any case) and keeps everything else", () => {
     const env = childEnv({
       KUBEPILOT_TOKEN: 't', kubepilot_token: 't', K8DASHBOARD_TOKEN: 't', K8SIGHT_TOKEN: 't',
+      K8BOARD_TOKEN: 't', k8board_token: 't', K8BOARD_SECRET_KEY: 'k', K8BOARD_MCP_TOKEN: 'm',
       KUBEPILOT_SECRET_KEY: 'k', KUBEPILOT_MCP_TOKEN: 'm', MCP_API_TOKEN: 'm', LLM_API_KEY: 'l',
       KUBEPILOT_LOCAL_SHELL: '1', KUBECONFIG: '/k', AWS_PROFILE: 'dev', OPENAI_API_KEY: 'agent-key', PATH: '/bin',
     }, { EXTRA: 'x' });
@@ -58,6 +59,13 @@ describe('child process environment', () => {
       KUBEPILOT_LOCAL_SHELL: '1', KUBECONFIG: '/k', AWS_PROFILE: 'dev', OPENAI_API_KEY: 'agent-key', PATH: '/bin', EXTRA: 'x',
     });
     assert.equal(isAppSecretEnv('KUBEPILOT_TOKEN_FILE'), false, 'exact names only');
+  });
+
+  test('every settings prefix the app reads is scrubbed (a new prefix must be added to both)', async () => {
+    const { ENV_PREFIXES } = await import('../lib/paths.mjs');
+    for (const prefix of ENV_PREFIXES) {
+      for (const name of ['TOKEN', 'SECRET_KEY', 'MCP_TOKEN']) assert.equal(isAppSecretEnv(prefix + name), true, prefix + name);
+    }
   });
 
   test('spawnBin children (kubectl, az, helm…) never inherit the token or the LLM key', async () => {

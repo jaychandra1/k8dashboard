@@ -3,15 +3,15 @@
           outside the package may not launch an exe under WindowsApps by path,
           but kubeconfig entries written by K8Board run it as their token
           helper (the token-helper flag with eks or azure) from kubectl in any
-          terminal. The alias (%LOCALAPPDATA%\Microsoft\WindowsApps\kubepilot.exe,
+          terminal. The alias (%LOCALAPPDATA%\Microsoft\WindowsApps\k8board.exe,
           on PATH by default) is that launchable, version-independent name;
-          electron/main.cjs uses it as KUBEPILOT_APP_EXEC in Store installs.
+          electron/main.cjs uses it as K8BOARD_APP_EXEC in Store installs.
           Inserted by electron-builder inside Extensions (appx.customExtensionsPath).
           XML comments may not contain two hyphens in a row.
         -->
         <uap5:Extension xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
           Category="windows.appExecutionAlias" Executable="app\K8Board.exe" EntryPoint="Windows.FullTrustApplication">
           <uap5:AppExecutionAlias>
-            <uap5:ExecutionAlias Alias="kubepilot.exe" />
+            <uap5:ExecutionAlias Alias="k8board.exe" />
           </uap5:AppExecutionAlias>
         </uap5:Extension>

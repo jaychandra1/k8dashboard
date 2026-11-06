@@ -99,7 +99,7 @@ COPY --from=tools /tools/kubectl /tools/kubectl-oidc_login /tools/trivy /usr/loc
 # imports must be here (see the import list at the top of server.js).
 COPY --from=server-deps /app/node_modules ./node_modules
 COPY package.json package-lock.json VERSION ./
-# demo.js is imported by server.js but inert unless KUBEPILOT_DEMO=1 (test fixture).
+# demo.js is imported by server.js but inert unless K8BOARD_DEMO=1 (test fixture).
 COPY server.js assistant.js mcp.js mcp-stdio.js aws-eks.js eks-token.js azure-aks.js azure-token.js trivy-scan.js demo.js ./
 COPY lib/ ./lib/
 COPY scripts/ ./scripts/
@@ -108,12 +108,12 @@ COPY --from=client-build /app/client/dist ./client/dist
 # The server binds 127.0.0.1 by default (so a local install isn't exposed to the
 # LAN). Inside a container it must bind all interfaces for the published port to
 # work, so HOST is set here. Every request to /api, /mcp and /ws/exec still
-# requires the bearer token: pass one with `-e KUBEPILOT_TOKEN=…`, or let the app
+# requires the bearer token: pass one with `-e K8BOARD_TOKEN=…`, or let the app
 # generate one — it is printed at boot, so `docker logs <container>` shows the
 # login URL. Prefer publishing to loopback on the host as well:
 #   docker run -p 127.0.0.1:8080:3001 …
 # When reaching the container through another hostname (a reverse proxy),
-# allow it with `-e ALLOWED_HOSTS=kubepilot.internal` or requests get HTTP 421.
+# allow it with `-e ALLOWED_HOSTS=k8board.internal` or requests get HTTP 421.
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3001
@@ -136,7 +136,7 @@ ARG APP_VERSION="1.7.6"
 LABEL org.opencontainers.image.title="K8Board" \
       org.opencontainers.image.description="Browse and operate Kubernetes clusters — workloads, nodes, events, logs, in-browser exec/terminal, service port-forwarding, Helm releases, RBAC and CRDs. Reads your kubeconfig and serves the UI + token-protected REST API on port 3001." \
       org.opencontainers.image.version="${APP_VERSION}" \
-      org.opencontainers.image.source="https://github.com/jaychandra1/KubePilot" \
+      org.opencontainers.image.source="https://github.com/jaychandra1/K8Board" \
       org.opencontainers.image.licenses="MIT"
 
 # Drop root — run as the unprivileged `node` user shipped in the base image.

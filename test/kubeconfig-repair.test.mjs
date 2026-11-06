@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import yaml from 'js-yaml';
+import yaml from '../lib/yaml.mjs';
 import { repairExecEntries, staleReason, deriveHelperInvocation } from '../lib/kubeconfig-repair.mjs';
 import { helperFile, TOKEN_HELPER_FLAG } from '../lib/paths.mjs';
 
@@ -96,7 +96,7 @@ describe('repairExecEntries (Electron runtime)', () => {
 
     // one info line per repaired user, a single backup, file still parses
     assert.deepEqual(log.lines.info.map((l) => l.user).sort(), ['legacy', 'stale']);
-    const backups = fs.readdirSync(dir).filter((f) => f.startsWith('config.kubepilot-backup-'));
+    const backups = fs.readdirSync(dir).filter((f) => f.startsWith('config.k8board-backup-'));
     assert.equal(backups.length, 1);
     assert.deepEqual(yaml.load(fs.readFileSync(path.join(dir, backups[0]), 'utf8')).users.map((x) => x.name), Object.keys(before));
     assert.ok(!fs.readdirSync(dir).some((f) => f.endsWith('.tmp')), 'no temp file left behind');
@@ -104,7 +104,7 @@ describe('repairExecEntries (Electron runtime)', () => {
     // second pass: nothing left to do, no second backup
     const again = repairExecEntries(file, { execEntryOpts: { electron: true, execPath: MAC_APP }, log });
     assert.deepEqual(again.repaired, []);
-    assert.equal(fs.readdirSync(dir).filter((f) => f.startsWith('config.kubepilot-backup-')).length, 1);
+    assert.equal(fs.readdirSync(dir).filter((f) => f.startsWith('config.k8board-backup-')).length, 1);
   });
 
   test('a --token-helper entry whose binary moved is re-pointed', () => {

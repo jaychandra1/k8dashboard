@@ -92,7 +92,7 @@ async function createUpdateHost({
   isPackaged = app.isPackaged,
   execPath = process.execPath,
   dir = defaultUpdateDir(),
-  dryRun = process.env.KUBEPILOT_UPDATE_DRY_RUN === '1',
+  dryRun = ['K8BOARD_UPDATE_DRY_RUN', 'KUBEPILOT_UPDATE_DRY_RUN'].some((k) => process.env[k] === '1'),
   env = process.env,
   spawnImpl = spawn,
   existsSync = fs.existsSync,

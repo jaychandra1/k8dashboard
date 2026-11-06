@@ -3,13 +3,16 @@
 //   k8board-icon-small.svg  the simplified mark (16–48 px: taskbar, tray, tabs)
 //
 //   npx electron scripts/generate-icons.cjs
+//   npx electron scripts/generate-icons.cjs splash  # only outputs whose path has "splash"
 //   npx electron scripts/generate-appx-assets.cjs   # then the Store tiles
 //
 // Writes build/icon.png (1024, electron-builder makes the macOS .icns and Linux
 // icons from it), build/icon-small.png, build/icon.ico (16–256),
 // build/icon-detailed.png (README), client/public/logo*.png (sidebar,
-// favicon), website/assets/icon*.png and website/assets/og-image.png. The
-// output is committed; the SVGs are the source of truth.
+// favicon), website/assets/icon*.png, website/assets/og-image.png, and the
+// desktop app's loading screen: electron/splash-icon.png, embedded as a data:
+// URL in electron/loading.html (its CSP allows nothing else). The output is
+// committed; the SVGs are the source of truth.
 const { app, BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
@@ -21,6 +24,10 @@ const FULL = svg('k8board-icon.svg');
 const SMALL = svg('k8board-icon-small.svg');
 const SMALL_MAX = 48; // up to this size the simplified mark reads better
 
+// Names on the command line limit the run to outputs whose path contains one.
+const ONLY = process.argv.slice(2).filter((a) => !a.startsWith('-') && !a.endsWith('.cjs'));
+const wanted = (rel) => !ONLY.length || ONLY.some((n) => rel.includes(n));
+
 const PNGS = [
   ['build/icon.png', 1024],
   ['build/icon-detailed.png', 512],
@@ -31,6 +38,8 @@ const PNGS = [
   ['client/public/logo-mark.png', 128, SMALL],
   ['website/assets/icon.png', 256],
   ['website/assets/icon-detailed.png', 512],
+  // The loading screen shows it at 96px: 2× for high-DPI displays.
+  ['electron/splash-icon.png', 192],
 ];
 const ICO_SIZES = [16, 24, 32, 48, 64, 128, 256];
 
@@ -63,13 +72,27 @@ app.whenReady().then(async () => {
   })()`).then((b64) => Buffer.from(b64, 'base64'));
   const write = (rel, buf) => { fs.mkdirSync(path.dirname(path.join(ROOT, rel)), { recursive: true }); fs.writeFileSync(path.join(ROOT, rel), buf); console.log(`${rel}  ${buf.length.toLocaleString()} bytes`); };
 
-  for (const [rel, size, src] of PNGS) write(rel, await render(src || FULL, size));
-  const icoImages = [];
-  for (const size of ICO_SIZES) icoImages.push({ size, png: await render(size <= SMALL_MAX ? SMALL : FULL, size) });
-  write('build/icon.ico', ico(icoImages));
+  for (const [rel, size, src] of PNGS) if (wanted(rel)) write(rel, await render(src || FULL, size));
+
+  // The loading screen (a file: page with a strict CSP) carries its logo inline.
+  if (wanted('electron/splash-icon.png')) {
+    const file = path.join(ROOT, 'electron', 'loading.html');
+    const html = fs.readFileSync(file, 'utf8');
+    const png = fs.readFileSync(path.join(ROOT, 'electron', 'splash-icon.png')).toString('base64');
+    const next = html.replace(/(<img class="logo" alt="" src=")data:image\/png;base64,[^"]*(")/, `$1data:image/png;base64,${png}$2`);
+    if (next === html && !html.includes(png)) throw new Error('electron/loading.html: logo <img> not found');
+    fs.writeFileSync(file, next);
+    console.log('electron/loading.html  logo embedded');
+  }
+
+  if (wanted('build/icon.ico')) {
+    const icoImages = [];
+    for (const size of ICO_SIZES) icoImages.push({ size, png: await render(size <= SMALL_MAX ? SMALL : FULL, size) });
+    write('build/icon.ico', ico(icoImages));
+  }
 
   // Social preview (1200×630): the icon, the name and the tagline on a dark field.
-  write('website/assets/og-image.png', await render(FULL, 1200, 630, `
+  if (wanted('website/assets/og-image.png')) write('website/assets/og-image.png', await render(FULL, 1200, 630, `
     const bg = g.createLinearGradient(0, 0, 1200, 630);
     bg.addColorStop(0, '#0b1224'); bg.addColorStop(1, '#05060f');
     g.fillStyle = bg; g.fillRect(0, 0, 1200, 630);

@@ -136,6 +136,27 @@ const fmtEnded = (iso) => {
   return d.toDateString() === new Date().toDateString() ? time : `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time}`;
 };
 
+const namesOf = (names, max = 4) => {
+  const shown = names.slice(0, max);
+  const rest = names.length - shown.length;
+  if (rest > 0) return `${shown.join(', ')} and ${rest} more`;
+  return shown.length < 2 ? shown.join('') : `${shown.slice(0, -1).join(', ')} and ${shown[shown.length - 1]}`;
+};
+
+/** What an AWS sign-in reaches: one sign-in unlocks every cluster on its session. */
+export function SignInScope({ aws, ctxName }) {
+  if (aws?.production) {
+    return <p className="auth-scope"><strong>Production sign-in.</strong> It is only for {namesOf(aws.covers?.length ? aws.covers : [ctxName])}; your other clusters are not signed in by it.</p>;
+  }
+  const others = (aws?.covers || []).filter((c) => c && c !== ctxName);
+  if (!others.length) return null;
+  return (
+    <p className="auth-scope">
+      This sign-in also gives access to <strong>{namesOf(others)}</strong>. To keep a production cluster separate, mark it as production in Preferences → Cloud Integrations.
+    </p>
+  );
+}
+
 /** Connect-another-cluster tiles, for when there is nothing to switch to. */
 function AddClusterTiles({ onAddAws, onAddAzure, onChangeConfig, disabled }) {
   const tiles = [
@@ -253,6 +274,7 @@ export default function AuthErrorModal({ open = true, auth, onRetry, onChangeCon
               command={fix.command}
               doneText={`Reconnecting to ${ctxName || 'the cluster'}…`}
             />
+            <SignInScope aws={aws} ctxName={ctxName} />
           </div>
         ) : fix && (
           <div className="auth-card-body auth-fix">

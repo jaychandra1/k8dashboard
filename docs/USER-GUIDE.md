@@ -22,7 +22,7 @@ Current version: `1.2.0` (see the `VERSION` file). Node.js **22 or newer** is re
 
 **A. Desktop app (recommended for laptops)**
 
-Download the installer for your OS from the [K8Board Releases](https://github.com/jaychandra1/KubePilot/releases) page (`K8Board-macos.dmg` for Apple Silicon, `K8Board-windows.exe`, `K8Board-linux.AppImage` or `.deb`) and open it.
+Download the installer for your OS from the [K8Board Releases](https://github.com/jaychandra1/K8Board/releases) page (`K8Board-macos.dmg` for Apple Silicon, `K8Board-windows.exe`, `K8Board-linux.AppImage` or `.deb`) and open it.
 
 The desktop app generates a fresh random access token every launch, starts its backend on a free local port, and opens the UI already logged in. There is nothing to configure.
 
@@ -46,14 +46,14 @@ K8Board listening on http://127.0.0.1:3001  —  open http://127.0.0.1:3001/#tok
 
 Open that exact URL. The UI moves the token from the URL into session storage and removes it from the address bar. If you open `http://127.0.0.1:3001` without the token, the UI shows a **Connect** dialog where you can paste it.
 
-The token is generated once and saved to `~/.config/kubepilot/token` (mode `0600`), so it stays the same across restarts unless you set `KUBEPILOT_TOKEN` yourself.
+The token is generated once and saved to `~/.config/kubepilot/token` (mode `0600`), so it stays the same across restarts unless you set `K8BOARD_TOKEN` yourself.
 
 **C. Docker**
 
 ```bash
 docker run --rm -p 127.0.0.1:8080:3001 \
   -v "$HOME/.kube:/home/node/.kube:ro" \
-  ghcr.io/jaychandra1/kubepilot:latest
+  ghcr.io/jaychandra1/k8board:latest
 ```
 
 Get the token from the container log:
@@ -62,7 +62,7 @@ Get the token from the container log:
 docker logs <container> 2>&1 | grep token=
 ```
 
-Then open `http://localhost:8080/#token=<token>`. To use a fixed token instead, pass `-e KUBEPILOT_TOKEN=<at least 16 characters>`.
+Then open `http://localhost:8080/#token=<token>`. To use a fixed token instead, pass `-e K8BOARD_TOKEN=<at least 16 characters>`.
 
 Keep the port published on `127.0.0.1`. If you must expose it on a network, put an authenticating reverse proxy in front and add the proxy's hostname to `ALLOWED_HOSTS` and its origin to `ALLOWED_ORIGINS` (see §1.9), otherwise requests through another hostname are refused with HTTP 421.
 
@@ -182,7 +182,7 @@ Open Preferences from the sidebar gear or the palette. Sections: **General** (th
 HTTP transport (recommended while the app runs):
 
 ```bash
-claude mcp add --transport http kubepilot http://127.0.0.1:3001/mcp \
+claude mcp add --transport http k8board http://127.0.0.1:3001/mcp \
   --header "Authorization: Bearer <token>"
 ```
 
@@ -191,9 +191,9 @@ Stdio bridge (for agents that launch a command):
 ```json
 {
   "mcpServers": {
-    "kubepilot": {
+    "k8board": {
       "command": "node",
-      "args": ["/absolute/path/to/kubepilot/mcp-stdio.js"],
+      "args": ["/absolute/path/to/k8board/mcp-stdio.js"],
       "env": { "MCP_API_BASE": "http://127.0.0.1:3001", "MCP_API_TOKEN": "<token>" }
     }
   }
@@ -205,18 +205,18 @@ Stdio bridge (for agents that launch a command):
 - **AWS EKS** — sign in with IAM Identity Center (SSO), access keys or an assumed role; discover clusters across accounts and regions; import them. SSO sign-ins are saved as a refreshable `sso-session` in `~/.aws/config`, so they renew on their own until your Identity Center session ends (see §1.12).
 - **Azure AKS** — sign in through your system browser (works with Conditional Access) or the `az` CLI; discover across subscriptions; import.
 
-Imported contexts are merged into your kubeconfig. The existing file is **backed up** (`config.kubepilot-backup-<timestamp>`) before the first write of a session, written atomically with mode `0600`, and never overwritten if it cannot be parsed. Imported clusters authenticate at runtime through bundled token helpers, so `aws`, `az` and `kubelogin` are not needed afterwards. The kubeconfig `exec` entry runs `K8Board --token-helper eks|azure …` (the desktop app re-enters its own binary in a CLI mode) or `node eks-token.js …` / `node azure-token.js …` when running from source or Docker; `kubectl` works with the same entry. Entries written by an older build, or pointing at an app binary that has since moved or been renamed, are **repaired automatically** the next time the kubeconfig is loaded (a backup is taken first, one log line per repaired user). If your AWS SSO session has expired, the connect screen says so and offers **Sign in with AWS SSO**, which reopens the AWS flow. After you sign in, the cluster list confirms the account and role you signed in as and marks each cluster: **Uses this sign-in** (already added — it reconnects with the refreshed session, nothing to do), **Added** with a checkbox (added with other credentials — select it to switch it to this sign-in), or **Name in use** (a different cluster already has that name; it is never overwritten). With nothing selected the button is **Done**, which reconnects and closes.
+Imported contexts are merged into your kubeconfig. The existing file is **backed up** (`config.k8board-backup-<timestamp>`) before the first write of a session, written atomically with mode `0600`, and never overwritten if it cannot be parsed. Imported clusters authenticate at runtime through bundled token helpers, so `aws`, `az` and `kubelogin` are not needed afterwards. The kubeconfig `exec` entry runs `K8Board --token-helper eks|azure …` (the desktop app re-enters its own binary in a CLI mode) or `node eks-token.js …` / `node azure-token.js …` when running from source or Docker; `kubectl` works with the same entry. Entries written by an older build, or pointing at an app binary that has since moved or been renamed, are **repaired automatically** the next time the kubeconfig is loaded (a backup is taken first, one log line per repaired user). If your AWS SSO session has expired, the connect screen says so and offers **Sign in with AWS SSO**, which reopens the AWS flow. After you sign in, the cluster list confirms the account and role you signed in as and marks each cluster: **Uses this sign-in** (already added — it reconnects with the refreshed session, nothing to do), **Added** with a checkbox (added with other credentials — select it to switch it to this sign-in), or **Name in use** (a different cluster already has that name; it is never overwritten). With nothing selected the button is **Done**, which reconnects and closes.
 
 ### 1.9 Configuration reference
 
 | Variable | Purpose | Default |
 |---|---|---|
-| `KUBEPILOT_TOKEN` | Bearer token for `/api/*`, `/mcp` and `/ws/exec` | generated → `~/.config/kubepilot/token` |
+| `K8BOARD_TOKEN` | Bearer token for `/api/*`, `/mcp` and `/ws/exec` | generated → `~/.config/kubepilot/token` |
 | `KUBECONFIG` | Kubeconfig path(s) | `~/.kube/config` |
 | `KUBECONFIG_DIRS` | Extra directories from which "Load kubeconfig" may read | — |
 | `PORT` | Backend port | `3001` |
 | `HOST` | Bind interface | `127.0.0.1` (Docker: `0.0.0.0`) |
-| `ALLOWED_HOSTS` | Extra `Host` values accepted (e.g. `kubepilot.internal:8080`) | — |
+| `ALLOWED_HOSTS` | Extra `Host` values accepted (e.g. `k8board.internal:8080`) | — |
 | `ALLOWED_ORIGINS` | Extra browser origins allowed to call the API | — |
 | `TRUST_PROXY` | Set `1` behind a reverse proxy so rate limiting sees client IPs | — |
 | `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` | Assistant endpoint | — |
@@ -246,7 +246,7 @@ App data lives in `~/.config/kubepilot` (token, assistant config, scan cache). O
 
 The desktop app's **Help** menu (after *Window*) has two items:
 
-- **Show Release Notes** — the notes of the newest stable release on [jaychandra1/KubePilot](https://github.com/jaychandra1/KubePilot/releases), rendered in the app; **View on GitHub** opens the release in your browser.
+- **Show Release Notes** — the notes of the newest stable release on [jaychandra1/K8Board](https://github.com/jaychandra1/K8Board/releases), rendered in the app; **View on GitHub** opens the release in your browser.
 - **Check for Updates** — compares the running version (the `VERSION` file) with the newest stable GitHub release using semantic-version ordering. Drafts and prereleases (`-alpha`, `-beta`, `-rc`, …) are ignored. Nothing is downloaded until you choose **Download and Install**.
 
 When you do, K8Board picks the one release file built for your OS, CPU and install type, downloads it to the OS cache folder (`%LOCALAPPDATA%\kubepilot-updater`, `~/Library/Caches/kubepilot-updater`, `~/.cache/kubepilot-updater`), and checks its **SHA-256** against both the digest GitHub reports for the file and the release's `SHA256SUMS.txt`. A file that doesn't match is deleted and never run. Then:
@@ -264,7 +264,7 @@ A development build (`npm run app`), an unpacked copy (`release/win-unpacked`), 
 
 ### 1.12 AWS sign-in and expired sessions
 
-**Sessions renew on their own.** When you sign in to IAM Identity Center (from *Add cluster → AWS EKS* or the "AWS session expired" dialog), K8Board stores the login exactly like `aws configure sso`: an `[sso-session]` block in `~/.aws/config`, its token in `~/.aws/sso/cache/`, and a refresh token. The AWS SDK — and therefore K8Board's EKS token helper, the AWS CLI and kubectl — renews the short-lived access token from it without a browser. K8Board also renews the sessions behind your EKS contexts before they run out (at launch and every 5 minutes). You only sign in again when the Identity Center session itself ends; how long that lasts is set by your AWS administrator (IAM Identity Center → Settings → Authentication → session duration; 8 hours by default).
+**Sessions renew on their own.** When you sign in to IAM Identity Center (from *Add cluster → AWS EKS* or the "AWS session expired" dialog), K8Board stores the login exactly like `aws configure sso`: an `[sso-session]` block in `~/.aws/config`, its token in `~/.aws/sso/cache/`, and a refresh token. The AWS SDK — and therefore K8Board's EKS token helper, the AWS CLI and kubectl — renews the short-lived access token from it without a browser. K8Board keeps the session of the cluster you have open renewed before it runs out (at launch and every 5 minutes); other clusters' sessions are renewed when you open them, not in the background. You only sign in again when the Identity Center session itself ends; how long that lasts is set by your AWS administrator (IAM Identity Center → Settings → Authentication → session duration; 8 hours by default).
 
 **When a session has ended**, the startup dialog shows the cluster (provider, account, role, when it ended) with **Sign in with AWS**:
 
@@ -272,7 +272,15 @@ A development build (`npm run app`), an unpacked copy (`release/win-unpacked`), 
 - **Use a sign-in code instead** shows a code to confirm on the AWS page — the right choice if the browser can't reach this machine, and what a K8Board *server* always uses.
 - Nothing starts on its own: you can instead pick any other cluster from the list (grouped by provider — AWS, Azure, GKE, on-prem…), or use **Add cluster** for AWS EKS, Azure AKS or a kubeconfig file (GKE, on-prem, kind…).
 
-**Your existing profiles.** An SSO profile written in the older format (`sso_start_url` / `sso_region` inside the profile) is moved to the session format the next time you sign in to its start URL: those two lines become `sso_session = <name>`; account, role, region, comments and other settings are kept. Before K8Board first changes `~/.aws/config` it saves a copy next to it (`config.kubepilot-backup-<time>`). A session you created with `aws configure sso` is reused as is. Tools from before late 2022 (AWS CLI v1, old SDKs) don't understand `sso-session`; current AWS CLI v2, SDKs and Terraform do.
+**One sign-in, several clusters.** IAM Identity Center signs you in once per access portal (start URL), and that one sign-in reaches every account and role you're assigned. So clusters whose AWS profiles use the same portal share a sign-in: signing in for a dev cluster also gives access to a prod cluster in another account. The "session expired" dialog lists the other clusters a sign-in also unlocks.
+
+**Production clusters and signing out** (Preferences → Cloud Integrations → *AWS sign-ins*). Each sign-in is listed with its status and the clusters it covers (account IDs and the portal address are masked).
+
+- **Production** gives a cluster a sign-in of its own: its AWS profile moves to a separate `[sso-session <name>-production]` with its own token. Signing in for other clusters then never reaches it, and it asks you to sign in the next time you open it. Other clusters on the same AWS profile (same account and role) move with it. Untick it to go back to the shared sign-in; the separate sign-in is then removed.
+- **Sign out** removes that sign-in's stored token from this computer, so its clusters ask you to sign in again. It doesn't end your browser's AWS access portal session or sign-ins on other machines.
+- Every change asks first and says what it will do; `~/.aws/config` is backed up before K8Board first changes it.
+
+**Your existing profiles.** Signing in changes only the AWS profile of the cluster you sign in for. If that profile is in the older format (`sso_start_url` / `sso_region` inside the profile), it is moved to the session format: those two lines become `sso_session = <name>`; account, role, region, comments and other settings are kept. Your other profiles for the same portal are left alone. Preferences lists them under *AWS sign-ins*, with a button to move them to the shared sign-in if you want. Before K8Board first changes `~/.aws/config` it saves a copy next to it (`config.k8board-backup-<time>`). A session you created with `aws configure sso` is reused as is. Tools from before late 2022 (AWS CLI v1, old SDKs) don't understand `sso-session`; current AWS CLI v2, SDKs and Terraform do.
 
 ---
 
@@ -281,7 +289,7 @@ A development build (`npm run app`), an unpacked copy (`release/win-unpacked`), 
 ### 2.1 Setup
 
 ```bash
-git clone <repo> kubepilot && cd kubepilot
+git clone <repo> k8board && cd k8board
 npm ci --ignore-scripts        # never runs third-party lifecycle scripts
 npm rebuild node-pty           # the one native addon (Linux has no prebuild)
 npm ci --prefix client
@@ -312,7 +320,7 @@ CI runs lint, both test suites, the build, `npm audit`, CodeQL, a Docker build w
 | `assistant.js`, `mcp.js`, `mcp-stdio.js` | AI assistant, MCP tools, stdio bridge |
 | `aws-eks.js`, `azure-aks.js`, `eks-token.js`, `azure-token.js` | Cloud onboarding and runtime token helpers |
 | `trivy-scan.js` | Security scanning (Trivy Operator reports or an on-demand Trivy download) |
-| `demo.js` | Synthetic in-memory cluster used as a test fixture (only with `KUBEPILOT_DEMO=1`; never shown in the app) |
+| `demo.js` | Synthetic in-memory cluster used as a test fixture (only with `K8BOARD_DEMO=1`; never shown in the app) |
 | `client/src/` | React app: `App.jsx`, `components/shell/` (routing, auth gate, fan-out), `components/ui/` (Modal, DataTable, Menu, …), `lib/` (api, format, status, kinds), `hooks/` |
 | `electron/` | Desktop shell (`main.cjs`), fuses and signing (`after-pack.cjs`) |
 | `test/`, `client/src/**/*.test.*` | Test suites |
@@ -356,8 +364,8 @@ Versions follow **Semantic Versioning**: patch for fixes (`1.2.0 → 1.2.1`), mi
    |---|---|
    | **Verify tag == VERSION** | Fails immediately if the tag and `VERSION` disagree, or if a manual run was started from a branch other than `main`. |
    | **Build** (macOS arm64, Windows x64, Linux x64) | `npm ci`, tests, `npm run dist` → installers uploaded as artifacts. |
-   | **Publish GitHub Release** | Waits for approval on the `release` environment, then generates `SHA256SUMS.txt` and a CycloneDX SBOM. Publishes on the public [jaychandra1/KubePilot](https://github.com/jaychandra1/KubePilot) repo using the `RELEASE_TOKEN` secret (a fine-grained PAT with Contents: read & write on that repo); the job fails with a clear error if the secret is missing. |
-   | **Docker image (amd64 / arm64)** → **Publish Docker image (GHCR)** | Also gated by the `release` environment. Each architecture builds on its own native runner (`ubuntu-24.04` and `ubuntu-24.04-arm` — no QEMU emulation) and is pushed by digest; the publish job then tags one multi-arch image `ghcr.io/jaychandra1/kubepilot:v1.2.0`, `:1.2` and `:latest`. |
+   | **Publish GitHub Release** | Waits for approval on the `release` environment, then generates `SHA256SUMS.txt` and a CycloneDX SBOM. Publishes on the public [jaychandra1/K8Board](https://github.com/jaychandra1/K8Board) repo using the `RELEASE_TOKEN` secret (a fine-grained PAT with Contents: read & write on that repo); the job fails with a clear error if the secret is missing. |
+   | **Docker image (amd64 / arm64)** → **Publish Docker image (GHCR)** | Also gated by the `release` environment. Each architecture builds on its own native runner (`ubuntu-24.04` and `ubuntu-24.04-arm` — no QEMU emulation) and is pushed by digest; the publish job then tags one multi-arch image `ghcr.io/jaychandra1/k8board:v1.2.0`, `:1.2` and `:latest`. |
 
    When the workflow pauses, a reviewer on the `release` environment approves it in the Actions UI. Nothing is published before that approval, and a release in progress is never cancelled by a newer run.
 
@@ -365,7 +373,7 @@ Versions follow **Semantic Versioning**: patch for fixes (`1.2.0 → 1.2.1`), mi
 
    ```bash
    sha256sum -c SHA256SUMS.txt --ignore-missing
-   docker run --rm -p 127.0.0.1:8080:3001 ghcr.io/jaychandra1/kubepilot:v1.2.0
+   docker run --rm -p 127.0.0.1:8080:3001 ghcr.io/jaychandra1/k8board:v1.2.0
    curl http://127.0.0.1:8080/healthz
    ```
 
@@ -384,9 +392,9 @@ Outputs in `release/`: `K8Board-macos.dmg` (Apple Silicon), `K8Board-windows.exe
 ### 3.3 Building the Docker image locally
 
 ```bash
-docker build -t kubepilot:dev .
-docker run --rm -p 127.0.0.1:8080:3001 -e KUBEPILOT_TOKEN=local-dev-token-1234 \
-  -v "$HOME/.kube:/home/node/.kube:ro" kubepilot:dev
+docker build -t k8board:dev .
+docker run --rm -p 127.0.0.1:8080:3001 -e K8BOARD_TOKEN=local-dev-token-1234 \
+  -v "$HOME/.kube:/home/node/.kube:ro" k8board:dev
 ```
 
 The image is multi-stage: the client is built, production dependencies are installed with `--ignore-scripts`, and `kubectl`, `kubelogin` and `trivy` are downloaded at pinned versions and verified against their published SHA256 checksums. The container runs as the unprivileged `node` user and exposes a `HEALTHCHECK` on `/healthz`.
@@ -400,7 +408,7 @@ The image is multi-stage: the client is built, production dependencies are insta
 
 ### 3.5 What the in-app updater needs from a release
 
-Help → Check for Updates (§1.11) reads the **latest stable** release of `releaseRepository` in `package.json` (`jaychandra1/KubePilot`). For it to offer an update:
+Help → Check for Updates (§1.11) reads the **latest stable** release of `releaseRepository` in `package.json` (`jaychandra1/K8Board`). For it to offer an update:
 
 - **Tag** `v<semver>` (the workflow enforces `v$(cat VERSION)`). A release that is a draft, marked *pre-release*, or tagged `-alpha`/`-beta`/`-rc`… is skipped.
 - **Assets** named `K8Board-<os>[-<arch>].<ext>` — exactly what `artifactName` in `package.json` produces: `K8Board-windows.exe`, `K8Board-macos.dmg`, `K8Board-linux.AppImage`, `K8Board-linux.deb`. Unsuffixed files are taken to be the one architecture the workflow builds per OS (Windows **x64**, macOS **arm64**, Linux **x64**). To ship another architecture, publish it with an `-x64` / `-arm64` suffix (e.g. `K8Board-windows-arm64.exe`); a suffixed file always wins over the unsuffixed one. An optional version segment (`K8Board-1.4.0-macos-arm64.dmg`) is accepted too.
@@ -409,9 +417,9 @@ Help → Check for Updates (§1.11) reads the **latest stable** release of `rele
 
 **Testing an update end to end without touching your own install:**
 
-1. Create a scratch public repo (e.g. `<you>/kubepilot-update-test`) and publish a release there with a **higher** version than the build you'll test, attaching the installer for your platform (named as above) and a matching `SHA256SUMS.txt` (`sha256sum K8Board-*.* > SHA256SUMS.txt`).
+1. Create a scratch public repo (e.g. `<you>/k8board-update-test`) and publish a release there with a **higher** version than the build you'll test, attaching the installer for your platform (named as above) and a matching `SHA256SUMS.txt` (`sha256sum K8Board-*.* > SHA256SUMS.txt`).
 2. Install an older packaged build on a test machine or VM (not your daily install).
-3. Start it with `KUBEPILOT_UPDATE_REPO=<you>/kubepilot-update-test`. Add `KUBEPILOT_UPDATE_DRY_RUN=1` to go through check → download → verify → "install" while the main process only logs what it would run.
+3. Start it with `K8BOARD_UPDATE_REPO=<you>/k8board-update-test`. Add `K8BOARD_UPDATE_DRY_RUN=1` to go through check → download → verify → "install" while the main process only logs what it would run.
 4. Without the dry-run flag, the full flow installs the test release; check that the app restarts on the new version (Windows reports the result on the next start).
 
 Automated tests (`test/updater.test.mjs`, `test/update-host.test.mjs`, `client/src/components/UpdateDialogs.test.jsx`) mock GitHub, downloads and installers; they never install anything.
@@ -427,4 +435,4 @@ Automated tests (`test/updater.test.mjs`, `test/update-host.test.mjs`, `client/s
 
 ## Appendix — Security model in one paragraph
 
-Every API call, the MCP endpoint and the shell WebSocket require a bearer token; only `/healthz` and `/api/version` are public. The server accepts only `localhost`, `127.0.0.1`, `[::1]` (plus `ALLOWED_HOSTS`) as the `Host` header, so a malicious website cannot reach it through DNS rebinding, and cross-origin requests are refused. Every namespace, kind, name, container and port is validated before it reaches `kubectl`, and user values are always placed after a `--` separator. Credentials and kubeconfigs are written atomically with owner-only permissions after a backup. The desktop app sandboxes its renderer, pins navigation to its own backend, passes an allow-listed environment to the backend and ships with Electron fuses. Releases are built from a tag that must match `VERSION`, gated by an approval environment, and published to [jaychandra1/KubePilot](https://github.com/jaychandra1/KubePilot) with checksums and an SBOM. Report vulnerabilities as described in `SECURITY.md`.
+Every API call, the MCP endpoint and the shell WebSocket require a bearer token; only `/healthz` and `/api/version` are public. The server accepts only `localhost`, `127.0.0.1`, `[::1]` (plus `ALLOWED_HOSTS`) as the `Host` header, so a malicious website cannot reach it through DNS rebinding, and cross-origin requests are refused. Every namespace, kind, name, container and port is validated before it reaches `kubectl`, and user values are always placed after a `--` separator. Credentials and kubeconfigs are written atomically with owner-only permissions after a backup. The desktop app sandboxes its renderer, pins navigation to its own backend, passes an allow-listed environment to the backend and ships with Electron fuses. Releases are built from a tag that must match `VERSION`, gated by an approval environment, and published to [jaychandra1/K8Board](https://github.com/jaychandra1/K8Board) with checksums and an SBOM. Report vulnerabilities as described in `SECURITY.md`.

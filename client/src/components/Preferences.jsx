@@ -11,6 +11,7 @@ import {
 } from '../aiConfig';
 
 import Brand from './ui/Brand';
+import AwsSignIns from './AwsSignIns';
 // Full-page Preferences view: a left sub-nav of sections and a content pane.
 // The active section comes from the route (`#/preferences/<section>`).
 
@@ -131,6 +132,7 @@ function IntegrationsSection({ onAddAzure, onAddAws }) {
           <Button variant="primary" size="sm" onClick={onAddAws}>Add AWS clusters</Button>
         </div>
       </div>
+      <AwsSignIns />
     </div>
   );
 }

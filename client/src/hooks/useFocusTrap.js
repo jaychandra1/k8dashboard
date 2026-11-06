@@ -27,8 +27,15 @@ export default function useFocusTrap(ref, active, { initialFocusRef, getInitialF
       || focusables(root)[0]
       || root;
     if (initial && !root.hasAttribute('tabindex') && initial === root) root.setAttribute('tabindex', '-1');
-    // Defer so the element is laid out (portals / animations).
-    const cancelFocus = afterPaint(() => { try { initial.focus({ preventScroll: true }); } catch { /* ignore */ } });
+    // Defer so the element is laid out (portals / animations). If focus is
+    // already inside by then (the user clicked into a field during the first
+    // frame), leave it there: moving it would send their typing or paste to
+    // another control.
+    const cancelFocus = afterPaint(() => {
+      const current = document.activeElement;
+      if (current && current !== root && root.contains(current)) return;
+      try { initial.focus({ preventScroll: true }); } catch { /* ignore */ }
+    });
 
     const onKeyDown = (e) => {
       if (e.key !== 'Tab' || !isTop(root)) return;

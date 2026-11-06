@@ -8,10 +8,10 @@
 
 A native desktop app (macOS · Windows · Linux) — and a Docker image — for browsing and operating any Kubernetes cluster from your local `kubeconfig`.
 
-[![CI](https://github.com/jaychandra1/KubePilot/actions/workflows/ci.yml/badge.svg)](https://github.com/jaychandra1/KubePilot/actions/workflows/ci.yml)
-[![Build & Release](https://github.com/jaychandra1/KubePilot/actions/workflows/release.yml/badge.svg)](https://github.com/jaychandra1/KubePilot/actions/workflows/release.yml)
-[![Latest release](https://img.shields.io/github/v/release/jaychandra1/KubePilot?sort=semver)](https://github.com/jaychandra1/KubePilot/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/jaychandra1/KubePilot/total)](https://github.com/jaychandra1/KubePilot/releases)
+[![CI](https://github.com/jaychandra1/K8Board/actions/workflows/ci.yml/badge.svg)](https://github.com/jaychandra1/K8Board/actions/workflows/ci.yml)
+[![Build & Release](https://github.com/jaychandra1/K8Board/actions/workflows/release.yml/badge.svg)](https://github.com/jaychandra1/K8Board/actions/workflows/release.yml)
+[![Latest release](https://img.shields.io/github/v/release/jaychandra1/K8Board?sort=semver)](https://github.com/jaychandra1/K8Board/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/jaychandra1/K8Board/total)](https://github.com/jaychandra1/K8Board/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-informational)
 
@@ -20,7 +20,7 @@ A native desktop app (macOS · Windows · Linux) — and a Docker image — for 
 ![K8Board cluster dashboard](docs/screenshot-dashboard.png)
 
 > [!TIP]
-> Grab the latest macOS `.dmg`, Windows `.exe`, or Linux `.AppImage`/`.deb` from the [**Releases**](https://github.com/jaychandra1/KubePilot/releases/latest) page — no build required.
+> Grab the latest macOS `.dmg`, Windows `.exe`, or Linux `.AppImage`/`.deb` from the [**Releases**](https://github.com/jaychandra1/K8Board/releases/latest) page — no build required.
 
 ## Features
 
@@ -80,7 +80,7 @@ K8Board is a **desktop UI for clusters you already have** — closest in spirit 
 
 ### Desktop app
 
-Most people just [download a build](https://github.com/jaychandra1/KubePilot/releases/latest). Every release ships a `SHA256SUMS.txt` and a CycloneDX SBOM.
+Most people just [download a build](https://github.com/jaychandra1/K8Board/releases/latest). Every release ships a `SHA256SUMS.txt` and a CycloneDX SBOM.
 
 To build it yourself:
 
@@ -106,7 +106,7 @@ The image (`linux/amd64` + `linux/arm64`) bundles Node, `kubectl`, `kubelogin` a
 ```bash
 docker run --rm -p 127.0.0.1:8080:3001 \
   -v "$HOME/.kube:/home/node/.kube:ro" \
-  ghcr.io/jaychandra1/kubepilot:latest
+  ghcr.io/jaychandra1/k8board:latest
 ```
 
 Every API call needs a **bearer token**. The container generates one at first boot and keeps it out of its log (log collectors would store it); print the sign-in link with:
@@ -116,10 +116,10 @@ docker exec <container> node scripts/login-url.mjs --base http://localhost:8080
 # → http://localhost:8080/#token=…   (use the address you actually open)
 ```
 
-Or choose the token yourself with `-e KUBEPILOT_TOKEN=<your-secret>`. (`-e KUBEPILOT_PRINT_LOGIN_URL=1` brings back the old login-URL line in `docker logs`.) Tags: `latest`, `<major.minor>` (e.g. `1.2`) and `v<semver>` (e.g. `v1.2.0`).
+Or choose the token yourself with `-e K8BOARD_TOKEN=<your-secret>`. (`-e K8BOARD_PRINT_LOGIN_URL=1` brings back the old login-URL line in `docker logs`.) Tags: `latest`, `<major.minor>` (e.g. `1.2`) and `v<semver>` (e.g. `v1.2.0`).
 
 > [!WARNING]
-> Publish to `127.0.0.1` unless you mean to expose it. If the container is reached through another hostname (a reverse proxy), allow it with `-e ALLOWED_HOSTS=kubepilot.internal` — other `Host` headers are refused with HTTP 421. See [Security](#security).
+> Publish to `127.0.0.1` unless you mean to expose it. If the container is reached through another hostname (a reverse proxy), allow it with `-e ALLOWED_HOSTS=k8board.internal` — other `Host` headers are refused with HTTP 421. See [Security](#security).
 
 <details>
 <summary>Docker notes (local clusters, OIDC)</summary>
@@ -159,18 +159,18 @@ The app is also an [MCP](https://modelcontextprotocol.io) server exposing the sa
 **HTTP** (recommended) — while the app runs, agents connect to `http://localhost:3001/mcp`:
 
 ```bash
-claude mcp add --transport http kubepilot http://localhost:3001/mcp \
+claude mcp add --transport http k8board http://localhost:3001/mcp \
   --header "Authorization: Bearer $(cat ~/.config/kubepilot/token)"
 ```
 
-**Stdio** — for agents launched by command; the app must be running. The bridge reads `MCP_API_TOKEN` (falling back to `KUBEPILOT_TOKEN`, then `~/.config/kubepilot/token`):
+**Stdio** — for agents launched by command; the app must be running. The bridge reads `MCP_API_TOKEN` (falling back to `K8BOARD_TOKEN`, then `~/.config/kubepilot/token`):
 
 ```jsonc
 {
   "mcpServers": {
-    "kubepilot": {
+    "k8board": {
       "command": "node",
-      "args": ["/absolute/path/to/kubepilot/mcp-stdio.js"],
+      "args": ["/absolute/path/to/k8board/mcp-stdio.js"],
       "env": { "MCP_API_BASE": "http://127.0.0.1:3001", "MCP_API_TOKEN": "<token>", "MCP_ALLOW_WRITE": "0" }
     }
   }
@@ -183,18 +183,18 @@ All tools act on the **currently selected context**. Run the bridge standalone w
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `KUBEPILOT_TOKEN` | Bearer token required on `/api/*`, `/mcp` and `/ws/exec` | generated → `~/.config/kubepilot/token` |
+| `K8BOARD_TOKEN` | Bearer token required on `/api/*`, `/mcp` and `/ws/exec` | generated → `~/.config/kubepilot/token` |
 | `KUBECONFIG` | Path to kubeconfig | `~/.kube/config` |
 | `PORT` | Port the backend listens on | `3001` |
 | `HOST` | Interface the backend binds | `127.0.0.1` (Docker sets `0.0.0.0`) |
-| `ALLOWED_HOSTS` | Extra `Host` header values accepted besides loopback (comma-separated, e.g. `kubepilot.internal:8080`) | — |
+| `ALLOWED_HOSTS` | Extra `Host` header values accepted besides loopback (comma-separated, e.g. `k8board.internal:8080`) | — |
 | `ALLOWED_ORIGINS` | Extra browser origins allowed to call `/api` and `/mcp` (comma-separated) | — |
 | `LLM_BASE_URL` | OpenAI-compatible endpoint for the AI assistant | — |
 | `LLM_API_KEY` | API key for the assistant (also settable in Preferences → AI) | — |
 | `LLM_MODEL` | Model the assistant requests | — |
 | `MCP_ALLOW_WRITE` | Enable MCP write/destructive tools | `0` (read-only) |
 | `MCP_API_BASE` | API base URL the stdio MCP bridge targets | `http://127.0.0.1:3001` |
-| `MCP_API_TOKEN` | Token the stdio MCP bridge sends | `KUBEPILOT_TOKEN` / token file |
+| `MCP_API_TOKEN` | Token the stdio MCP bridge sends | `K8BOARD_TOKEN` / token file |
 
 App data (token, assistant config, scan cache) lives in `~/.config/kubepilot`.
 
@@ -202,13 +202,13 @@ App data (token, assistant config, scan cache) lives in `~/.config/kubepilot`.
 
 The API, `/mcp` and the `/ws/exec` shell carry your kubeconfig's full read/write access, so the backend is protected by a **bearer token** and locked to the local machine by default. Report vulnerabilities as described in [SECURITY.md](SECURITY.md).
 
-- **Token auth on every request** — `Authorization: Bearer <token>` on `/api/*` and `/mcp`, `?token=` on the `/ws/exec` upgrade. Only `GET /healthz` and `GET /api/version` are public. The token comes from `KUBEPILOT_TOKEN`, else `~/.config/kubepilot/token` (auto-generated, mode `0600`). Run from a terminal (`npm start`), the server prints the login URL `http://127.0.0.1:3001/#token=<token>` at boot; a production server without a terminal (Docker, systemd) doesn't, and `node scripts/login-url.mjs` prints it instead. The UI moves the token from the URL fragment into `sessionStorage`.
+- **Token auth on every request** — `Authorization: Bearer <token>` on `/api/*` and `/mcp`, `?token=` on the `/ws/exec` upgrade. Only `GET /healthz` and `GET /api/version` are public. The token comes from `K8BOARD_TOKEN`, else `~/.config/kubepilot/token` (auto-generated, mode `0600`). Run from a terminal (`npm start`), the server prints the login URL `http://127.0.0.1:3001/#token=<token>` at boot; a production server without a terminal (Docker, systemd) doesn't, and `node scripts/login-url.mjs` prints it instead. The UI moves the token from the URL fragment into `sessionStorage`.
 - **Desktop app** — generates a fresh random token per launch, starts the backend on a port it verified is free (never attaching to a process that already listens there), passes only an allow-listed environment to it, keeps the renderer sandboxed with navigation pinned to the backend origin, and ships with Electron fuses that disable `ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS` and `--inspect`. Because `ELECTRON_RUN_AS_NODE` is off, imported clusters authenticate through an explicit CLI mode of the app binary (`K8Board --token-helper eks|azure …`) rather than by turning the app into node; stale kubeconfig entries from older builds are repaired automatically when the kubeconfig is loaded.
 - **Loopback by default** — binds `127.0.0.1`; set `HOST=0.0.0.0` only to expose it deliberately (the Docker image does this so its published port works).
 - **Host allowlist** — only `localhost`, `127.0.0.1`, `[::1]` (plus `ALLOWED_HOSTS`) are accepted as `Host`; anything else gets HTTP 421, which defeats DNS rebinding.
 - **Same-origin only** — a page on another origin can't drive the API or the exec WebSocket. Non-browser MCP clients are unaffected but still need the token.
 - **Hardened responses** — strict CSP on the UI, `X-Frame-Options: DENY`, `nosniff`, no `X-Powered-By`, rate limiting, request-size limits and input validation on every path segment that reaches `kubectl`.
-- **When exposing it**, publish to loopback and/or put an authenticating proxy in front, add its hostname via `ALLOWED_HOSTS` and its origin via `ALLOWED_ORIGINS`, and keep the token secret (it is not printed in the container log unless `KUBEPILOT_PRINT_LOGIN_URL=1`). The Helm and AI-agent terminals run on the K8Board host, so a server offers them only with `KUBEPILOT_LOCAL_SHELL=1`.
+- **When exposing it**, publish to loopback and/or put an authenticating proxy in front, add its hostname via `ALLOWED_HOSTS` and its origin via `ALLOWED_ORIGINS`, and keep the token secret (it is not printed in the container log unless `K8BOARD_PRINT_LOGIN_URL=1`). The Helm and AI-agent terminals run on the K8Board host, so a server offers them only with `K8BOARD_LOCAL_SHELL=1`.
 
 ## Architecture
 

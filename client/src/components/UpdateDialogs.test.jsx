@@ -20,7 +20,7 @@ const LATEST = {
   tag: 'v1.4.0',
   name: 'K8Board 1.4.0',
   publishedAt: '2026-10-01T10:00:00Z',
-  htmlUrl: 'https://github.com/jaychandra1/KubePilot/releases/tag/v1.4.0',
+  htmlUrl: 'https://github.com/jaychandra1/K8Board/releases/tag/v1.4.0',
 };
 const state = (phase, extra = {}) => ({
   state: {

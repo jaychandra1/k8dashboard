@@ -4,12 +4,12 @@ K8Board ships on Windows two ways:
 
 | | GitHub Releases | Microsoft Store |
 |---|---|---|
-| File | `K8Board-windows.exe` (NSIS installer) | `K8Board-windows-store.appx` (MSIX) |
+| File | `K8Board-windows.exe` (NSIS installer) | `K8Board-windows-store.msix` (MSIX) |
 | Signed by | Not signed at the OS level (SmartScreen shows "Unknown publisher") | **Microsoft**, after certification — no SmartScreen warning |
 | Updates | In-app updater (Help → Check for Updates), verified against K8Board's release-signing key | The Microsoft Store |
 | Install folder | `%LOCALAPPDATA%\Programs\kubepilot` | `C:\Program Files\WindowsApps\…` (read-only; Windows refuses to start a tampered copy) |
 
-The release workflow builds both on every tagged release. The `.appx` is uploaded as the **`store-kubepilot-windows`** workflow artifact (not to the GitHub release — it only installs through the Store), and the optional `store` job submits it to Partner Center.
+The release workflow builds both on every tagged release. The `.msix` is uploaded as the **`store-k8board-windows`** workflow artifact (not to the GitHub release — it only installs through the Store), and the optional `store` job submits it to Partner Center.
 
 ---
 
@@ -25,16 +25,20 @@ The release workflow builds both on every tagged release. The `.appx` is uploade
    | Package/Identity/Publisher | `publisher` | `CN=K8Board` |
    | Package/Properties/PublisherDisplayName | `publisherDisplayName` | `K8Board Program` |
 
-   Commit the change. The `store` job refuses to submit while the placeholders are there. Note the **Store ID** shown on the same page (it looks like `9NXXXXXXXXXX`); you'll need it in step 4.
+   Commit the change. The `store` job refuses to submit while the placeholders are there, and Partner Center rejects a package whose identity doesn't match these three values exactly. Note the **Store ID** shown on the same page (it looks like `9NXXXXXXXXXX`); you'll need it in step 4.
 
 ## 2. First submission (by hand — Microsoft requires it)
 
-1. Tag a release as usual. When the **Build & Release** run finishes, download the `store-kubepilot-windows` artifact from the run's summary page and unzip it: it contains `K8Board-windows-store.appx`.
+1. Get the MSIX package, `K8Board-windows-store.msix`, either way:
+   - **From a release build:** tag a release as usual; when the **Build & Release** run finishes, download the `store-k8board-windows` artifact from the run's summary page and unzip it.
+   - **On your Windows machine:** `npm ci && npm ci --prefix client`, then `npm run dist:store`. The package is written to `release/K8Board-windows-store.msix` (electron-builder downloads the Windows packaging tools the first time).
+
+   Either way, build it **after** step 1.3: the package carries the identity from `package.json`.
 2. Partner Center → the product → **Start your submission**:
    - **Pricing and availability:** Free; choose markets.
    - **Properties:** Category **Developer tools**. Privacy policy URL: `https://k8dashboard.in/privacy`. Website: `https://k8dashboard.in`. Support contact: `kubepilot.dashboard@gmail.com`.
    - **Age ratings:** complete the questionnaire. K8Board has no user-generated content and no purchases, and it shares no user data with us.
-   - **Packages:** upload `K8Board-windows-store.appx`. Device family: Windows 10/11 Desktop.
+   - **Packages:** upload `K8Board-windows-store.msix`. Device family: Windows 10/11 Desktop.
    - **Store listings:** use the text in [section 6](#6-store-listing-draft) and screenshots from `website/assets/screenshot-*.png` (1366×768 or larger).
    - **Submission options → Restricted capabilities.** Partner Center asks why the package declares `runFullTrust`. Answer:
      > K8Board is a desktop (Win32/Electron) application packaged with the Desktop Bridge. It runs a local backend process, starts kubectl and cloud CLIs (az, aws), opens terminals (ConPTY) and reads/writes the user's kubeconfig and cloud CLI configuration, all of which require a full-trust desktop process.
@@ -45,12 +49,12 @@ The release workflow builds both on every tagged release. The `.appx` is uploade
 ## 3. What's different in the Store edition
 
 - **Updates come from the Store.** Help → Check for Updates still tells you a new version exists, but offers **Open Microsoft Store** instead of downloading an installer. K8Board never installs anything over a Store install.
-- **Token helper alias.** The kubeconfig entries K8Board writes for EKS and AKS run K8Board itself as their token helper. Other programs can't start an exe under `WindowsApps` by path, so the Store package declares an app execution alias, `kubepilot.exe` (in `%LOCALAPPDATA%\Microsoft\WindowsApps`, which Windows puts on `PATH`). The Store edition writes that alias into kubeconfig, so `kubectl` works from any terminal, and keeps working across Store updates.
+- **Token helper alias.** The kubeconfig entries K8Board writes for EKS and AKS run K8Board itself as their token helper. Other programs can't start an exe under `WindowsApps` by path, so the Store package declares an app execution alias, `k8board.exe` (in `%LOCALAPPDATA%\Microsoft\WindowsApps`, which Windows puts on `PATH`). The Store edition writes that alias into kubeconfig, so `kubectl` works from any terminal, and keeps working across Store updates.
 - **Settings are shared.** `~/.config/kubepilot`, `~/.kube`, `~/.aws` and `~/.azure` are outside the package, so the Store and GitHub editions see the same clusters and settings. Uninstall the GitHub edition after switching, so kubeconfig entries don't point at two different copies.
 
 ## 4. Automating later submissions (optional)
 
-Each tagged release can submit its `.appx` once the product is live:
+Each tagged release can submit its `.msix` once the product is live:
 
 1. **Microsoft Entra ID app.** Partner Center → **Account settings → User management → Microsoft Entra applications** → add an app (or create one) and give it the **Manager** role. In the Entra admin center, create a **client secret** for it.
 2. **GitHub secrets** on the `release` environment (Settings → Environments → release):
@@ -62,21 +66,21 @@ From then on, the `store` job in `.github/workflows/release.yml` runs after the 
 
 ## 5. Testing the Store package locally (before submitting)
 
-An unsigned `.appx` installs only on a machine in Developer Mode. These steps change Windows settings, so run them yourself:
+An unsigned `.msix` installs only on a machine in Developer Mode. These steps change Windows settings, so run them yourself:
 
 1. Settings → System → **For developers** → turn on **Developer Mode**.
 2. Unpack the package (`makeappx.exe` ships with the Windows SDK; electron-builder also caches it under `%LOCALAPPDATA%\electron-builder\Cache\winCodeSign-*\windows-10\x64\`):
 
    ```powershell
-   makeappx.exe unpack /p K8Board-windows-store.appx /d kubepilot-appx
-   Add-AppxPackage -Register .\kubepilot-appx\AppxManifest.xml
+   makeappx.exe unpack /p K8Board-windows-store.msix /d k8board-msix
+   Add-AppxPackage -Register .\k8board-msix\AppxManifest.xml
    ```
 
 3. Start **K8Board** from the Start menu. Check:
    - your clusters load;
    - a pod terminal, the Helm terminal and an AI agent terminal open;
    - AWS/Azure sign-in completes in the browser;
-   - `kubectl get ns` works from a separate terminal against an EKS/AKS context that K8Board added (this exercises the `kubepilot.exe` alias);
+   - `kubectl get ns` works from a separate terminal against an EKS/AKS context that K8Board added (this exercises the `k8board.exe` alias);
    - Help → Check for Updates offers **Open Microsoft Store**.
 4. Remove it: `Get-AppxPackage *K8Board* | Remove-AppxPackage`, then turn Developer Mode off again if you don't need it.
 

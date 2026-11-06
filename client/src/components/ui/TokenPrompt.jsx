@@ -82,7 +82,7 @@ export default function TokenPrompt({ open: controlledOpen, onSuccess, onClose, 
         <ul className="token-prompt-hints">
           <li><Icon name="terminal" size={13} /> Printed in the server console when it starts</li>
           <li><Icon name="monitor" size={13} /> The desktop app opens the UI with it automatically</li>
-          <li><Icon name="box" size={13} /> Docker: <code>docker logs kubepilot</code></li>
+          <li><Icon name="box" size={13} /> Docker: <code>docker logs k8board</code></li>
         </ul>
         <label htmlFor={`${id}-input`} className="ui-modal-label">Session token</label>
         <input

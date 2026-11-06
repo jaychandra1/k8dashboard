@@ -320,7 +320,7 @@
     </nav>
     <div class="side-ext">
       <a href="index.html">← Back to home</a>
-      <a href="https://github.com/jaychandra1/KubePilot" target="_blank" rel="noopener">GitHub ↗</a>
+      <a href="https://github.com/jaychandra1/K8Board" target="_blank" rel="noopener">GitHub ↗</a>
       <a href="privacy.html">Privacy</a>
       <a href="terms.html">Terms</a>
     </div>
@@ -353,15 +353,15 @@
       <h2>Install</h2>
       <div class="tagline">Desktop app, Docker, or run from source.</div>
       <h3>Desktop app (recommended)</h3>
-      <p>Download the build for your OS from the <a href="index.html#download">downloads section</a> or the <a href="https://github.com/jaychandra1/KubePilot/releases" target="_blank" rel="noopener">GitHub releases</a> page — macOS (Apple Silicon), Windows and Linux. It bundles everything it needs; open it and it reads your <code>~/.kube/config</code>.</p>
+      <p>Download the build for your OS from the <a href="index.html#download">downloads section</a> or the <a href="https://github.com/jaychandra1/K8Board/releases" target="_blank" rel="noopener">GitHub releases</a> page — macOS (Apple Silicon), Windows and Linux. It bundles everything it needs; open it and it reads your <code>~/.kube/config</code>.</p>
       <h3>Docker</h3>
       <p>Run the published image and mount your kubeconfig. Publishing to <code>127.0.0.1</code> keeps the API off your network (see <a href="#security">Security</a>):</p>
       <pre><code>docker run --rm -p 127.0.0.1:8080:3001 \
   -v "$HOME/.kube:/home/node/.kube:ro" \
-  ghcr.io/jaychandra1/kubepilot:latest</code></pre>
-      <p>Every API request needs a <strong>bearer token</strong>. The container generates one at first boot and keeps it out of its log; print the sign-in link with <code>docker exec &lt;container&gt; node scripts/login-url.mjs --base http://localhost:8080</code> (your published port, not 3001) and open it. Or pick the token yourself with <code>-e KUBEPILOT_TOKEN=&lt;secret&gt;</code>. Images are published for <code>linux/amd64</code> and <code>linux/arm64</code> with tags <code>latest</code>, <code>1.2</code> and <code>v1.2.0</code>.</p>
+  ghcr.io/jaychandra1/k8board:latest</code></pre>
+      <p>Every API request needs a <strong>bearer token</strong>. The container generates one at first boot and keeps it out of its log; print the sign-in link with <code>docker exec &lt;container&gt; node scripts/login-url.mjs --base http://localhost:8080</code> (your published port, not 3001) and open it. Or pick the token yourself with <code>-e K8BOARD_TOKEN=&lt;secret&gt;</code>. Images are published for <code>linux/amd64</code> and <code>linux/arm64</code> with tags <code>latest</code>, <code>1.2</code> and <code>v1.2.0</code>.</p>
       <h3>From source</h3>
-      <pre><code>git clone https://github.com/jaychandra1/KubePilot
+      <pre><code>git clone https://github.com/jaychandra1/K8Board
 cd K8Board
 npm install &amp;&amp; (cd client &amp;&amp; npm install)
 npm run build
@@ -593,7 +593,7 @@ npm start          # http://localhost:3001</code></pre>
       <pre><code>docker run --rm -p 127.0.0.1:8080:3001 \
   --add-host=host.docker.internal:host-gateway \
   -v "$HOME/.kube:/home/node/.kube:ro" \
-  ghcr.io/jaychandra1/kubepilot:latest</code></pre>
+  ghcr.io/jaychandra1/k8board:latest</code></pre>
       <p>…and set the context's <code>server:</code> to <code>https://host.docker.internal:&lt;port&gt;</code> with <code>insecure-skip-tls-verify: true</code>.</p>
       <h3>OIDC / kubelogin clusters</h3>
       <p>Contexts that authenticate with <code>kubectl oidc-login</code> (kubelogin) work — the Docker image bundles the plugin. Since a container can't open a browser, log in on the host first (<code>kubectl get nodes</code> triggers the browser login and caches a token under <code>~/.kube/cache/oidc-login/</code>), then mount <code>~/.kube</code> <strong>read-write</strong> so kubelogin can refresh from inside the container.</p>
@@ -727,9 +727,9 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
       <div class="tagline">Let any MCP-compatible agent drive your connected cluster.</div>
       <p>K8Board is also an <strong>MCP server</strong>: it exposes its Kubernetes capabilities as tools so any MCP client (Claude Code, Claude Desktop, Cursor, …) can operate the cluster it's connected to — same kubeconfig, same selected context. It's served over <strong>Streamable HTTP</strong> at <code>/mcp</code> and over <strong>stdio</strong>.</p>
       <p>Add it to Claude Code:</p>
-      <pre><code>claude mcp add --transport http kubepilot http://localhost:3001/mcp \
+      <pre><code>claude mcp add --transport http k8board http://localhost:3001/mcp \
   --header "Authorization: Bearer $(cat ~/.config/kubepilot/token)"</code></pre>
-      <p><code>/mcp</code> requires the same bearer token as the API (the desktop app prints a fresh one per launch; <code>~/.config/kubepilot/token</code> holds the persistent one). The stdio bridge (<code>mcp-stdio.js</code>) reads <code>MCP_API_TOKEN</code>, falling back to <code>KUBEPILOT_TOKEN</code> and the token file.</p>
+      <p><code>/mcp</code> requires the same bearer token as the API (the desktop app prints a fresh one per launch; <code>~/.config/kubepilot/token</code> holds the persistent one). The stdio bridge (<code>mcp-stdio.js</code>) reads <code>MCP_API_TOKEN</code>, falling back to <code>K8BOARD_TOKEN</code> and the token file.</p>
       <p><strong>Read tools are always available; write/destructive tools are off by default</strong> — enable them with <code>MCP_ALLOW_WRITE=1</code> (or the Preferences toggle) only when you want an agent to be able to mutate the cluster.</p>
     </article>
 
@@ -769,7 +769,7 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
       <div class="tagline">Token-protected and locked to your machine.</div>
       <p>The API, <code>/mcp</code> and the <code>/ws/exec</code> shell carry your kubeconfig's full read/write access, so every request is authenticated and the backend is locked down to the local machine:</p>
       <ul>
-        <li><strong>Bearer token on every request</strong> — <code>Authorization: Bearer &lt;token&gt;</code> on <code>/api/*</code> and <code>/mcp</code>, <code>?token=</code> on the <code>/ws/exec</code> upgrade; only <code>GET /healthz</code> and <code>GET /api/version</code> are public. The token comes from <code>KUBEPILOT_TOKEN</code>, else <code>~/.config/kubepilot/token</code> (auto-generated, mode 600). Run from a terminal, the server prints <code>http://127.0.0.1:3001/#token=…</code> at boot (in Docker: <code>node scripts/login-url.mjs</code>) and the UI keeps the token in <code>sessionStorage</code>.</li>
+        <li><strong>Bearer token on every request</strong> — <code>Authorization: Bearer &lt;token&gt;</code> on <code>/api/*</code> and <code>/mcp</code>, <code>?token=</code> on the <code>/ws/exec</code> upgrade; only <code>GET /healthz</code> and <code>GET /api/version</code> are public. The token comes from <code>K8BOARD_TOKEN</code>, else <code>~/.config/kubepilot/token</code> (auto-generated, mode 600). Run from a terminal, the server prints <code>http://127.0.0.1:3001/#token=…</code> at boot (in Docker: <code>node scripts/login-url.mjs</code>) and the UI keeps the token in <code>sessionStorage</code>.</li>
         <li><strong>Loopback by default</strong> — it binds <code>127.0.0.1</code>, so other hosts on your network can't reach it. Set <code>HOST=0.0.0.0</code> to expose it deliberately (the Docker image does this so its published port works).</li>
         <li><strong>Host allowlist</strong> — only <code>localhost</code>, <code>127.0.0.1</code> and <code>[::1]</code> (plus <code>ALLOWED_HOSTS</code>) are accepted as <code>Host</code>; anything else is refused with HTTP 421, which defeats DNS rebinding.</li>
         <li><strong>Same-origin only</strong> — a browser page on another origin can't drive the API or the exec WebSocket (a strict origin check, not permissive CORS). Non-browser MCP clients are unaffected.</li>
@@ -786,16 +786,16 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
       <h2>Configuration</h2>
       <div class="tagline">Environment variables.</div>
       <ul>
-        <li><code>KUBEPILOT_TOKEN</code> — bearer token required on <code>/api/*</code>, <code>/mcp</code> and <code>/ws/exec</code> (default: generated and stored in <code>~/.config/kubepilot/token</code>).</li>
+        <li><code>K8BOARD_TOKEN</code> — bearer token required on <code>/api/*</code>, <code>/mcp</code> and <code>/ws/exec</code> (default: generated and stored in <code>~/.config/kubepilot/token</code>).</li>
         <li><code>KUBECONFIG</code> — path to kubeconfig (default <code>~/.kube/config</code>).</li>
         <li><code>PORT</code> — port the backend listens on (default <code>3001</code>).</li>
         <li><code>HOST</code> — interface the backend binds (default <code>127.0.0.1</code>; the Docker image sets <code>0.0.0.0</code>).</li>
-        <li><code>ALLOWED_HOSTS</code> — extra <code>Host</code> values accepted besides loopback, comma-separated (e.g. <code>kubepilot.internal:8080</code>); others get HTTP 421.</li>
+        <li><code>ALLOWED_HOSTS</code> — extra <code>Host</code> values accepted besides loopback, comma-separated (e.g. <code>k8board.internal:8080</code>); others get HTTP 421.</li>
         <li><code>ALLOWED_ORIGINS</code> — extra browser origins allowed to call <code>/api</code> and <code>/mcp</code>, comma-separated (for a reverse proxy).</li>
         <li><code>LLM_BASE_URL</code> / <code>LLM_API_KEY</code> / <code>LLM_MODEL</code> — connect the built-in assistant to an OpenAI-compatible endpoint (also settable in Preferences → AI).</li>
         <li><code>MCP_ALLOW_WRITE</code> — enable MCP write/destructive tools (default <code>0</code>, read-only).</li>
         <li><code>MCP_API_BASE</code> — API base the stdio MCP bridge targets (default <code>http://127.0.0.1:3001</code>).</li>
-        <li><code>MCP_API_TOKEN</code> — token the stdio MCP bridge sends (falls back to <code>KUBEPILOT_TOKEN</code>, then the token file).</li>
+        <li><code>MCP_API_TOKEN</code> — token the stdio MCP bridge sends (falls back to <code>K8BOARD_TOKEN</code>, then the token file).</li>
       </ul>
       <p>The backend listens on port <strong>3001</strong> (or <code>PORT</code>); map it to any host port with Docker (<code>-p &lt;host&gt;:3001</code>). App data (token, assistant config, scan cache) lives in <code>~/.config/kubepilot</code>.</p>
     </article>
@@ -811,13 +811,13 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
         <li><strong>Local cluster loads but won't connect (in Docker)</strong> — the API server is on <code>127.0.0.1</code>; reach the host or use the desktop app. See <a href="#local">Local &amp; other</a>.</li>
         <li><strong>kubectl version-skew warning</strong> — that's your local <code>kubectl</code> vs the cluster, not K8Board. Install a kubectl within one minor of the cluster to silence it.</li>
       </ul>
-      <p>Still stuck? Open an issue on <a href="https://github.com/jaychandra1/KubePilot/issues" target="_blank" rel="noopener">GitHub</a>.</p>
+      <p>Still stuck? Open an issue on <a href="https://github.com/jaychandra1/K8Board/issues" target="_blank" rel="noopener">GitHub</a>.</p>
     </article>
 
     <!-- ============ Release notes ============ -->
     <article id="release-notes">
       <h2>Release notes</h2>
-      <div class="tagline">What's new in each version. Installers for every release are on the <a href="https://github.com/jaychandra1/KubePilot/releases" target="_blank" rel="noopener">Releases</a> page.</div>
+      <div class="tagline">What's new in each version. Installers for every release are on the <a href="https://github.com/jaychandra1/K8Board/releases" target="_blank" rel="noopener">Releases</a> page.</div>
 
       <h3>v1.2.0 <span class="rel-date">Sep 23, 2026</span> — First public release</h3>
       <p>K8Board is a native desktop UI for Kubernetes — live dashboards, logs, an in-pod shell, topology, Helm, Argo CD, a Security Center and one-click cloud onboarding.</p>
@@ -827,7 +827,7 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
         <li><strong>MCP server</strong> — connect Claude, Cursor and other agents to the cluster you're viewing.</li>
         <li><strong>Cloud onboarding</strong> — import EKS, AKS and GKE clusters without a CLI.</li>
       </ul>
-      <p><a href="https://github.com/jaychandra1/KubePilot/releases/tag/v1.2.0" target="_blank" rel="noopener">Release on GitHub ↗</a></p>
+      <p><a href="https://github.com/jaychandra1/K8Board/releases/tag/v1.2.0" target="_blank" rel="noopener">Release on GitHub ↗</a></p>
     </article>
   </div>
 </div>
@@ -844,7 +844,7 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
       <a href="docs.html">Docs</a>
       <a href="privacy.html">Privacy</a>
       <a href="terms.html">Terms</a>
-      <a href="https://github.com/jaychandra1/KubePilot" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/jaychandra1/K8Board" target="_blank" rel="noopener">GitHub</a>
     </div>
     <div class="copy">Built for developers and platform teams. Not affiliated with the Kubernetes project or the CNCF.</div>
     <div class="made">

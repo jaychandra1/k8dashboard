@@ -212,3 +212,27 @@ describe('AuthErrorModal rendering', () => {
     expect(screen.queryByText(/demo/i)).toBeNull();
   });
 });
+
+describe('AuthErrorModal: what the AWS sign-in reaches', () => {
+  const show = (aws) => render(<AuthErrorModal auth={expiredAuth({ aws: { ...AWS, ...aws } })} onRetry={() => {}} contexts={CONTEXTS} contextsInfo={INFO} currentContext="dev-env-cluster" onSwitchContext={() => {}} />);
+
+  it('a shared sign-in names the other clusters it also unlocks, and where to separate production', () => {
+    show({ sessionName: 'kubepilot-d-906600a9b0', covers: ['dev-env-cluster', 'qa-cluster', 'prod-cluster'] });
+    const note = screen.getByText(/This sign-in also gives access to/);
+    expect(note).toHaveTextContent('qa-cluster and prod-cluster');
+    expect(note).not.toHaveTextContent('dev-env-cluster');
+    expect(note).toHaveTextContent('Preferences → Cloud Integrations');
+  });
+
+  it('a production sign-in says it is for that cluster only', () => {
+    show({ sessionName: 'kubepilot-d-906600a9b0-production', production: true, covers: ['dev-env-cluster'] });
+    expect(screen.getByText(/Production sign-in\./).closest('p')).toHaveTextContent('only for dev-env-cluster');
+    expect(screen.queryByText(/also gives access to/)).toBeNull();
+  });
+
+  it('nothing to say when the sign-in covers only this cluster', () => {
+    show({ sessionName: 'kubepilot-d-906600a9b0', covers: ['dev-env-cluster'] });
+    expect(screen.queryByText(/also gives access to/)).toBeNull();
+    expect(screen.queryByText(/Production sign-in/)).toBeNull();
+  });
+});

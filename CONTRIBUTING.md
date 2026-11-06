@@ -5,7 +5,7 @@ Thanks for helping. This page covers the local setup, the checks CI runs, and ho
 ## Prerequisites
 
 - **Node.js 22+** (`.nvmrc` pins 22; `.npmrc` sets `engine-strict`).
-- `kubectl` on your `PATH` for real clusters. The tests need no cluster: the HTTP suites run the synthetic fixture in `demo.js` with `KUBEPILOT_DEMO=1` (that flag is test/dev-only and is never set — or forwarded by the desktop app — for users).
+- `kubectl` on your `PATH` for real clusters. The tests need no cluster: the HTTP suites run the synthetic fixture in `demo.js` with `K8BOARD_DEMO=1` (that flag is test/dev-only and is never set — or forwarded by the desktop app — for users).
 - macOS/Linux/Windows all work for development. The packaged macOS build targets Apple Silicon only.
 
 ## Setup
@@ -19,7 +19,7 @@ npm run dev                      # UI on :3000, API on :3001
 ```
 
 The backend prints `open http://127.0.0.1:3001/#token=…`. Use that `#token=` fragment on the
-Vite URL too, or set `KUBEPILOT_TOKEN=dev-token-…` in your shell so it is stable across restarts.
+Vite URL too, or set `K8BOARD_TOKEN=dev-token-…` in your shell so it is stable across restarts.
 
 `./run.sh dev` does the same from one command (never with `sudo` and never via `curl | sh`).
 
@@ -79,14 +79,15 @@ Trivy scan of the image (fails on CRITICAL).
 2. Commit, then `git tag v1.2.0 && git push origin main v1.2.0`.
 3. The **Build & Release** workflow verifies the tag equals `v$(cat VERSION)` (it fails otherwise),
    builds all installers, pauses for approval on the `release` environment, then publishes the
-   GitHub Release on [jaychandra1/KubePilot](https://github.com/jaychandra1/KubePilot)
+   GitHub Release on [jaychandra1/K8Board](https://github.com/jaychandra1/K8Board)
    (installers, `SHA256SUMS.txt`, CycloneDX SBOM) and pushes
-   `ghcr.io/jaychandra1/kubepilot:{v1.2.0,1.2,latest}` for amd64 + arm64 (each built on a native
+   `ghcr.io/jaychandra1/k8board:{v1.2.0,1.2,latest}` for amd64 + arm64 (each built on a native
    runner, `ubuntu-24.04` / `ubuntu-24.04-arm`; no QEMU emulation).
    The `release` job needs a `RELEASE_TOKEN` secret (fine-grained PAT on
-   jaychandra1/KubePilot with Contents: read & write) and fails early with a clear error if it is
-   missing. The container image is pushed with this repo's `GITHUB_TOKEN`; after the first push,
-   make the `kubepilot` package public and link it to K8Board in its Package settings.
+   jaychandra1/K8Board with Contents: read & write) and fails early with a clear error if it is
+   missing. The container image is pushed with this repo's `GITHUB_TOKEN` as `k8board`, and the
+   same image as `kubepilot` (its name before the rename, so existing pulls keep updating); after
+   the first push of each, make the package public and link it to K8Board in its Package settings.
 
 Manual runs (Actions → Build & Release → Run workflow) are only accepted from `main`.
 

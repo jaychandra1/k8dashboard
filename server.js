@@ -9,7 +9,7 @@ import http from 'http';
 import zlib from 'zlib';
 import { WebSocketServer } from 'ws';
 import * as k8s from '@kubernetes/client-node';
-import yaml from 'js-yaml';
+import yaml from './lib/yaml.mjs';
 import * as azure from './azure-aks.js';
 import compression from 'compression';
 import { registerAssistant, redactSecret } from './assistant.js';
@@ -53,7 +53,11 @@ import { capacityTotals, nodeUsage } from './lib/capacity.mjs';
 import { filterEvents, parseWorkload, workloadScope } from './lib/event-scope.mjs';
 import { failureHints, operatorLogErrors, remediationFor, reportTarget, revisionChanges, runningReportCheck, scanCoverage, scanUnits, severityCounts } from './lib/security-insights.mjs';
 import { operatorDetail, uniqueDetails } from './lib/vuln-details.mjs';
-import { createSsoLogin, adoptSsoLogin, refreshSsoToken, profileSsoInfo, sessionsForProfiles, sessionTokenState, awsConfigPath } from './lib/aws-sso.mjs';
+import {
+  createSsoLogin, adoptSsoLogin, refreshSsoToken, profileSsoInfo, sessionsForProfiles, sessionTokenState, awsConfigPath,
+  convertLegacyProfiles, ensureSsoSession, isProductionSession, legacyProfilesOf, normalizeStartUrl, parseAwsConfig,
+  removeUnusedSession, saveAwsConfig, setProfileSession, signOutSession,
+} from './lib/aws-sso.mjs';
 
 // node-pty powers the pod terminal (a real PTY bridged to `kubectl exec`). Load
 // it defensively so a missing/unbuildable native module never crashes the whole
@@ -292,7 +296,7 @@ app.use((req, res, next) => {
   if (p === '/api/config/auth') return res.json({ ok: true, currentContext: demo.DEMO_CONTEXT });
   // Assistant: report enabled + stream canned answers (no LLM required).
   if (p === '/api/assistant/status') {
-    return res.json({ enabled: true, source: 'demo', editable: false, baseUrl: '', model: 'kubepilot-demo (canned)' });
+    return res.json({ enabled: true, source: 'demo', editable: false, baseUrl: '', model: 'k8board-demo (canned)' });
   }
   if (p === '/api/assistant/chat' && req.method === 'POST') return demoAssistantChat(req, res);
   // Cloud sign-in, agent detection, MCP, version, app updates and non-API paths are unchanged.
@@ -939,7 +943,7 @@ function writeKubeconfigAtomically(p, config) {
   fs.mkdirSync(path.dirname(p), { recursive: true, mode: 0o700 });
   if (fs.existsSync(p) && !backedUpKubeconfigs.has(p)) {
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    fs.copyFileSync(p, `${p}.kubepilot-backup-${stamp}`);
+    fs.copyFileSync(p, `${p}.k8board-backup-${stamp}`);
     backedUpKubeconfigs.add(p);
   }
   const tmp = `${p}.${process.pid}.${Date.now()}.tmp`;
@@ -1002,16 +1006,22 @@ let awsSession = null; // { sso: { accessToken, ssoRegion, startUrl }, ssoCluste
 // app (the loopback redirect must reach this machine), device code otherwise
 // or on request. Each finished sign-in is stored as a refreshable
 // [sso-session] and converts this start URL's legacy profiles to it.
-const ssoBrowserAvailable = Boolean(process.versions.electron) || process.env.KUBEPILOT_SSO_BROWSER === '1';
+const ssoBrowserAvailable = Boolean(process.versions.electron) || envFlag('SSO_BROWSER');
 const ssoLogin = createSsoLogin({ browserAvailable: ssoBrowserAvailable });
-let ssoAdopted = null; // { sessionName, converted } of the last finished sign-in
+let ssoAdopted = null; // adoptSsoLogin() result of the last finished sign-in
+let ssoTargetProfile = null; // the AWS profile the running sign-in is for (the "session expired" dialog)
 
-// Keep the SSO sessions behind the kubeconfig's EKS contexts ahead of expiry
-// (refresh token), so the token helper never has to renew them itself.
+// Keep the SSO session of the cluster in use ahead of expiry (refresh token),
+// so its token helper never has to renew it itself. Only that one: other
+// clusters' sessions — a production cluster's above all — are not kept alive
+// in the background; opening a cluster renews its session (checkClusterAuth).
 const AWS_REFRESH_WINDOW_MS = 15 * 60 * 1000;
-const eksProfilesInKubeconfig = () => [...new Set((kubeConfig?.contexts || []).map((c) => eksEntryForKc(kubeConfig, c.name)?.profile).filter(Boolean))];
+const currentEksProfiles = () => {
+  const profile = kubeConfig && currentContext ? eksEntryForKc(kubeConfig, currentContext)?.profile : null;
+  return profile ? [profile] : [];
+};
 const readAwsConfigText = () => { try { return fs.readFileSync(awsConfigPath(), 'utf8'); } catch { return ''; } };
-async function keepAwsSessionsFresh(profiles = eksProfilesInKubeconfig()) {
+async function keepAwsSessionsFresh(profiles = currentEksProfiles()) {
   if (!profiles.length) return;
   for (const session of sessionsForProfiles(readAwsConfigText(), profiles)) {
     const r = await refreshSsoToken(session, { windowMs: AWS_REFRESH_WINDOW_MS });
@@ -1027,15 +1037,126 @@ awsKeeper.unref();
 function awsSignInInfo() {
   const entry = kubeConfig && currentContext ? eksEntryForKc(kubeConfig, currentContext) : null;
   if (!entry?.profile) return null;
-  const info = profileSsoInfo(readAwsConfigText(), entry.profile);
+  const text = readAwsConfigText();
+  const info = profileSsoInfo(text, entry.profile);
   if (!info?.startUrl) return { profile: entry.profile, canSignIn: false };
   const token = info.sessionName ? sessionTokenState(info.sessionName) : null;
   return {
     profile: entry.profile, startUrl: info.startUrl, ssoRegion: info.ssoRegion, sessionName: info.sessionName,
     accountId: info.accountId || null, roleName: info.roleName || null, expiredAt: token?.expiresAt || null,
     canSignIn: true, browser: ssoBrowserAvailable,
+    // Every cluster this sign-in gives access to (they share its token).
+    production: isProductionSession(info.sessionName),
+    covers: info.sessionName ? clustersOnSession(text, info.sessionName) : [currentContext],
   };
 }
+
+// ---- AWS sign-ins: what each covers, signing out, production clusters ----
+// Every EKS context whose AWS profile signs in with IAM Identity Center,
+// grouped by the session (one sign-in, one token) its profile uses. Profiles
+// still in the legacy format are grouped by start URL (their token's key).
+function awsSignIns(text = readAwsConfigText()) {
+  const groups = new Map();
+  for (const c of kubeConfig?.contexts || []) {
+    const profile = eksEntryForKc(kubeConfig, c.name)?.profile;
+    const info = profile ? profileSsoInfo(text, profile) : null;
+    if (!info?.startUrl) continue; // access keys / an IAM role: no sign-in
+    const id = info.sessionName || `legacy:${info.startUrl}`;
+    if (!groups.has(id)) {
+      const tok = sessionTokenState(info.sessionName || info.startUrl);
+      groups.set(id, {
+        id, sessionName: info.sessionName, legacy: !info.sessionName, production: isProductionSession(info.sessionName),
+        startUrl: info.startUrl, signedIn: tok.signedIn, expiresAt: tok.expiresAt, refreshable: tok.refreshable, clusters: [],
+      });
+    }
+    groups.get(id).clusters.push({ context: c.name, current: c.name === currentContext, profile, accountId: info.accountId || null, roleName: info.roleName || null });
+  }
+  return [...groups.values()];
+}
+const clustersOnSession = (text, sessionName) => (awsSignIns(text).find((g) => g.sessionName === sessionName)?.clusters || []).map((c) => c.context);
+
+// Cached exec credentials (EKS tokens, up to 15 minutes) of the live
+// kubeconfig are dropped, so a sign-out or a production switch takes effect
+// now. Resetting the (default) plugin policy is the client's way to do it.
+const forgetClusterCredentials = () => { try { kubeConfig?.setExecCredentialPluginPolicy(undefined); } catch { /* older client */ } };
+
+app.get('/api/aws/sessions', (req, res) => {
+  try {
+    const text = readAwsConfigText();
+    const signIns = awsSignIns(text);
+    // Legacy-format profiles of these start URLs that no cluster uses: left as
+    // they are, unless the user asks to move them to the shared sign-in.
+    const inUse = new Set(signIns.flatMap((g) => g.clusters.map((c) => c.profile)));
+    const legacyProfiles = [...new Set(signIns.map((g) => g.startUrl))]
+      .flatMap((startUrl) => legacyProfilesOf(text, startUrl).filter((p) => !inUse.has(p)).map((profile) => ({ profile, startUrl })));
+    res.json({ signIns, legacyProfiles });
+  } catch (e) { fail(res, e); }
+});
+
+app.post('/api/aws/sessions/sign-out', (req, res) => {
+  try {
+    const { id } = req.body || {};
+    const group = typeof id === 'string' ? awsSignIns().find((g) => g.id === id) : null;
+    if (!group) return bad(res, 'id', 'Unknown AWS sign-in');
+    const out = signOutSession(group.sessionName || group.startUrl);
+    if (awsSession?.sso?.startUrl === group.startUrl) awsSession = null;
+    forgetClusterCredentials();
+    log.info('aws sso signed out', { production: group.production, clusters: group.clusters.length });
+    res.json({ ok: true, signedOut: out.signedOut, clusters: group.clusters.map((c) => c.context) });
+  } catch (e) { fail(res, e); }
+});
+
+// Production: the cluster's profile moves to the start URL's separate
+// "-production" session (its own token), or back to the shared one. Every
+// cluster using the same profile (account + role) moves with it.
+app.post('/api/aws/production', async (req, res) => {
+  try {
+    const { context, production } = req.body || {};
+    if (typeof production !== 'boolean') return bad(res, 'production');
+    const entry = typeof context === 'string' && kubeConfig ? eksEntryForKc(kubeConfig, context) : null;
+    if (!entry?.profile) return bad(res, 'context', 'Not an EKS cluster with an AWS profile');
+    const text = readAwsConfigText();
+    const info = profileSsoInfo(text, entry.profile);
+    if (!info?.startUrl || !info.ssoRegion) return bad(res, 'context', 'This cluster does not sign in with AWS IAM Identity Center');
+    const clusters = awsSignIns(text).flatMap((g) => g.clusters).filter((c) => c.profile === entry.profile).map((c) => c.context);
+    if (isProductionSession(info.sessionName) === production) return res.json({ production, changed: false, clusters });
+    const target = ensureSsoSession(text, { startUrl: info.startUrl, ssoRegion: info.ssoRegion, production });
+    let next = setProfileSession(target.text, entry.profile, target.name);
+    const previous = info.sessionName;
+    let previousRemoved = false;
+    if (previous && isProductionSession(previous)) {
+      next = removeUnusedSession(next, previous);
+      previousRemoved = !parseAwsConfig(next).sections.has(`sso-session:${previous}`);
+    }
+    saveAwsConfig(awsConfigPath(), next);
+    if (previousRemoved) signOutSession(previous); // no profile uses that sign-in any more
+    await awsEks.refreshAwsConfigCache();
+    forgetClusterCredentials();
+    log.info('aws cluster production setting changed', { production, clusters: clusters.length });
+    res.json({ production, changed: true, clusters, signedIn: sessionTokenState(target.name).signedIn });
+  } catch (e) { fail(res, e); }
+});
+
+// Legacy-format profiles move to the start URL's shared sign-in only when the
+// user asks (Preferences → Cloud Integrations).
+app.post('/api/aws/profiles/use-shared-sign-in', async (req, res) => {
+  try {
+    const { startUrl, profiles } = req.body || {};
+    const text = readAwsConfigText();
+    const url = typeof startUrl === 'string' ? normalizeStartUrl(startUrl) : '';
+    const legacy = url ? legacyProfilesOf(text, url) : [];
+    if (!Array.isArray(profiles) || !profiles.length || profiles.some((p) => !legacy.includes(p))) return bad(res, 'profiles', 'Unknown or already updated profiles');
+    const anyProfile = parseAwsConfig(text).sections.get(`profile:${profiles[0]}`);
+    const ssoRegion = anyProfile?.values.sso_region;
+    if (!ssoRegion) return bad(res, 'profiles', 'The profiles have no SSO region');
+    const session = ensureSsoSession(text, { startUrl: url, ssoRegion });
+    const conv = convertLegacyProfiles(session.text, { startUrl: url, ssoRegion, sessionName: session.name, only: profiles });
+    saveAwsConfig(awsConfigPath(), conv.text);
+    await awsEks.refreshAwsConfigCache();
+    log.info('aws legacy profiles updated on request', { count: conv.converted.length });
+    res.json({ converted: conv.converted });
+  } catch (e) { fail(res, e); }
+});
 
 app.get('/api/aws/status', async (req, res) => {
   // The SDK is bundled, so the integration is always available — no CLI needed.
@@ -1073,6 +1194,9 @@ app.post('/api/aws/sso-login', async (req, res) => {
     // region from the start URL (cluster discovery still scans every region).
     if (!startUrl) return res.status(400).json({ error: 'Enter your AWS SSO start URL.' });
     ssoAdopted = null;
+    // The "session expired" dialog signs in for one profile: the sign-in is
+    // stored for that profile's session (a production one stays separate).
+    ssoTargetProfile = typeof profile === 'string' && profileSsoInfo(readAwsConfigText(), profile) ? profile : null;
     awsSession = { sso: null, ssoClusters: new Map() };
     const snap = await ssoLogin.start({ startUrl, ssoRegion: ssoRegion || undefined, method: method === 'device' ? 'device' : undefined });
     log.info('aws sso sign-in started', { method: snap.method, region: snap.ssoRegion || 'auto' });
@@ -1087,16 +1211,21 @@ app.get('/api/aws/sso-login/status', async (req, res) => {
     if (result) {
       awsSession = { ...(awsSession || { ssoClusters: new Map() }), sso: { accessToken: result.accessToken, ssoRegion: result.ssoRegion, startUrl: result.startUrl } };
       try {
-        ssoAdopted = adoptSsoLogin(result);
+        ssoAdopted = adoptSsoLogin(result, { profile: ssoTargetProfile });
         await awsEks.refreshAwsConfigCache();
-        log.info('aws sso sign-in finished', { method: snap.method, session: ssoAdopted.sessionName, converted: ssoAdopted.converted.length, refreshable: !!result.refreshToken });
+        forgetClusterCredentials();
+        log.info('aws sso sign-in finished', { method: snap.method, production: ssoAdopted.production, converted: ssoAdopted.converted.length, refreshable: !!result.refreshToken });
       } catch (e) {
         // The sign-in itself worked (the wizard can continue); only storing it failed.
         ssoAdopted = { sessionName: null, converted: [], warning: `Signed in, but the session could not be saved to ~/.aws: ${firstLine(e.message)}` };
         log.warn('aws sso session could not be saved', { err: e });
       }
     }
-    return res.json({ ...snap, session: ssoAdopted?.sessionName || undefined, converted: ssoAdopted?.converted || [], warning: ssoAdopted?.warning });
+    const covers = ssoAdopted?.sessionName ? clustersOnSession(readAwsConfigText(), ssoAdopted.sessionName) : [];
+    return res.json({
+      ...snap, session: ssoAdopted?.sessionName || undefined, converted: ssoAdopted?.converted || [], warning: ssoAdopted?.warning,
+      production: !!ssoAdopted?.production, covers, legacyProfiles: ssoAdopted?.legacyProfiles || [],
+    });
   }
   res.json(snap);
 });
@@ -1249,7 +1378,7 @@ const TEMP_KUBECONFIG_TTL_MS = 12 * 60 * 60 * 1000;
 const scheduleTempUnlink = (p) => setTimeout(() => fs.unlink(p, () => {}), TEMP_KUBECONFIG_TTL_MS).unref();
 // Terminals that run on this server's own host (Helm, AI agents) are for the
 // desktop app, where that host is the user's machine (lib/helm-shell.mjs).
-const LOCAL_SHELL_DISABLED_MESSAGE = 'This terminal runs on the K8Board host, so it is only available in the K8Board desktop app (set KUBEPILOT_LOCAL_SHELL=1 to allow it on a server).';
+const LOCAL_SHELL_DISABLED_MESSAGE = 'This terminal runs on the K8Board host, so it is only available in the K8Board desktop app (set K8BOARD_LOCAL_SHELL=1 to allow it on a server).';
 app.get('/api/ai-agents', async (req, res) => {
   const agents = await Promise.all(AI_AGENTS.map(async (a) => ({ id: a.id, name: a.name, command: a.command, desc: a.desc, install: a.install, installed: await commandExists(a.command) })));
   res.json({ agents });
@@ -1882,7 +2011,8 @@ app.post('/api/portforward', mcpWriteGate, async (req, res) => {
   if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
   // Port-forward is one of the two features that genuinely need kubectl.
   if (!(await hasKubectl()).available) return fail(res, kubectlMissingError());
-  const { namespace, name, remotePort } = req.body || {};
+  const body = req.body || {};
+  const { namespace, name, remotePort } = body;
   if (!namespace || !name || !remotePort) {
     return res.status(400).json({ error: 'Missing namespace, name, or remotePort', code: 'invalid_param', field: !namespace ? 'namespace' : (!name ? 'name' : 'remotePort') });
   }
@@ -1890,9 +2020,9 @@ app.post('/api/portforward', mcpWriteGate, async (req, res) => {
     ['namespace', namespace, isDnsLabel],
     ['name', name, isDnsSubdomain],
     ['remotePort', remotePort, isPort],
-    ['localPort', req.body.localPort, (v) => v == null || v === '' || isPort(v)],
+    ['localPort', body.localPort, (v) => v == null || v === '' || isPort(v)],
   ])) return;
-  const localPort = req.body.localPort ? Number(req.body.localPort) : null;
+  const localPort = body.localPort ? Number(body.localPort) : null;
   if (livePortForwards() >= MAX_PORT_FORWARDS) {
     return res.status(429).json({ error: `At most ${MAX_PORT_FORWARDS} port-forwards may be active at once`, code: 'too_many_port_forwards' });
   }
@@ -2232,7 +2362,7 @@ async function loadWorkloadScope(namespace, workload) {
 //   ?type=Warning|Normal  ?q=text (message, reason, object, namespace, source)
 //   ?workload=Deployment/frontend  (needs a namespace; its ReplicaSets, Pods…)
 //   ?namespaces=a,b  (several namespaces, with the "all" path)
-app.get('/api/events/:namespace?', async (req, res) => {
+app.get('/api/events{/:namespace}', async (req, res) => {
   try {
     if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
 
@@ -3835,7 +3965,7 @@ const summarizePodMetrics = (item) => {
 };
 
 // Metrics for all pods (optionally scoped to a namespace) — keyed by "namespace/name"
-app.get('/api/metrics/pods/:namespace?', async (req, res) => {
+app.get('/api/metrics/pods{/:namespace}', async (req, res) => {
   try {
     if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
     const { namespace } = req.params;
@@ -4299,8 +4429,9 @@ const mcpSession = async (req, res) => {
 app.get('/mcp', mcpSession);
 app.delete('/mcp', mcpSession);
 
-// SPA fallback: serve index.html for non-API routes (production build)
-app.get('*', (req, res, next) => {
+// SPA fallback: serve index.html for non-API routes (production build).
+// '/{*splat}' is Express 5's "any path, including /".
+app.get('/{*splat}', (req, res, next) => {
   if (req.path.startsWith('/api') || req.path.startsWith('/ws')) return next();
   const indexFile = path.join(CLIENT_DIST, 'index.html');
   if (fs.existsSync(indexFile)) return res.sendFile(indexFile);

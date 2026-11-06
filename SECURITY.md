@@ -9,7 +9,7 @@ process as a security issue.
 **Please do not open a public issue for security problems.**
 
 - Preferred: open a private report via
-  [GitHub Security Advisories](https://github.com/jaychandra1/KubePilot/security/advisories/new).
+  [GitHub Security Advisories](https://github.com/jaychandra1/K8Board/security/advisories/new).
 - Or email **kubepilot.dashboard@gmail.com** with "SECURITY" in the subject.
 
 Include the version (`GET /api/version` or Preferences → About), how you are running it
@@ -25,7 +25,7 @@ You will get an acknowledgement within **5 working days** and a fix or mitigatio
 | older `1.x` | ❌ upgrade to the latest release |
 
 Only the most recent release receives fixes. Releases are published for macOS (Apple Silicon),
-Windows, Linux and as `ghcr.io/jaychandra1/kubepilot`.
+Windows, Linux and as `ghcr.io/jaychandra1/k8board`.
 
 ## Scope
 
@@ -48,7 +48,7 @@ Out of scope:
 
 ## Hardening summary (what the app does)
 
-- Bearer token (`KUBEPILOT_TOKEN` or `~/.config/kubepilot/token`, mode 0600) on every non-public route; a
+- Bearer token (`K8BOARD_TOKEN` or `~/.config/kubepilot/token`, mode 0600) on every non-public route; a
   production server without a terminal never prints it to its log.
 - AI agents use a separate MCP token (`~/.config/kubepilot/mcp-token`): its requests are MCP requests by
   construction — the write gate applies, terminals, settings, kubeconfig loading, cloud sign-ins and updates

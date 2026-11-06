@@ -127,7 +127,7 @@ function runTokenHelper(argv) {
   const prepare = withKey
     ? app.whenReady().then(() => {
       const key = readSecretKey(false);
-      if (key) process.env.KUBEPILOT_SECRET_KEY = key; // read and removed by lib/secret-store.mjs
+      if (key) process.env.K8BOARD_SECRET_KEY = key; // read and removed by lib/secret-store.mjs
     })
     : Promise.resolve();
   prepare
@@ -178,7 +178,7 @@ let clustersKey = ''; // JSON of `clusters` as last rendered into the menu
 let updateHost = null;
 let pendingHostEvents = [];
 const debug = (...args) => {
-  if (process.env.KUBEPILOT_DEBUG) console.debug('[K8Board]', ...args);
+  if (process.env.K8BOARD_DEBUG || process.env.KUBEPILOT_DEBUG) console.debug('[K8Board]', ...args);
 };
 
 // --- 1. PATH repair -------------------------------------------------------
@@ -275,6 +275,12 @@ const ENV_PREFIXES = [
   'K8SIGHT_',
 ];
 
+// Every name an app setting can have (lib/paths.mjs ENV_PREFIXES): the backend
+// reads K8BOARD_<name> first, then the previous product names. The values set
+// below remove every spelling first, so nothing inherited can stand in for them.
+const APP_PREFIXES = ['K8BOARD_', 'KUBEPILOT_', 'K8DASHBOARD_', 'K8SIGHT_'];
+const everyName = (name) => APP_PREFIXES.map((prefix) => prefix + name);
+
 function backendEnv({ fixedPath, port, token }) {
   const env = {};
   for (const [k, v] of Object.entries(process.env)) {
@@ -282,43 +288,44 @@ function backendEnv({ fixedPath, port, token }) {
     if (ENV_EXACT.has(k) || ENV_PREFIXES.some((p) => k.startsWith(p))) env[k] = v;
   }
   // Never forward anything that could turn the utility process into an
-  // arbitrary-code loader or change what server.js binds. KUBEPILOT_DEMO is
+  // arbitrary-code loader or change what server.js binds. K8BOARD_DEMO is
   // the test-only synthetic-cluster fixture; the desktop app never offers it.
-  for (const k of ['NODE_OPTIONS', 'NODE_EXTRA_CA_CERTS', 'ELECTRON_RUN_AS_NODE', 'HOST', 'PORT', 'KUBEPILOT_DEMO'])
+  for (const k of ['NODE_OPTIONS', 'NODE_EXTRA_CA_CERTS', 'ELECTRON_RUN_AS_NODE', 'HOST', 'PORT', ...everyName('DEMO')])
     delete env[k];
   // The updater's trust anchor is the release key built into the app; the
   // test-only override (lib/updater/keys.mjs) never reaches an installed build.
-  if (app.isPackaged) delete env.KUBEPILOT_UPDATE_TRUSTED_KEYS;
+  if (app.isPackaged) for (const k of everyName('UPDATE_TRUSTED_KEYS')) delete env[k];
+  for (const name of ['TOKEN', 'SECRET_KEY', 'SECRET_SCOPE', 'APP_EXEC', 'INSTALL_KIND', 'INSTALL_UNAVAILABLE', 'INSTALL_MANAGED_BY', 'UPDATE_DIR']) {
+    for (const k of everyName(name)) delete env[k];
+  }
   env.PATH = fixedPath;
   if (process.platform === 'win32') env.Path = fixedPath;
   env.NODE_ENV = 'production';
   env.HOST = '127.0.0.1';
   env.PORT = String(port);
-  env.KUBEPILOT_TOKEN = token;
+  env.K8BOARD_TOKEN = token;
   // Only the app's own DPAPI-wrapped key is forwarded (never an inherited one);
   // lib/secret-store.mjs removes it from the backend's env as soon as it loads.
-  if (secretKey) env.KUBEPILOT_SECRET_KEY = secretKey;
-  else delete env.KUBEPILOT_SECRET_KEY;
+  if (secretKey) env.K8BOARD_SECRET_KEY = secretKey;
   // The AI key is only read here, so it is always sealed; the Azure refresh
   // token also feeds the separate token helper, so only once that is verified.
-  env.KUBEPILOT_SECRET_SCOPE = azureSealing ? 'llm,azure' : 'llm';
+  env.K8BOARD_SECRET_SCOPE = azureSealing ? 'llm,azure' : 'llm';
   // The app binary the backend must write into kubeconfig exec entries
   // (`<exe> --token-helper …`); the utility process's own execPath may differ.
   // A Microsoft Store install lives under WindowsApps, which kubectl in the
   // user's own terminal may not launch by path (and whose path changes with
   // every update), so there it's the package's app execution alias
   // (build/appx-extensions.xml).
-  env.KUBEPILOT_APP_EXEC = process.windowsStore && process.env.LOCALAPPDATA
-    ? path.join(process.env.LOCALAPPDATA, 'Microsoft', 'WindowsApps', 'kubepilot.exe')
+  env.K8BOARD_APP_EXEC = process.windowsStore && process.env.LOCALAPPDATA
+    ? path.join(process.env.LOCALAPPDATA, 'Microsoft', 'WindowsApps', 'k8board.exe')
     : process.execPath;
   // How this copy is installed (so the backend picks the matching release
   // asset) and where updates download — only ever what the host detected.
-  for (const k of ['KUBEPILOT_INSTALL_KIND', 'KUBEPILOT_INSTALL_UNAVAILABLE', 'KUBEPILOT_INSTALL_MANAGED_BY', 'KUBEPILOT_UPDATE_DIR']) delete env[k];
   if (updateHost) {
-    if (updateHost.install.kind) env.KUBEPILOT_INSTALL_KIND = updateHost.install.kind;
-    else env.KUBEPILOT_INSTALL_UNAVAILABLE = updateHost.install.message;
-    if (updateHost.install.managedBy) env.KUBEPILOT_INSTALL_MANAGED_BY = updateHost.install.managedBy;
-    env.KUBEPILOT_UPDATE_DIR = updateHost.dir;
+    if (updateHost.install.kind) env.K8BOARD_INSTALL_KIND = updateHost.install.kind;
+    else env.K8BOARD_INSTALL_UNAVAILABLE = updateHost.install.message;
+    if (updateHost.install.managedBy) env.K8BOARD_INSTALL_MANAGED_BY = updateHost.install.managedBy;
+    env.K8BOARD_UPDATE_DIR = updateHost.dir;
   }
   return env;
 }

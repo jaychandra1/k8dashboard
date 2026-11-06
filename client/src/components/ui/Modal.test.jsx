@@ -56,6 +56,19 @@ describe('Modal', () => {
     expect(document.body.style.overflow).toBe('');
   });
 
+  it('keeps focus the user already moved inside before the first frame (a click into a field is not undone)', async () => {
+    render(
+      <Modal open onClose={() => {}} title="T" showClose={false}>
+        <button>first</button>
+        <textarea aria-label="editor" />
+      </Modal>,
+    );
+    const editor = screen.getByRole('textbox', { name: 'editor' });
+    editor.focus(); // before the trap's deferred initial focus runs
+    await act(async () => { await new Promise((r) => setTimeout(r, 60)); });
+    expect(editor).toHaveFocus();
+  });
+
   it('renders nothing when closed', () => {
     render(<Modal open={false} onClose={() => {}} title="X">body</Modal>);
     expect(screen.queryByRole('dialog')).toBeNull();

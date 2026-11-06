@@ -1,11 +1,11 @@
 name: Build & Release
 
 # Build the K8Board desktop app for macOS, Windows and Linux in parallel, then
-# publish a GitHub Release on the PUBLIC repo jaychandra1/KubePilot (installers +
+# publish a GitHub Release on the PUBLIC repo jaychandra1/K8Board (installers +
 # SHA256SUMS.txt + CycloneDX SBOM) and push the Docker image to
-# ghcr.io/jaychandra1/kubepilot. The source stays in this private repo.
+# ghcr.io/jaychandra1/k8board. The source stays in this private repo.
 #
-# RELEASE_TOKEN is a fine-grained PAT scoped to jaychandra1/KubePilot
+# RELEASE_TOKEN is a fine-grained PAT scoped to jaychandra1/K8Board
 # with "Contents: Read and write" — store it as a secret on the `release`
 # environment (or the repo). The release job fails early without it.
 #
@@ -33,7 +33,7 @@ concurrency:
 
 env:
   FORCE_COLOR: 1
-  RELEASE_REPO: jaychandra1/KubePilot
+  RELEASE_REPO: jaychandra1/K8Board
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -161,7 +161,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
-          name: kubepilot-${{ matrix.artifact }}
+          name: k8board-${{ matrix.artifact }}
           if-no-files-found: error
           retention-days: 7
           path: |
@@ -171,7 +171,7 @@ jobs:
             release/*.deb
             release/latest*.yml
 
-      # Microsoft Store package (AppX/MSIX). Unsigned on purpose: the Store
+      # Microsoft Store package (MSIX). Unsigned on purpose: the Store
       # signs it with Microsoft's certificate after certification, and it only
       # installs through the Store — so it stays out of the GitHub release
       # (and SHA256SUMS). The `store` job below submits it.
@@ -179,10 +179,10 @@ jobs:
         if: matrix.artifact == 'windows'
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
-          name: store-kubepilot-windows
+          name: store-k8board-windows
           if-no-files-found: error
           retention-days: 30
-          path: release/*.appx
+          path: release/*.msix
 
   # ---------------------------------------------------------------------------
   release:
@@ -248,25 +248,14 @@ jobs:
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
           path: dist
-          # The installers only — not the Store package (store-kubepilot-windows).
-          pattern: kubepilot-*
+          # The installers only — not the Store package (store-k8board-windows).
+          pattern: k8board-*
           merge-multiple: true
 
-      # K8Board was called KubePilot until 1.7, and the copies of KubePilot still
-      # installed look for KubePilot-<os>… files. Publish each installer under
-      # that name too (same bytes, listed in the signed SHA256SUMS) so they can
-      # update. Drop this step once nobody runs a KubePilot build any more.
-      - name: Legacy-named copies for KubePilot updaters
-        shell: bash
-        working-directory: dist
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-          for f in K8Board-*.dmg K8Board-*.exe K8Board-*.AppImage K8Board-*.deb; do
-            cp -- "$f" "KubePilot-${f#K8Board-}"
-          done
-          ls -l
-
+      # Installers are published under the K8Board names only. Copies of the app
+      # from before the rename (KubePilot 1.7.3 and older) look for KubePilot-<os>
+      # files, so they report "No compatible installer" and link to this page:
+      # the release notes tell them to install once by hand.
       - name: Generate SHA256SUMS.txt
         shell: bash
         working-directory: dist
@@ -291,8 +280,8 @@ jobs:
         with:
           path: .
           format: cyclonedx-json
-          output-file: dist/kubepilot-${{ needs.verify.outputs.tag }}.cdx.json
-          artifact-name: kubepilot-${{ needs.verify.outputs.tag }}.cdx.json
+          output-file: dist/k8board-${{ needs.verify.outputs.tag }}.cdx.json
+          artifact-name: k8board-${{ needs.verify.outputs.tag }}.cdx.json
           upload-artifact: false
           upload-release-assets: false
 
@@ -340,8 +329,10 @@ jobs:
             echo
             echo "---"
             echo
-            echo "Checksums are in \`SHA256SUMS.txt\`, signed with K8Board's release key (\`SHA256SUMS.txt.sig\`, verified by the in-app updater); the CycloneDX SBOM is \`kubepilot-${TAG}.cdx.json\`."
-            echo "Container image: \`ghcr.io/jaychandra1/kubepilot:${TAG}\`."
+            echo "Checksums are in \`SHA256SUMS.txt\`, signed with K8Board's release key (\`SHA256SUMS.txt.sig\`, verified by the in-app updater); the CycloneDX SBOM is \`k8board-${TAG}.cdx.json\`."
+            echo "Container image: \`ghcr.io/jaychandra1/k8board:${TAG}\`."
+            echo
+            echo "Still on KubePilot 1.7.3 or older? Its updater can't install K8Board releases: download the installer for your system below and run it once. Your clusters and settings are kept, and later updates install from inside the app."
             echo "Built from \`${SRC}@${SHA:0:12}\`."
           } > release-body.md
           cat release-body.md
@@ -349,7 +340,7 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
-          repository: jaychandra1/KubePilot
+          repository: jaychandra1/K8Board
           token: ${{ secrets.RELEASE_TOKEN }}
           tag_name: ${{ needs.verify.outputs.tag }}
           # No target_commitish: K8Board holds no source, so the tag is created
@@ -406,17 +397,22 @@ jobs:
         with:
           persist-credentials: false
 
-      # The image is pushed with GITHUB_TOKEN, so the GHCR package is created
-      # under this (source) repo's owner. After the FIRST push: open the
-      # `kubepilot` package on GHCR → Package settings → set visibility to
-      # Public, and under "Manage Actions access / Connect repository" link it
-      # to jaychandra1/KubePilot so the public repo shows the image.
-      - name: Image name
+      # The image is pushed with GITHUB_TOKEN, so the GHCR packages are created
+      # under this (source) repo's owner. After the FIRST push of a name: open
+      # the package on GHCR → Package settings → set visibility to Public, and
+      # under "Manage Actions access / Connect repository" link it to
+      # jaychandra1/K8Board so the public repo shows the image.
+      # `k8board` is the image; the same digests are also published as
+      # `kubepilot` (the name before the rename) so existing `docker pull`s
+      # keep updating. Drop LEGACY once the docs have pointed at k8board for a while.
+      - name: Image names
         id: img
         shell: bash
         env:
           OWNER: ${{ github.repository_owner }}
-        run: echo "name=ghcr.io/${OWNER,,}/kubepilot" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "name=ghcr.io/${OWNER,,}/k8board" >> "$GITHUB_OUTPUT"
+          echo "legacy=ghcr.io/${OWNER,,}/kubepilot" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
@@ -438,9 +434,9 @@ jobs:
           labels: |
             org.opencontainers.image.title=K8Board
             org.opencontainers.image.description=Browse and operate Kubernetes clusters from your kubeconfig — dashboards, logs, shell, topology, Helm, Argo CD, Security Center.
-            org.opencontainers.image.source=https://github.com/jaychandra1/KubePilot
-            org.opencontainers.image.url=https://github.com/jaychandra1/KubePilot
-            org.opencontainers.image.documentation=https://github.com/jaychandra1/KubePilot#readme
+            org.opencontainers.image.source=https://github.com/jaychandra1/K8Board
+            org.opencontainers.image.url=https://github.com/jaychandra1/K8Board
+            org.opencontainers.image.documentation=https://github.com/jaychandra1/K8Board#readme
             org.opencontainers.image.version=${{ needs.verify.outputs.version }}
             org.opencontainers.image.licenses=MIT
 
@@ -451,9 +447,9 @@ jobs:
           context: .
           target: runtime
           platforms: ${{ matrix.platform }}
-          tags: ${{ steps.img.outputs.name }}
           labels: ${{ steps.meta.outputs.labels }}
-          outputs: type=image,push-by-digest=true,name-canonical=true,push=true
+          # The same digest under both names (Docker's multi-runner pattern).
+          outputs: type=image,"name=${{ steps.img.outputs.name }},${{ steps.img.outputs.legacy }}",push-by-digest=true,name-canonical=true,push=true
           build-args: |
             APP_VERSION=${{ needs.verify.outputs.version }}
           provenance: true
@@ -491,12 +487,14 @@ jobs:
       contents: read
       packages: write
     steps:
-      - name: Image name
+      - name: Image names
         id: img
         shell: bash
         env:
           OWNER: ${{ github.repository_owner }}
-        run: echo "name=ghcr.io/${OWNER,,}/kubepilot" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "name=ghcr.io/${OWNER,,}/k8board" >> "$GITHUB_OUTPUT"
+          echo "legacy=ghcr.io/${OWNER,,}/kubepilot" >> "$GITHUB_OUTPUT"
 
       - name: Download digests
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
@@ -519,7 +517,9 @@ jobs:
         id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
-          images: ${{ steps.img.outputs.name }}
+          images: |
+            ${{ steps.img.outputs.name }}
+            ${{ steps.img.outputs.legacy }}
           tags: |
             type=semver,pattern=v{{version}},value=${{ needs.verify.outputs.tag }}
             type=semver,pattern={{major}}.{{minor}},value=${{ needs.verify.outputs.tag }}
@@ -529,32 +529,36 @@ jobs:
         shell: bash
         working-directory: ${{ runner.temp }}/digests
         env:
-          IMAGE: ${{ steps.img.outputs.name }}
+          IMAGES: ${{ steps.img.outputs.name }} ${{ steps.img.outputs.legacy }}
         run: |
           set -euo pipefail
           shopt -s nullglob
           digests=(*)
           [ ${#digests[@]} -eq 2 ] || { echo "::error::expected 2 platform digests, got ${#digests[@]}"; exit 1; }
-          mapfile -t tags < <(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
-          args=()
-          for t in "${tags[@]}"; do args+=(-t "$t"); done
-          sources=()
-          for d in "${digests[@]}"; do sources+=("${IMAGE}@sha256:${d}"); done
-          docker buildx imagetools create "${args[@]}" "${sources[@]}"
+          # One multi-arch manifest per image name, from that name's own digests.
+          for image in $IMAGES; do
+            mapfile -t tags < <(jq -r --arg img "$image:" '.tags[] | select(startswith($img))' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+            [ ${#tags[@]} -gt 0 ] || { echo "::error::no tags for $image"; exit 1; }
+            args=()
+            for t in "${tags[@]}"; do args+=(-t "$t"); done
+            sources=()
+            for d in "${digests[@]}"; do sources+=("${image}@sha256:${d}"); done
+            docker buildx imagetools create "${args[@]}" "${sources[@]}"
+          done
 
-      - name: Inspect the published image
+      - name: Inspect the published images
         shell: bash
         env:
-          IMAGE: ${{ steps.img.outputs.name }}
+          IMAGES: ${{ steps.img.outputs.name }} ${{ steps.img.outputs.legacy }}
           TAG: ${{ needs.verify.outputs.tag }}
-        run: docker buildx imagetools inspect "${IMAGE}:${TAG}"
+        run: for image in $IMAGES; do docker buildx imagetools inspect "${image}:${TAG}"; done
 
   # ---------------------------------------------------------------------------
-  # Microsoft Store: submit the AppX built above as a new submission of the
+  # Microsoft Store: submit the MSIX built above as a new submission of the
   # existing Store product, after the GitHub release is published. Off until
   # the repository variable MS_STORE_PRODUCT_ID is set — Microsoft requires
   # the FIRST submission to be made by hand in Partner Center (upload the
-  # store-kubepilot-windows artifact there).
+  # store-k8board-windows artifact there).
   #
   # Secrets of the `release` environment: MS_STORE_TENANT_ID,
   # MS_STORE_SELLER_ID, MS_STORE_CLIENT_ID, MS_STORE_CLIENT_SECRET — a
@@ -591,7 +595,7 @@ jobs:
       - name: Download the Store package
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
-          name: store-kubepilot-windows
+          name: store-k8board-windows
           path: store
 
       - name: Set up the Microsoft Store CLI
@@ -617,7 +621,7 @@ jobs:
           }
           msstore reconfigure --tenantId $env:TENANT_ID --sellerId $env:SELLER_ID --clientId $env:CLIENT_ID --clientSecret $env:CLIENT_SECRET
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          $pkg = Get-ChildItem store -Filter *.appx | Select-Object -First 1
-          if (-not $pkg) { Write-Output "::error::no .appx in the store-kubepilot-windows artifact"; exit 1 }
+          $pkg = Get-ChildItem store -Filter *.msix | Select-Object -First 1
+          if (-not $pkg) { Write-Output "::error::no .msix in the store-k8board-windows artifact"; exit 1 }
           msstore publish $pkg.FullName -id $env:PRODUCT_ID
           exit $LASTEXITCODE

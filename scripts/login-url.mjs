@@ -26,7 +26,7 @@ if (!token) {
   }
 }
 if (!token) {
-  console.error('✗ No K8Board token found (KUBEPILOT_TOKEN or ~/.config/kubepilot/token). Start the server once first.');
+  console.error('✗ No K8Board token found (K8BOARD_TOKEN or ~/.config/kubepilot/token). Start the server once first.');
   process.exit(1);
 }
 console.log(`${base}/#token=${token}`);
