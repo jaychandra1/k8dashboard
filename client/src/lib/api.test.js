@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { p, withQuery, wsUrl, setToken, getToken, clearToken, bootstrapTokenFromHash, ApiError, api, onUnauthorized, resetUnauthorized, getJson, sseFetch, errorMessage } from './api';
+import { p, withQuery, wsUrl, setToken, getToken, clearToken, bootstrapTokenFromHash, ApiError, api, onUnauthorized, resetUnauthorized, getJson, sseFetch, errorMessage, onClusterAuthRequired, CLUSTER_AUTH_MESSAGE } from './api';
 
 beforeEach(() => { clearToken(); sessionStorage.clear(); resetUnauthorized(); });
 
@@ -85,6 +85,18 @@ describe('axios instance', () => {
     await expect(rejected(err)).rejects.toBeInstanceOf(ApiError);
     expect(cb).toHaveBeenCalledTimes(1);
     off();
+  });
+  it('a cluster needing a sign-in is announced (not the app token prompt) with a plain message', async () => {
+    const unauthorized = vi.fn();
+    const needsSignIn = vi.fn();
+    const offA = onUnauthorized(unauthorized);
+    const offB = onClusterAuthRequired(needsSignIn);
+    const rejected = api.interceptors.response.handlers[0].rejected;
+    const err = { response: { status: 424, data: { error: 'raw helper text', code: 'cluster_auth_required' } }, config: { url: '/api/pods' } };
+    await expect(rejected(err)).rejects.toMatchObject({ status: 424, code: 'cluster_auth_required', message: CLUSTER_AUTH_MESSAGE });
+    expect(needsSignIn).toHaveBeenCalledTimes(1);
+    expect(unauthorized).not.toHaveBeenCalled();
+    offA(); offB();
   });
   it('getJson returns data', async () => {
     const spy = vi.spyOn(api, 'get').mockResolvedValue({ data: { a: 1 } });

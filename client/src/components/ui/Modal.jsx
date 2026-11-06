@@ -139,6 +139,7 @@ export function ConfirmModal({
   danger = false,
   busy = false,
   requireTyped,
+  confirmDisabled = false,
   icon,
   onConfirm,
   onCancel,
@@ -149,7 +150,7 @@ export function ConfirmModal({
   const confirmRef = useRef(null);
   const typedId = useId();
   useEffect(() => { if (open) setTyped(''); }, [open]);
-  const ok = !requireTyped || typed === requireTyped;
+  const ok = (!requireTyped || typed === requireTyped) && !confirmDisabled;
 
   const submit = (e) => {
     e?.preventDefault?.();

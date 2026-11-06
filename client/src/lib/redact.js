@@ -9,6 +9,7 @@ const DOTS = '••••';
 export const maskAccountId = (id) => (/^\d{12}$/.test(String(id || '')) ? `${DOTS}${String(id).slice(-4)}` : id);
 
 // Public documentation hosts that may appear in error text and are safe to show.
+const LOOPBACK = /^(?:localhost|127(?:\.\d{1,3}){3}|\[::1\])$/i;
 const PUBLIC_HOSTS = /^(?:[a-z0-9-]+\.)*(?:kubernetes\.io|k8s\.io|docs\.aws\.amazon\.com|aws\.amazon\.com|learn\.microsoft\.com|aka\.ms|cloud\.google\.com|github\.com|helm\.sh)$/i;
 
 /**
@@ -30,11 +31,12 @@ export function redactSensitive(text) {
   s = s.replace(/\b[0-9a-f]{32}\.[a-z0-9]+\.([a-z]{2}(?:-[a-z]+)+-\d)\.eks\.amazonaws\.com\b/gi, `${DOTS}.$1.eks.amazonaws.com`);
   s = s.replace(/\b[a-z0-9-]+\.(?:hcp\.|privatelink\.)?([a-z0-9-]+)\.azmk8s\.io\b/gi, `${DOTS}.$1.azmk8s.io`);
   // Any other URL host (cluster API servers, internal endpoints), keeping public docs links.
-  s = s.replace(/\b(https?:\/\/)([^\s/:"'<>)]+)/gi, (m, scheme, host) => (PUBLIC_HOSTS.test(host) || host.startsWith(DOTS) ? m : `${scheme}${DOTS}`));
+  // This machine's own addresses (localhost, 127.x) identify nothing and stay readable.
+  s = s.replace(/\b(https?:\/\/)([^\s/:"'<>)]+)/gi, (m, scheme, host) => (PUBLIC_HOSTS.test(host) || LOOPBACK.test(host) || host.startsWith(DOTS) ? m : `${scheme}${DOTS}`));
   // GUIDs (Azure tenant / subscription / client ids).
   s = s.replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{8}([0-9a-f]{4})\b/gi, `${DOTS}$1`);
-  // IPv4 addresses.
-  s = s.replace(/\b(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}\b/g, 'x.x.x.x');
+  // IPv4 addresses (except loopback).
+  s = s.replace(/\b(?!127\.)(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}\b/g, 'x.x.x.x');
   // 12-digit AWS account ids, also inside ARNs and names like "sso-241533118296".
   s = s.replace(/(^|[^\d])(\d{8})(\d{4})(?!\d)/g, (m, pre, head, tail) => (head.length === 8 ? `${pre}${DOTS}${tail}` : m));
   return s;

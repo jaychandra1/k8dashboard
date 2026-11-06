@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 import { ToastProvider, useToast } from './Toast';
+import { CLUSTER_AUTH_MESSAGE } from '../lib/api';
 
 let api;
 function Grab() { api = useToast(); return null; }
@@ -39,5 +40,19 @@ describe('Toast', () => {
     render(<ToastProvider><Grab /></ToastProvider>);
     act(() => { window.dispatchEvent(new CustomEvent('toast', { detail: { type: 'error', message: 'from window' } })); });
     expect(screen.getByRole('alert')).toHaveTextContent('from window');
+  });
+
+  it('no error toast for "needs a sign-in" (the sign-in dialog says it); account ids and hosts masked in errors', () => {
+    render(<ToastProvider><Grab /></ToastProvider>);
+    act(() => {
+      api.error(CLUSTER_AUTH_MESSAGE, { title: 'Namespaces' });
+      api.error("profile=sso-241533118296 was not found; run 'aws sso login'", { title: 'Namespaces' });
+      api.success('Port-forward ready on http://127.0.0.1:8080');
+    });
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('profile=sso-••••8296 was not found');
+    expect(alert).not.toHaveTextContent('241533118296');
+    expect(screen.queryByText(CLUSTER_AUTH_MESSAGE)).toBeNull();
+    expect(screen.getByRole('status')).toHaveTextContent('http://127.0.0.1:8080');
   });
 });

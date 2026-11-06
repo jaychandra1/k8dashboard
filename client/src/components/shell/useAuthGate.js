@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getJson, postJson, errorMessage } from '../../lib/api';
+import { getJson, postJson, errorMessage, onClusterAuthRequired } from '../../lib/api';
 
 // Startup gate: kubeconfig status → cluster auth pre-check → auto-recovery →
-// (KubeConfigModal | AuthErrorModal | app). Extracted from App.jsx.
+// (KubeConfigModal | AuthErrorModal | app). Extracted from App.jsx. While the
+// app runs, a request answered `cluster_auth_required` (the open cluster's
+// sign-in is missing or over) re-runs the check, which brings the dialog up.
 //
 //   const gate = useAuthGate({ enabled: hasToken, session, toast });
 //   gate.authOk / gate.showConfigModal / gate.showAuthError / gate.checkingAuth …
@@ -75,6 +77,22 @@ export default function useAuthGate({ enabled = true, session = 0, toast }) {
   useEffect(() => {
     if (enabled && configStatus.loaded && !forceConfigModal) checkAuth();
   }, [enabled, configStatus.loaded, forceConfigModal, checkAuth]);
+
+  // Mid-session: the open cluster needs a sign-in (signed out, session over).
+  // One re-check at a time and at most every few seconds: it runs the
+  // credential helper once; on failure the AuthErrorModal replaces the app.
+  const authOkNow = useRef(false); authOkNow.current = !!authState.ok;
+  const recheck = useRef({ running: false, at: 0 });
+  useEffect(() => {
+    if (!enabled) return undefined;
+    return onClusterAuthRequired(() => {
+      const r = recheck.current;
+      if (!authOkNow.current || r.running || Date.now() - r.at < 4000) return;
+      r.running = true;
+      r.at = Date.now();
+      Promise.resolve(checkAuth()).finally(() => { r.running = false; });
+    });
+  }, [enabled, checkAuth]);
 
   // Auto-recover: if the selected context's auth is expired but the credential
   // looks refreshable, silently reload + re-check once before showing the error

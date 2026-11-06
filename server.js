@@ -34,6 +34,7 @@ import {
 } from './lib/auth.mjs';
 import { CONFIG_DIR, DEMO_ENABLED, configFile, envFlag, findConfigFile, isMcpSource, execEntry } from './lib/paths.mjs';
 import { repairExecEntries } from './lib/kubeconfig-repair.mjs';
+import { createExecGate, CLUSTER_AUTH_CODE, CLUSTER_AUTH_MESSAGE } from './lib/exec-gate.mjs';
 import {
   createKubectl, positional, spawnBin, collectChild, commandExists, resolveBinSync, loginShellPath,
   hasKubectl, kubectlMissingError, isSpawnMissing,
@@ -56,8 +57,9 @@ import { operatorDetail, uniqueDetails } from './lib/vuln-details.mjs';
 import {
   createSsoLogin, adoptSsoLogin, refreshSsoToken, profileSsoInfo, sessionsForProfiles, sessionTokenState, awsConfigPath,
   convertLegacyProfiles, ensureSsoSession, isProductionSession, legacyProfilesOf, normalizeStartUrl, parseAwsConfig,
-  removeUnusedSession, saveAwsConfig, setProfileSession, signOutSession,
+  removeUnusedSession, saveAwsConfig, setProfileSession, signOutSession, removeProfile, writePrivateFile,
 } from './lib/aws-sso.mjs';
+import { parseKubeconfigDoc, definesContext, removeContextFromDoc, dumpKubeconfigDoc } from './lib/kubeconfig-remove.mjs';
 
 // node-pty powers the pod terminal (a real PTY bridged to `kubectl exec`). Load
 // it defensively so a missing/unbuildable native module never crashes the whole
@@ -82,6 +84,11 @@ const CLIENT_DIST = path.join(__dirname, 'client', 'dist');
 
 let currentContext = null;
 let kubeConfig = null;
+// Credential helpers of the live kubeconfig run through this gate: one run per
+// user at a time, and a user whose sign-in failed fails fast until it is
+// cleared (lib/exec-gate.mjs). Every KubeConfig assigned below is attached.
+const execGate = createExecGate();
+const currentUserName = () => { try { return kubeConfig?.getCurrentUser()?.name ?? null; } catch { return null; } };
 
 // Response cache (lib/cache.mjs): LRU, bounded, keys prefixed with the current
 // context, and writes dropped when the context changed mid-fetch.
@@ -116,7 +123,16 @@ const checkParams = (res, pairs) => {
   if (field) { bad(res, field); return false; }
   return true;
 };
-const fail = (res, error, extra, fallback) => sendError(res, error, extra, fallback);
+// A request that failed because the cluster's sign-in is missing or over (a
+// credential-helper failure marked by the exec gate, or kubectl reporting an
+// expired AWS SSO session) answers `cluster_auth_required`: the UI then opens
+// its sign-in dialog instead of showing the helper's raw output.
+const needsClusterSignIn = (error) => !!error?.clusterAuth || (typeof error?.stderr === 'string' && SSO_EXPIRED_RE.test(error.stderr));
+const fail = (res, error, extra, fallback) => {
+  if (!needsClusterSignIn(error)) return sendError(res, error, extra, fallback);
+  if (res.headersSent) return undefined;
+  return res.status(424).json({ ...(extra || {}), error: CLUSTER_AUTH_MESSAGE, code: CLUSTER_AUTH_CODE });
+};
 
 // Child processes we own outside kubectl one-shots (az login/az CLI calls,
 // port-forwards, PTYs are tracked separately) — killed on shutdown.
@@ -268,7 +284,7 @@ const agentView = (req, resource, kind) => {
 // imports, the assistant (its LLM key and spend), security scans, external
 // terminals, app settings and updates.
 const UI_ONLY_PREFIXES = [
-  '/api/mcp', '/api/config/load', '/api/config/reload', '/api/azure', '/api/aws', '/api/assistant',
+  '/api/mcp', '/api/config/load', '/api/config/reload', '/api/config/contexts', '/api/azure', '/api/aws', '/api/assistant',
   '/api/security/scan', '/api/ai-agents/launch-external', '/api/app', '/api/settings',
 ];
 app.use(UI_ONLY_PREFIXES, (req, res, next) => (isMcpSource(req)
@@ -291,7 +307,7 @@ app.use((req, res, next) => {
   // Real config handlers stay in charge (they are demo-aware).
   if (p === '/api/config/status' || p === '/api/config/context' ||
       p === '/api/config/load' || p === '/api/config/reload' || p === '/api/config/capabilities' ||
-      p === '/api/settings/pins') return next();
+      p === '/api/settings/pins' || p.startsWith('/api/config/contexts/')) return next();
   // Auth always "passes" in demo.
   if (p === '/api/config/auth') return res.json({ ok: true, currentContext: demo.DEMO_CONTEXT });
   // Assistant: report enabled + stream canned answers (no LLM required).
@@ -410,7 +426,8 @@ const loadKubeConfig = (filePath) => {
   try {
     repairKubeconfigFiles(filePath);
     const kc = parseKubeConfig({ filePath });
-    kubeConfig = kc;
+    kubeConfig = execGate.attach(kc);
+    execGate.clear(); // a fresh kubeconfig: every helper gets a new chance
     currentContext = kc.getCurrentContext();
     warnDemoCollision(kc);
     return true;
@@ -661,7 +678,8 @@ app.post('/api/config/load', (req, res) => {
   let kc;
   try { kc = parseKubeConfig({ filePath: resolved }); }
   catch (e) { return res.status(400).json({ error: `Invalid kubeconfig: ${firstLine(e.message)}`, code: 'invalid_kubeconfig' }); }
-  kubeConfig = kc;
+  kubeConfig = execGate.attach(kc);
+  execGate.clear();
   currentContext = kc.getCurrentContext();
   activeKubeconfigPath = resolved;
   warnDemoCollision(kc);
@@ -741,6 +759,114 @@ app.post('/api/config/reload', (req, res) => {
   }
   cache.clear();
   res.json({ success: true, currentContext });
+});
+
+// ---- Remove a cluster (a kubeconfig context) --------------------------------
+// From the kubeconfig file that defines it, after a fresh backup of that file.
+// Its user and cluster entries go too, unless a remaining context still uses
+// them. The AWS profile it signs in with is removed only on request, and only
+// when no other cluster uses it. `dryRun` answers what would happen (the UI's
+// confirmation). The selected cluster moves to another one when it is the one
+// removed; a pin on it is dropped. Not for MCP clients (UI_ONLY_PREFIXES).
+const kubeconfigFilesInUse = () => {
+  const files = activeKubeconfigPath ? [activeKubeconfigPath] : kubeconfigEnvPaths().length ? kubeconfigEnvPaths() : [defaultKubeconfigPath()];
+  return files.filter((p) => fs.existsSync(p));
+};
+const homeRelative = (p) => {
+  const home = os.homedir();
+  const inside = isPathInside(home, p);
+  return inside ? `~/${path.relative(home, p).split(path.sep).join('/')}` : path.basename(p);
+};
+const backupKubeconfigFile = (p) => {
+  const ts = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
+  const backup = `${p}.k8board-backup-${ts}`;
+  fs.copyFileSync(p, backup);
+  try { fs.chmodSync(backup, 0o600); } catch { /* best effort (Windows) */ }
+  return backup;
+};
+
+app.post('/api/config/contexts/remove', async (req, res) => {
+  try {
+    const { context, dryRun = false, removeAwsProfile = false } = req.body || {};
+    if (!isContextName(context)) return bad(res, 'context');
+    if (typeof dryRun !== 'boolean') return bad(res, 'dryRun');
+    if (typeof removeAwsProfile !== 'boolean') return bad(res, 'removeAwsProfile');
+    if (!kubeConfig?.contexts.some((c) => c.name === context)) return bad(res, 'context', 'Context not found');
+
+    let file = null;
+    let doc = null;
+    for (const p of kubeconfigFilesInUse()) {
+      try {
+        const d = parseKubeconfigDoc(fs.readFileSync(p, 'utf8'));
+        if (definesContext(d, context)) { file = p; doc = d; break; }
+      } catch { /* an unreadable file can't be the one to change */ }
+    }
+    if (!file) return res.status(409).json({ error: 'The kubeconfig file that defines this cluster could not be read, so nothing was changed.', code: 'kubeconfig_unreadable' });
+
+    const staying = kubeConfig.contexts.filter((c) => c.name !== context);
+    const usedBy = (key, value) => staying.filter((c) => c[key] === value).map((c) => c.name);
+    const isCurrent = context === currentContext;
+    const switchTo = isCurrent ? (staying[0]?.name ?? null) : null;
+    const plan = removeContextFromDoc(doc, context, {
+      inUse: { users: new Set(staying.map((c) => c.user)), clusters: new Set(staying.map((c) => c.cluster)) },
+      nextCurrent: switchTo,
+    });
+    const withUsers = (x, key) => (x ? { ...x, usedBy: x.removed ? [] : usedBy(key, x.name) } : null);
+
+    // The AWS profile it signs in with (EKS clusters K8Board imported).
+    const profile = eksEntryForKc(kubeConfig, context)?.profile || null;
+    const awsText = profile ? readAwsConfigText() : '';
+    const profileUsers = profile ? staying.filter((c) => eksEntryForKc(kubeConfig, c.name)?.profile === profile).map((c) => c.name) : [];
+    const awsProfile = profile && parseAwsConfig(awsText).sections.has(`profile:${profile}`)
+      ? { name: profile, removable: profileUsers.length === 0, usedBy: profileUsers }
+      : null;
+
+    const summary = {
+      context, file: homeRelative(file), user: withUsers(plan.user, 'user'), cluster: withUsers(plan.cluster, 'cluster'),
+      current: isCurrent, switchTo, lastCluster: staying.length === 0, awsProfile,
+    };
+    if (dryRun) return res.json(summary);
+    if (removeAwsProfile && !awsProfile?.removable) return bad(res, 'removeAwsProfile', 'Its AWS profile is used by another cluster');
+
+    const backup = backupKubeconfigFile(file);
+    writePrivateFile(file, dumpKubeconfigDoc(plan.doc));
+
+    let awsProfileRemoved = false;
+    if (removeAwsProfile) {
+      const session = profileSsoInfo(awsText, profile)?.sessionName || null;
+      let next = removeProfile(awsText, profile);
+      const withSession = next;
+      if (session) next = removeUnusedSession(next, session);
+      saveAwsConfig(awsConfigPath(), next);
+      if (session && next !== withSession) signOutSession(session); // no profile signs in with it any more
+      await awsEks.refreshAwsConfigCache();
+      awsProfileRemoved = true;
+    }
+
+    const pins = readPins();
+    if (pins.includes(context)) writeSettings({ pins: pins.filter((p) => p !== context) });
+
+    // The live config: reload, and keep (or move) the selected cluster.
+    if (staying.length === 0) {
+      kubeConfig = null;
+      currentContext = null;
+      execGate.clear();
+    } else {
+      const keep = isCurrent ? switchTo : currentContext;
+      reloadKubeConfig();
+      if (keep && kubeConfig?.contexts.some((c) => c.name === keep)) {
+        kubeConfig.setCurrentContext(keep);
+        currentContext = keep;
+      } else if (keep && DEMO_ENABLED && demo.isDemo(keep)) {
+        currentContext = keep; // the demo cluster isn't in the kubeconfig
+      }
+    }
+    cache.clear();
+    log.info('cluster removed from kubeconfig', {
+      userRemoved: !!plan.user?.removed, clusterRemoved: !!plan.cluster?.removed, awsProfileRemoved, switched: !!switchTo, last: staying.length === 0,
+    });
+    res.json({ ...summary, removed: true, backup: path.basename(backup), awsProfileRemoved, currentContext });
+  } catch (e) { fail(res, e); }
 });
 
 // What this install can do without kubectl. Every read and simple mutation
@@ -1021,15 +1147,24 @@ const currentEksProfiles = () => {
   return profile ? [profile] : [];
 };
 const readAwsConfigText = () => { try { return fs.readFileSync(awsConfigPath(), 'utf8'); } catch { return ''; } };
-async function keepAwsSessionsFresh(profiles = currentEksProfiles()) {
+// Over for good: no token, or one that can't be renewed and has run out.
+const signInEnded = (r) => ['missing', 'expired', 'no-refresh'].includes(r.status) && !(Date.parse(r.expiresAt) > Date.now());
+async function keepAwsSessionsFresh(profiles = currentEksProfiles(), { blockWhenEnded = false } = {}) {
   if (!profiles.length) return;
+  const context = currentContext;
+  const user = currentUserName();
   for (const session of sessionsForProfiles(readAwsConfigText(), profiles)) {
     const r = await refreshSsoToken(session, { windowMs: AWS_REFRESH_WINDOW_MS });
     if (r.status === 'refreshed') log.info('aws sso session renewed', { session, expiresAt: r.expiresAt });
     else if (r.status === 'expired' || r.status === 'error') log.warn('aws sso session could not be renewed', { session, status: r.status, error: r.error });
+    // The open cluster's sign-in is over: its requests stop and the UI asks for
+    // a sign-in now, rather than after the cached cluster token runs out.
+    if (blockWhenEnded && user && currentContext === context && signInEnded(r)) {
+      execGate.block(user, new Error('Your AWS SSO session has expired. Sign in again to refresh it.'));
+    }
   }
 }
-const awsKeeper = setInterval(() => { keepAwsSessionsFresh().catch(() => {}); }, 5 * 60 * 1000);
+const awsKeeper = setInterval(() => { keepAwsSessionsFresh(undefined, { blockWhenEnded: true }).catch(() => {}); }, 5 * 60 * 1000);
 awsKeeper.unref();
 
 // What the "AWS session expired" dialog needs to sign the current context's
@@ -1101,8 +1236,12 @@ app.post('/api/aws/sessions/sign-out', (req, res) => {
     const out = signOutSession(group.sessionName || group.startUrl);
     if (awsSession?.sso?.startUrl === group.startUrl) awsSession = null;
     forgetClusterCredentials();
-    log.info('aws sso signed out', { production: group.production, clusters: group.clusters.length });
-    res.json({ ok: true, signedOut: out.signedOut, clusters: group.clusters.map((c) => c.context) });
+    // Signed out of the open cluster: its requests stop now (no helper runs),
+    // and the UI asks for a sign-in.
+    const current = group.clusters.some((c) => c.context === currentContext);
+    if (current) execGate.block(currentUserName(), new Error('Signed out of AWS for this cluster. Sign in again to use it.'));
+    log.info('aws sso signed out', { production: group.production, clusters: group.clusters.length, current });
+    res.json({ ok: true, signedOut: out.signedOut, clusters: group.clusters.map((c) => c.context), current });
   } catch (e) { fail(res, e); }
 });
 
@@ -1132,8 +1271,11 @@ app.post('/api/aws/production', async (req, res) => {
     if (previousRemoved) signOutSession(previous); // no profile uses that sign-in any more
     await awsEks.refreshAwsConfigCache();
     forgetClusterCredentials();
+    const signedIn = sessionTokenState(target.name).signedIn;
+    const current = clusters.includes(currentContext);
+    if (current && !signedIn) execGate.block(currentUserName(), new Error('This cluster now has its own AWS sign-in. Sign in to use it.'));
     log.info('aws cluster production setting changed', { production, clusters: clusters.length });
-    res.json({ production, changed: true, clusters, signedIn: sessionTokenState(target.name).signedIn });
+    res.json({ production, changed: true, clusters, signedIn, current });
   } catch (e) { fail(res, e); }
 });
 
@@ -1214,6 +1356,7 @@ app.get('/api/aws/sso-login/status', async (req, res) => {
         ssoAdopted = adoptSsoLogin(result, { profile: ssoTargetProfile });
         await awsEks.refreshAwsConfigCache();
         forgetClusterCredentials();
+        execGate.clear();
         log.info('aws sso sign-in finished', { method: snap.method, production: ssoAdopted.production, converted: ssoAdopted.converted.length, refreshable: !!result.refreshToken });
       } catch (e) {
         // The sign-in itself worked (the wizard can continue); only storing it failed.
@@ -1535,6 +1678,9 @@ const classifyClusterError = (error, { exec, repaired = false } = {}) => {
 
 const checkClusterAuth = async () => {
   if (!kubeConfig) return { ok: false, reason: 'no-config', message: 'No kubeconfig is loaded.' };
+  // An explicit check (startup, Retry, the UI reacting to cluster_auth_required)
+  // always runs the credential helper again, lifting a sign-in block.
+  execGate.clear(currentUserName());
   const server = currentServerUrl();
   // An EKS context's SSO session that is about to (or did) expire but still
   // has a valid refresh token is renewed before connecting — no prompt.

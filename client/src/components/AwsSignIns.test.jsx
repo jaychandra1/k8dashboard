@@ -7,7 +7,7 @@ vi.mock('../lib/api', async (orig) => {
   const actual = await orig();
   return { ...actual, getJson: vi.fn(), postJson: vi.fn() };
 });
-import { getJson, postJson } from '../lib/api';
+import { getJson, postJson, onClusterAuthRequired } from '../lib/api';
 
 const START = 'https://d-906600a9b0.awsapps.com/start';
 const SHARED = {
@@ -65,6 +65,25 @@ describe('AwsSignIns', () => {
     await user.click(screen.getByRole('button', { name: 'Sign out' }));
     await user.click(within(await screen.findByRole('dialog', {}, SLOW)).getByRole('button', { name: 'Sign out' }));
     await waitFor(() => expect(postJson).toHaveBeenCalledWith('/api/aws/sessions/sign-out', { id: SHARED.id }));
+  });
+
+  it('signing out the open cluster asks for a sign-in right away; another cluster does not', async () => {
+    const user = userEvent.setup();
+    const needsSignIn = vi.fn();
+    const off = onClusterAuthRequired(needsSignIn);
+    postJson.mockResolvedValueOnce({ ok: true, signedOut: true, clusters: ['dev', 'prod'], current: true });
+    render(<AwsSignIns />);
+    await user.click(await screen.findByRole('button', { name: 'Sign out' }, SLOW));
+    await user.click(within(await screen.findByRole('dialog', {}, SLOW)).getByRole('button', { name: 'Sign out' }));
+    await waitFor(() => expect(needsSignIn).toHaveBeenCalledTimes(1));
+    // Marking a cluster that isn't open as production: nothing to ask now.
+    postJson.mockResolvedValueOnce({ production: true, changed: true, clusters: ['prod'], signedIn: false, current: false });
+    const list = await screen.findByRole('list', { name: 'Clusters on this sign-in' }, SLOW);
+    await user.click(within(within(list).getAllByRole('listitem')[1]).getByRole('checkbox', { name: 'Production' }));
+    await user.click(within(await screen.findByRole('dialog', {}, SLOW)).getByRole('button', { name: 'Mark as production' }));
+    await waitFor(() => expect(postJson).toHaveBeenCalledTimes(2));
+    expect(needsSignIn).toHaveBeenCalledTimes(1);
+    off();
   });
 
   it('older-format profiles change only when asked', async () => {

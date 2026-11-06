@@ -89,6 +89,20 @@ describe('ClusterSwitcher', () => {
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
+  it('offers Remove "<current>"… when the app supports it', async () => {
+    const onRemove = vi.fn();
+    const { user } = setup({ onRemove });
+    await user.click(trigger());
+    await user.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Remove "prod-eks"…' }));
+    expect(onRemove).toHaveBeenCalledWith('prod-eks');
+  });
+
+  it('no Remove item without a handler', async () => {
+    const { user } = setup();
+    await user.click(trigger());
+    expect(within(await screen.findByRole('menu')).queryByRole('menuitem', { name: /^Remove/ })).toBeNull();
+  });
+
   it('offers Pin/Unpin for the current context, Search contexts… (opens the picker) and an Add cluster submenu', async () => {
     const { user, onTogglePin, onOpenContexts, onAddAws, onAddAzure } = setup({ pins: ['dev-aks'] });
 

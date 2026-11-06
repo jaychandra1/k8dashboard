@@ -94,6 +94,28 @@ function useHelperProfile() {
   return true;
 }
 
+// A token helper needs none of Chromium: no GPU, no disk caches. Left alone,
+// it starts them in the default profile, where another K8Board process may
+// hold the caches; Chromium then prints "Unable to move the cache: Access is
+// denied", "Gpu Cache Creation failed" … on stderr, which kubectl and the app
+// show as part of the sign-in error. The EKS helper also gets a profile of its
+// own (the Azure one already has one, see useHelperProfile).
+function quietHelperRuntime() {
+  try {
+    app.disableHardwareAcceleration();
+    for (const s of ['disable-gpu', 'disable-gpu-shader-disk-cache', 'disable-http-cache', 'disable-software-rasterizer']) {
+      app.commandLine.appendSwitch(s);
+    }
+    app.commandLine.appendSwitch('log-level', '3'); // fatal only
+  } catch { /* best effort: the helper still works without it */ }
+}
+function useEksHelperProfile() {
+  try {
+    const os = require('os');
+    app.setPath('userData', path.join(os.tmpdir(), 'k8board-token-helper'));
+  } catch { /* keep the default profile */ }
+}
+
 const keyFingerprint = (b64) => require('crypto').createHash('sha256').update(String(b64)).digest('hex').slice(0, 16);
 
 function runTokenHelper(argv) {
@@ -105,6 +127,8 @@ function runTokenHelper(argv) {
   const onFatal = (err) => fail((err && err.message) || String(err));
   process.on('uncaughtException', onFatal);
   process.on('unhandledRejection', onFatal);
+  quietHelperRuntime();
+  if (helper === 'eks') useEksHelperProfile();
   // `--token-helper selftest`: print the fingerprint (never the key) of the data
   // key as the Azure helper would see it. Run by the GUI once per app version.
   if (helper === 'selftest') {

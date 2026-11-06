@@ -1,6 +1,6 @@
 {
   "name": "kubepilot",
-  "version": "1.7.8",
+  "version": "1.7.9",
   "description": "A native desktop UI for browsing and operating Kubernetes clusters",
   "author": {
     "name": "K8Board Program",
@@ -145,7 +145,7 @@
     "appx": {
       "identityName": "K8Board.Desktop",
       "publisher": "CN=K8Board",
-      "publisherDisplayName": "K8Board Program",
+      "publisherDisplayName": "JDG Initiates",
       "applicationId": "K8Board",
       "displayName": "K8Board",
       "backgroundColor": "#0b1220",

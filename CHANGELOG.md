@@ -10,7 +10,7 @@ All notable changes to this project are documented here. The format follows
 - **AWS sign-ins reach only what you expect.** With dev and prod clusters on one IAM Identity Center portal, signing in for dev used to renew prod as well. Now:
   - **Only the cluster in use is kept signed in in the background.** Other clusters' sessions renew when you open them.
   - **Production clusters can have their own sign-in.** Preferences → Cloud Integrations → *AWS sign-ins* lists each sign-in, the clusters it covers, and a **Production** switch per cluster. A production cluster's AWS profile moves to a separate `…-production` session with its own token, so a dev sign-in can't reach it.
-  - **Sign out** removes a sign-in's stored token from this computer. Clusters stop using cached credentials at once.
+  - **Sign out** removes a sign-in's stored token from this computer. Clusters stop using cached credentials at once, and signing out of the cluster you're on brings up its sign-in dialog straight away.
   - **Signing in changes only the profile you sign in for.** Other older-format profiles for the same portal are no longer rewritten silently; Preferences lists them with an opt-in button. Sign-ins no longer write a second token copy keyed by the portal address, which older-format profiles would have picked up.
   - The "session expired" dialog says which other clusters a sign-in also unlocks, or that it is a production sign-in.
   - Account IDs and the portal address are masked throughout. Every change asks first, and `~/.aws/config` is backed up.
@@ -54,6 +54,13 @@ All notable changes to this project are documented here. The format follows
   - **Repository:** releases stay at `jaychandra1/KubePilot`.
 
 ### Added
+- **Remove a cluster.** Use **Remove "<cluster>"…** in the cluster switcher, or **Remove** next to any cluster in Preferences → Kubernetes, which now lists every cluster.
+  - **Confirmation:** before anything changes, the dialog shows exactly what goes: the cluster, plus its credentials and server entries, which stay if another cluster uses them.
+  - **Safety:** the kubeconfig file that defines the cluster is backed up (`….k8board-backup-<time>`) and then rewritten. kubectl won't see the cluster either.
+  - **The cluster you're on** is switched away from first; its pin goes with it.
+  - **Its AWS profile** in `~/.aws/config` stays unless you tick the box, which is only offered when no other cluster uses the profile.
+  - The AI assistant (MCP) can't remove clusters.
+  - Removing a cluster is not signing out: to end a cloud sign-in, use Preferences → Cloud Integrations.
 - **Download security reports** (Security Center → an image, a resource or a role → the download icon in the drawer's header), to share with the team that owns it. The reports carry no product name or logo.
   - **PDF report** in the desktop app (A4, page numbers), **HTML report** (one self-contained file; print it to PDF from a browser) and **CSV spreadsheet** (one row per finding, for Excel or Jira).
   - **Resources and roles** (the Resources and Roles tabs) get a configuration audit or RBAC assessment report: executive summary and overall risk, resource details, what to change for each failed check, a card for each critical and high one (every finding message, the check's description, how to fix), the full table, and an appendix. `/api/security/checks` now also returns each failed check's description and all of its messages.
@@ -104,6 +111,11 @@ All notable changes to this project are documented here. The format follows
   Bars turn amber at 75% requested and red at 90%. The card also says when pods are waiting for a node with room. Requests are added up the way `kubectl describe node` does: the bigger of the app containers and the largest init container, plus native sidecars and pod overhead. Finished and unscheduled pods don't count. The summary API gains `cpuRequestedMilli`, `memRequestedBytes`, `cpuLimitsMilli`, `memLimitsBytes`, `podsScheduled`, `podsAllocatable`, `podsUnscheduled` and `usage` (`lib/capacity.mjs`, shared with demo mode).
 
 ### Fixed
+- **When a cluster's sign-in ends, the sign-in dialog comes up instead of endless loading.** Before, signing out (or the AWS session ending) while K8Board was open left the page on loading placeholders, with the sign-in helper's raw output as error messages, until you switched cluster or restarted.
+  - **The open cluster's requests now stop at once and the "session expired" dialog opens.** This covers signing out of it, its sign-in being found missing or over, and the 5-minute renewal finding that it can't be renewed. Retry or signing in resumes it.
+  - **Requests waiting together share one sign-in helper run.** Before, every request started its own helper (on Windows, a full start of the app runtime), so a busy page launched a burst of them, again on every refresh.
+- **The sign-in helper no longer adds "Unable to move the cache: Access is denied", "Gpu Cache Creation failed" and similar lines to its errors.** It now starts without graphics or disk caches, in a storage folder of its own; the server also strips such lines from older helpers' output.
+- **Error messages mask account IDs, hosts, IP addresses and tokens**, like the rest of the UI. A sign-in error could show the AWS account ID inside the profile name. This machine's own addresses (`127.0.0.1`, `localhost`) stay readable.
 - **A click into a dialog's field right after it opens is no longer undone.** Dialogs moved focus to their first control one frame after opening, even when focus was already inside, so a fast click-and-type (or paste) could land in another control. This also made the Apply-manifests tests fail on the slower CI machines.
 - **The desktop app's loading screen shows the new icon** and the K₈Board wordmark. `scripts/generate-icons.cjs` now builds it from the same artwork as every other icon and embeds it in `electron/loading.html`.
 - **Vulnerabilities a developer already fixed still showed in the Security Center.** A Deployment keeps its old ReplicaSets (scaled to 0) for rollback, and the Trivy Operator keeps their reports. So after an image was replaced, its old findings stayed in "Latest critical vulnerabilities" and in every total. Only images that are running now are listed and counted. Replaced ones sit behind a "Show N images no longer running" toggle, marked **Not running**, and their details explain why they're still there. Each image's counts now come from its de-duplicated findings: an image used by several workloads was counted once per workload. When a tag is re-pushed, its row shows the findings of the digest that runs.

@@ -27,3 +27,10 @@ describe('redactSensitive — nothing environment-identifying is displayed', () 
     expect(redactSensitive(null)).toBeNull();
   });
 });
+
+describe('redactSensitive: loopback', () => {
+  it("keeps this machine's own addresses (port-forwards) readable", () => {
+    expect(redactSensitive('Forwarding http://127.0.0.1:8080 and http://localhost:3001/x')).toBe('Forwarding http://127.0.0.1:8080 and http://localhost:3001/x');
+    expect(redactSensitive('bind 127.0.0.1:9000 failed; peer 10.2.3.4')).toBe('bind 127.0.0.1:9000 failed; peer x.x.x.x');
+  });
+});

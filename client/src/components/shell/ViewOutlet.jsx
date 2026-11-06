@@ -49,7 +49,7 @@ export default function ViewOutlet({
   focusNode, onFocusHandled,
   crSelection, onSelectCustomResource,
   subView, onSubViewChange,
-  prefSection, onPrefSectionChange, onClosePreferences, onChangeConfig, onAddAzure, onAddAws,
+  prefSection, onPrefSectionChange, onClosePreferences, onChangeConfig, onAddAzure, onAddAws, onRemoveCluster,
   onResourceTypeChange, nav,
   onClusterSummary,
 }) {
@@ -113,6 +113,7 @@ export default function ViewOutlet({
           onChangeConfig={onChangeConfig}
           onAddAzure={onAddAzure}
           onAddAws={onAddAws}
+          onRemoveCluster={onRemoveCluster}
           section={prefSection}
           onSectionChange={onPrefSectionChange}
           onClose={onClosePreferences}

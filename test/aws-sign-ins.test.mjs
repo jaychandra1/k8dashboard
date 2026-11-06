@@ -103,10 +103,16 @@ describe('AWS sign-ins', () => {
 
   test('sign out: the sign-in\'s token is gone from this computer', async () => {
     const r = await json('/api/aws/sessions/sign-out', { id: SHARED });
-    assert.deepEqual([r.status, r.body.signedOut, r.body.clusters], [200, true, ['dev']]);
+    assert.deepEqual([r.status, r.body.signedOut, r.body.clusters, r.body.current], [200, true, ['dev'], true]);
     assert.equal(fs.existsSync(cacheFile(SHARED)), false);
     const shared = (await signIns()).signIns.find((g) => g.sessionName === SHARED);
     assert.equal(shared.signedIn, false);
+    // dev is the open cluster: its requests stop at once (no token helper runs)
+    // and say a sign-in is needed, which brings the UI's sign-in dialog up.
+    const started = Date.now();
+    const ns = await json('/api/namespaces');
+    assert.deepEqual([ns.status, ns.body.code], [424, 'cluster_auth_required']);
+    assert.ok(Date.now() - started < 1000);
   });
 
   test('back from production: prod rejoins the shared sign-in and the separate session is removed', async () => {

@@ -98,8 +98,10 @@ function toApiError(err, url) {
   const res = err?.response;
   if (res) {
     const body = res.data;
-    const message = (body && typeof body === 'object' && (body.error || body.message)) || (typeof body === 'string' && body) || err.message || `HTTP ${res.status}`;
     const code = (body && typeof body === 'object' && body.code) || (res.status === 401 ? 'auth_required' : res.status === 421 ? 'host_not_allowed' : `http_${res.status}`);
+    const message = code === CLUSTER_AUTH_CODE
+      ? CLUSTER_AUTH_MESSAGE
+      : (body && typeof body === 'object' && (body.error || body.message)) || (typeof body === 'string' && body) || err.message || `HTTP ${res.status}`;
     return new ApiError({ status: res.status, code, message, body, url, cause: err });
   }
   return new ApiError({ status: 0, code: 'network', message: err?.message || 'Network error', url, cause: err });
@@ -125,6 +127,29 @@ function fireUnauthorized(err) {
 /** Reset the once-guard (TokenPrompt calls it after a successful reconnect). */
 export function resetUnauthorized() { unauthorizedFired = false; }
 
+// ---- cluster sign-in needed -------------------------------------------------
+// The server answers `cluster_auth_required` when the open cluster's sign-in is
+// missing or over (its credential helper failed). Not the app's own 401: the
+// app stays signed in; the auth gate re-checks the cluster and shows its
+// sign-in dialog.
+
+export const CLUSTER_AUTH_CODE = 'cluster_auth_required';
+export const CLUSTER_AUTH_MESSAGE = 'Sign in again to use this cluster.';
+export const isClusterAuthError = (err) => err?.code === CLUSTER_AUTH_CODE;
+
+const clusterAuthSubs = new Set();
+
+/** Subscribe to "the open cluster needs a sign-in". Returns unsubscribe. */
+export function onClusterAuthRequired(cb) {
+  clusterAuthSubs.add(cb);
+  return () => clusterAuthSubs.delete(cb);
+}
+
+/** Tell the auth gate the open cluster needs a sign-in (also fired for every such API answer). */
+export function notifyClusterAuthRequired(info) {
+  clusterAuthSubs.forEach((cb) => { try { cb(info); } catch { /* ignore */ } });
+}
+
 // ---- axios instance -------------------------------------------------------
 
 export const authHeaders = () => {
@@ -146,6 +171,7 @@ api.interceptors.response.use(
   (err) => {
     const e = toApiError(err, err?.config?.url);
     if (e.status === 401) fireUnauthorized(e);
+    else if (isClusterAuthError(e)) notifyClusterAuthRequired(e);
     return Promise.reject(e);
   },
 );

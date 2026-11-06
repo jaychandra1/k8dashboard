@@ -1,5 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import Icon from './Icons';
+import { CLUSTER_AUTH_MESSAGE } from '../lib/api';
+import { redactSensitive } from '../lib/redact';
 
 // Lightweight, app-wide toast notifications.
 //
@@ -46,9 +48,17 @@ export function ToastProvider({ children }) {
     if (timer) { clearTimeout(timer); timers.current.delete(id); }
   }, [commit]);
 
-  const push = useCallback((type, message, opts = {}) => {
-    if (!message) return undefined;
+  const push = useCallback((type, rawMessage, opts = {}) => {
+    if (!rawMessage) return undefined;
     const kind = AUTO_DISMISS[type] === undefined ? 'info' : type;
+    // A request that found the open cluster's sign-in over: the sign-in dialog
+    // takes over, so no error toast on top of it.
+    if (kind === 'error' && rawMessage === CLUSTER_AUTH_MESSAGE) return undefined;
+    // Errors and warnings often carry server or tool output: mask account ids,
+    // hosts, IPs and tokens in them, as everywhere else in the UI.
+    const masked = kind === 'error' || kind === 'warning';
+    const message = masked ? redactSensitive(String(rawMessage)) : rawMessage;
+    opts = masked && opts.title ? { ...opts, title: redactSensitive(String(opts.title)) } : opts;
     const key = `${kind}:${opts.title || ''}:${message}`;
     const ttl = opts.duration ?? AUTO_DISMISS[kind] ?? 4000;
     const existing = listRef.current.find((t) => t.key === key);

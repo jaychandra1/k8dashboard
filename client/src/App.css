@@ -4993,3 +4993,18 @@ h3.sec-drawer-section:first-child { margin-top: 0; }
 /* the AWS add-cluster wizard's sign-in step uses the same panel */
 .aws-signin { display: flex; flex-direction: column; gap: 14px; width: min(440px, 100%); margin: 6px auto 0; }
 .aws-signin-back { display: flex; justify-content: center; }
+
+/* Remove a cluster: the confirmation (RemoveClusterDialog) */
+.rmc-list { margin: 4px 0 10px; padding-left: 18px; font-size: 0.8125rem; color: var(--text); line-height: 1.6; }
+.rmc-list .rmc-kept { color: var(--text-muted); }
+.rmc-note { font-size: 0.7813rem; color: var(--text-secondary); margin: 0 0 10px; line-height: 1.5; }
+.rmc-check { display: flex; gap: 8px; align-items: flex-start; font-size: 0.8125rem; color: var(--text); margin: 6px 0 4px; cursor: pointer; line-height: 1.45; }
+.rmc-check input { margin-top: 3px; }
+.rmc-hint { display: block; font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; line-height: 1.45; }
+.rmc-error { font-size: 0.7813rem; color: var(--danger, #ef4444); margin: 8px 0 0; }
+
+/* Preferences → Kubernetes: the clusters list */
+.prefs-ctx-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-surface); max-height: 320px; overflow: auto; }
+.prefs-ctx-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 12px; font-size: 0.8125rem; }
+.prefs-ctx-row + .prefs-ctx-row { border-top: 1px solid var(--border-subtle, var(--border)); }
+.prefs-ctx-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-family: var(--font-mono, ui-monospace, monospace); font-size: 0.7813rem; }

@@ -17,6 +17,7 @@ import { PROVIDERS, providerKeyOf } from './ContextPickerModal';
 //   Search contexts…             → the searchable ContextPickerModal
 //   ────────
 //   Pin / Unpin "<current>"
+//   Remove "<current>"…         → RemoveClusterDialog (confirms what goes)
 //   Add cluster ▸                → AWS EKS · Azure AKS
 //
 // The desktop app mirrors the pinned list in its native "Clusters" menu; both
@@ -25,7 +26,7 @@ export const MAX_INLINE = 12;
 
 function ClusterSwitcher({
   contexts = [], contextsInfo, currentContext, pins = [],
-  onSwitch, onTogglePin, onOpenContexts, onAddAws, onAddAzure,
+  onSwitch, onTogglePin, onOpenContexts, onAddAws, onAddAzure, onRemove,
 }) {
   const btnRef = useRef(null);
   const [open, setOpen] = useState(false);
@@ -83,13 +84,14 @@ function ClusterSwitcher({
 
     if (currentContext) {
       list.push({ key: 'toggle-pin', label: `${isPinned ? 'Unpin' : 'Pin'} "${currentContext}"`, icon: 'pin', onSelect: () => onTogglePin?.(currentContext) });
+      if (onRemove) list.push({ key: 'remove', label: `Remove "${currentContext}"…`, icon: 'delete', danger: true, onSelect: () => onRemove(currentContext) });
     }
     const add = [];
     if (onAddAws) add.push({ key: 'aws', label: 'AWS EKS', icon: 'aws', onSelect: () => onAddAws() });
     if (onAddAzure) add.push({ key: 'azure', label: 'Azure AKS', icon: 'azure', onSelect: () => onAddAzure() });
     if (add.length) list.push({ key: 'add', label: 'Add cluster', icon: 'plus', children: add });
     return list;
-  }, [pinned, sorted, providerOf, currentContext, isPinned, onSwitch, onTogglePin, onOpenContexts, onAddAws, onAddAzure]);
+  }, [pinned, sorted, providerOf, currentContext, isPinned, onSwitch, onTogglePin, onOpenContexts, onAddAws, onAddAzure, onRemove]);
 
   const onKeyDown = (e) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (!open) openMenu(); }

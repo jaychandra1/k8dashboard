@@ -4,7 +4,7 @@ import Button from './ui/Button';
 import Badge from './ui/Badge';
 import { ConfirmModal } from './ui/Modal';
 import useRequest from '../hooks/useRequest';
-import { getJson, postJson, p, errorMessage } from '../lib/api';
+import { getJson, postJson, p, errorMessage, notifyClusterAuthRequired } from '../lib/api';
 import { maskAccountId, redactSensitive } from '../lib/redact';
 
 // Preferences → Cloud Integrations: the AWS IAM Identity Center sign-ins
@@ -114,11 +114,15 @@ export default function AwsSignIns() {
     setBusy(true);
     setError(null);
     try {
-      if (ask.kind === 'signOut') await postJson(p('api', 'aws', 'sessions', 'sign-out'), { id: ask.group.id });
-      else if (ask.kind === 'production') await postJson(p('api', 'aws', 'production'), { context: ask.cluster.context, production: ask.production });
+      let out = null;
+      if (ask.kind === 'signOut') out = await postJson(p('api', 'aws', 'sessions', 'sign-out'), { id: ask.group.id });
+      else if (ask.kind === 'production') out = await postJson(p('api', 'aws', 'production'), { context: ask.cluster.context, production: ask.production });
       else await postJson(p('api', 'aws', 'profiles', 'use-shared-sign-in'), { startUrl: ask.startUrl, profiles: ask.profiles });
       setAsk(null);
       req.refetch();
+      // The open cluster lost its sign-in (signed out, or now on a production
+      // sign-in of its own): ask for a sign-in right away.
+      if (out?.current && (ask.kind === 'signOut' || out.signedIn === false)) notifyClusterAuthRequired({ reason: ask.kind });
     } catch (e) {
       setError(errorMessage(e, 'The change could not be saved.'));
       setAsk(null);

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useState } from 'react';
 import Icon from './Icons';
 import Loader from './Loader';
 import Button from './ui/Button';
+import Badge from './ui/Badge';
 import { ConfirmModal } from './ui/Modal';
 import useRequest from '../hooks/useRequest';
 import { getJson, postJson, del, sseFetch, errorMessage } from '../lib/api';
@@ -30,7 +31,7 @@ export function isHttpUrl(v) {
   try { const u = new URL(String(v || '').trim()); return u.protocol === 'http:' || u.protocol === 'https:'; } catch { return false; }
 }
 
-export default function Preferences({ configStatus, theme, onSetTheme, onChangeConfig, onAddAzure, onAddAws, section: routeSection, onSectionChange, onClose }) {
+export default function Preferences({ configStatus, theme, onSetTheme, onChangeConfig, onAddAzure, onAddAws, onRemoveCluster, section: routeSection, onSectionChange, onClose }) {
   const section = SECTIONS.some((s) => s.key === routeSection) ? routeSection : 'general';
 
   // Esc closes the page (when no dialog/menu is open above it).
@@ -62,7 +63,7 @@ export default function Preferences({ configStatus, theme, onSetTheme, onChangeC
           <Button variant="secondary" size="sm" iconOnly icon="close" iconSize={18} ariaLabel="Close preferences (Esc)" className="prefs-close" onClick={onClose} />
         )}
         {section === 'general' && <GeneralSection theme={theme} onSetTheme={onSetTheme} />}
-        {section === 'kubernetes' && <KubernetesSection configStatus={configStatus} onChangeConfig={onChangeConfig} />}
+        {section === 'kubernetes' && <KubernetesSection configStatus={configStatus} onChangeConfig={onChangeConfig} onRemoveCluster={onRemoveCluster} />}
         {section === 'integrations' && <IntegrationsSection onAddAzure={onAddAzure} onAddAws={onAddAws} />}
         {section === 'external-tools' && <ExternalToolsSection />}
         {section === 'assistant' && <AssistantSection />}
@@ -94,7 +95,8 @@ function GeneralSection({ theme, onSetTheme }) {
 }
 
 /* ── Kubernetes ──────────────────────────────────────────────────── */
-function KubernetesSection({ configStatus, onChangeConfig }) {
+function KubernetesSection({ configStatus, onChangeConfig, onRemoveCluster }) {
+  const contexts = [...(configStatus?.contexts || [])].sort((a, b) => a.localeCompare(b));
   return (
     <div className="prefs-section">
       <h1 className="prefs-h2">Kubernetes</h1>
@@ -107,8 +109,20 @@ function KubernetesSection({ configStatus, onChangeConfig }) {
       <Field label="Current context" hint="The cluster that new requests target.">
         <code className="prefs-code">{configStatus?.currentContext || '—'}</code>
       </Field>
-      <Field label="Available contexts">
-        <span className="prefs-muted">{(configStatus?.contexts || []).length} context(s) across {(configStatus?.clusters || []).length} cluster(s)</span>
+      <Field label="Clusters" hint="Every context in your kubeconfig. Removing one takes it out of the kubeconfig file (kubectl won't see it either); a backup of the file is kept. To end a cloud sign-in instead, use Cloud Integrations.">
+        {contexts.length ? (
+          <ul className="prefs-ctx-list" aria-label="Clusters in your kubeconfig">
+            {contexts.map((ctx) => (
+              <li key={ctx} className="prefs-ctx-row">
+                <span className="prefs-ctx-name" title={ctx}>{ctx}</span>
+                {ctx === configStatus?.currentContext && <Badge tone="info" size="sm">current</Badge>}
+                {onRemoveCluster && !(configStatus?.demoAvailable && ctx === 'demo-cluster') && (
+                  <Button variant="ghost" size="sm" icon="delete" onClick={() => onRemoveCluster(ctx)} aria-label={`Remove ${ctx}`}>Remove</Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : <span className="prefs-muted">No contexts</span>}
       </Field>
     </div>
   );

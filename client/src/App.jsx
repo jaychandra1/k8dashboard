@@ -24,6 +24,7 @@ import { refreshMs } from './components/RefreshControl';
 import useAuthGate from './components/shell/useAuthGate';
 import useContexts from './components/shell/useContexts';
 import usePins from './components/shell/usePins';
+import RemoveClusterDialog from './components/RemoveClusterDialog';
 import useNamespaces from './components/shell/useNamespaces';
 import useResourceFanOut from './components/shell/useResourceFanOut';
 import useNavDrawer from './components/shell/useNavDrawer';
@@ -102,7 +103,22 @@ function App() {
 
   // useContexts routes to the Cluster overview itself (POST_SWITCH_VIEW).
   const { switchContext, afterSwitch, switching, switchTarget } = useContexts({ gate, toast });
-  const { pins, togglePin } = usePins({ enabled: tokenOk && authOk, toast });
+  const { pins, togglePin, refetch: refetchPins } = usePins({ enabled: tokenOk && authOk, toast });
+
+  // ---- remove a cluster (switcher menu, Preferences → Kubernetes) ----------
+  // The open cluster removed: K8Board is already on another one (server side),
+  // so the usual post-switch path runs; the last one removed: the kubeconfig
+  // screen comes up.
+  const [removeTarget, setRemoveTarget] = useState(null);
+  const openRemoveCluster = useCallback((ctx) => { if (ctx) setRemoveTarget(ctx); }, []);
+  const closeRemoveCluster = useCallback(() => setRemoveTarget(null), []);
+  const onClusterRemoved = useCallback((out) => {
+    setRemoveTarget(null);
+    toast.success(`Removed ${out?.context || 'the cluster'} from your kubeconfig`, { title: 'Cluster' });
+    refetchPins?.();
+    if (out?.current && out.currentContext) afterSwitch(out.currentContext);
+    else gate.fetchConfigStatus();
+  }, [toast, refetchPins, afterSwitch, gate]);
 
   // ---- context-switch loading screen ------------------------------------
   // Shown over <main> from the moment a switch starts (`switching`) until the
@@ -334,6 +350,7 @@ function App() {
         onOpenContexts={openContexts}
         onAddAws={openAws}
         onAddAzure={openAzure}
+        onRemove={configStatus.demoAvailable && currentContext === 'demo-cluster' ? undefined : openRemoveCluster}
       />
       <div className="topbar-hist" role="group" aria-label="History">
         <Tooltip content="Back">
@@ -344,7 +361,7 @@ function App() {
         </Tooltip>
       </div>
     </>
-  ), [ctxList, contextsInfo, currentContext, pins, switchContext, togglePin, openContexts, openAws, openAzure, canBack, canForward, back, forward]);
+  ), [ctxList, contextsInfo, currentContext, pins, switchContext, togglePin, openContexts, openAws, openAzure, openRemoveCluster, configStatus.demoAvailable, canBack, canForward, back, forward]);
 
   // ---- render -------------------------------------------------------------
   const { serverError, showConfigModal, showAuthError, checkingAuth, configChecked, autoRecovering } = gate;
@@ -470,6 +487,7 @@ function App() {
                   onChangeConfig={openLocal}
                   onAddAzure={openAzure}
                   onAddAws={openAws}
+                  onRemoveCluster={openRemoveCluster}
                   onResourceTypeChange={goView}
                   nav={nav}
                   onClusterSummary={onClusterSummary}
@@ -527,6 +545,9 @@ function App() {
           onAddAzure={openAzure}
           onAddLocal={openLocal}
         />
+      )}
+      {tokenOk && removeTarget && (
+        <RemoveClusterDialog context={removeTarget} onClose={closeRemoveCluster} onRemoved={onClusterRemoved} />
       )}
       <ShortcutsSheet open={shortcutsOpen} onClose={closeShortcuts} />
       {/* Help → Show Release Notes / Check for Updates (desktop Help menu) */}
