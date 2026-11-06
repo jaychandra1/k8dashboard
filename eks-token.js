@@ -11,11 +11,11 @@
 //   electron/main.cjs routes to run() below)
 // Credentials come from --profile (SDK fromNodeProviderChain honours ~/.aws and
 // assume-role) or, if no profile, the ambient AWS_* environment variables.
-import { pathToFileURL } from 'url';
 import { SignatureV4 } from '@smithy/signature-v4';
 import { Sha256 } from '@aws-crypto/sha256-js';
 import { HttpRequest } from '@smithy/protocol-http';
 import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
+import { isMainModule } from './lib/paths.mjs';
 
 const argOf = (argv, name) => { const i = argv.indexOf(`--${name}`); return i >= 0 ? argv[i + 1] : undefined; };
 
@@ -58,7 +58,9 @@ async function main() {
 
 // CLI entry only when executed directly (`node eks-token.js …`), not when
 // imported by electron/main.cjs or a test.
-const sameFile = (a, b) => (process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b);
-if (process.argv[1] && sameFile(import.meta.url, pathToFileURL(process.argv[1]).href)) {
+// Run as `node eks-token.js …` (source / Docker kubeconfigs). Real paths are
+// compared: through a symlink (macOS /var, a linked folder) a plain comparison
+// failed and the helper printed nothing.
+if (isMainModule(import.meta.url)) {
   main().catch((e) => { process.stderr.write(`eks-token: ${e.message}\n`); process.exit(1); });
 }

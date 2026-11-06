@@ -52,7 +52,7 @@ describe('bundled backend (desktop app)', { skip: !hasRolldown && 'client depend
   });
 
   test('the AWS token helper loads its whole credential chain', () => {
-    const env = { ...process.env, HOME: home, USERPROFILE: home, AWS_CONFIG_FILE: path.join(home, 'none'), AWS_SHARED_CREDENTIALS_FILE: path.join(home, 'none') };
+    const env = { ...process.env, HOME: home, USERPROFILE: home, AWS_CONFIG_FILE: path.join(home, 'none'), AWS_SHARED_CREDENTIALS_FILE: path.join(home, 'none'), AWS_EC2_METADATA_DISABLED: 'true' };
     const r = spawnSync(process.execPath, [path.join(dir, 'eks-token.js'), '--cluster', 'c', '--region', 'eu-west-1', '--profile', 'k8board-test-none'], { env, encoding: 'utf8', timeout: 60000 });
     assert.equal(r.status, 1);
     assert.match(r.stderr, /^eks-token: /m);

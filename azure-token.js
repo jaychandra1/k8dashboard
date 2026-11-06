@@ -15,8 +15,7 @@
 //   (packaged desktop app: `K8Board --token-helper azure --server-id …`,
 //   which electron/main.cjs routes to run() below)
 import fs from 'fs';
-import { pathToFileURL } from 'url';
-import { CONFIG_DIR, configFile, findConfigFile } from './lib/paths.mjs';
+import { CONFIG_DIR, configFile, findConfigFile, isMainModule } from './lib/paths.mjs';
 import { seal, unseal, isSealed, PURPOSE } from './lib/secret-store.mjs';
 
 const AAD = 'https://login.microsoftonline.com';
@@ -102,7 +101,7 @@ async function main() {
 
 // CLI entry only when executed directly (`node azure-token.js …`), not when
 // imported by electron/main.cjs or a test.
-const sameFile = (a, b) => (process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b);
-if (process.argv[1] && sameFile(import.meta.url, pathToFileURL(process.argv[1]).href)) {
+// Run as `node azure-token.js …`; real paths compared (see lib/paths.mjs isMainModule).
+if (isMainModule(import.meta.url)) {
   main().catch((e) => { process.stderr.write(`azure-token: ${e.message}\n`); process.exit(1); });
 }
