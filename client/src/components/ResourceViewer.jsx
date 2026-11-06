@@ -46,7 +46,7 @@ const TAB_META = {
 
 // Types shown as tabs at the top of the workloads viewer (Config/Network/etc.
 // are navigated from the sidebar and get no tab strip).
-export const TAB_KEYS = ['overview', 'pod', 'service', 'deployment', 'statefulSet', 'daemonSet', 'replicaSet', 'replicationController', 'job', 'cronJob', 'events'];
+export const TAB_KEYS = ['pod', 'service', 'deployment', 'statefulSet', 'daemonSet', 'replicaSet', 'replicationController', 'job', 'cronJob', 'events'];
 
 const SCALE_MIN = 0;
 const SCALE_MAX = 10000;

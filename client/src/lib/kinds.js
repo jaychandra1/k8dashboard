@@ -28,7 +28,6 @@ const T = (key, label, singular, apiKind, icon, group, extra = {}) => ({
 
 export const RESOURCE_TYPES = [
   // App-level / cluster views
-  T('overview', 'Overview', 'Overview', null, 'overview', 'cluster', { standalone: false }),
   T('cluster', 'Cluster', 'Cluster', null, 'cluster', 'cluster', { standalone: true, navLabel: 'Dashboard' }),
   T('nodes', 'Nodes', 'Node', 'Node', 'nodes', 'cluster', { standalone: true, clusterScoped: true, plural: 'nodes' }),
   T('namespaces', 'Namespaces', 'Namespace', 'Namespace', 'namespace', 'cluster', { standalone: true, clusterScoped: true, plural: 'namespaces' }),

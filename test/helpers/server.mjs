@@ -74,8 +74,11 @@ export async function startServer({ env = {}, timeoutMs = 20000 } = {}) {
     ...env,
   };
   delete childEnv.MCP_ALLOW_WRITE;
+  // K8BOARD_TEST_APP_DIR: run the suite against another app folder — the desktop
+  // app's bundled backend (test/backend-bundle.test.mjs, scripts/bundle-backend.mjs).
+  const appDir = process.env.K8BOARD_TEST_APP_DIR || ROOT;
   const child = spawn(process.execPath, ['server.js'], {
-    cwd: ROOT,
+    cwd: appDir,
     env: childEnv,
     stdio: ['ignore', 'pipe', 'pipe'],
   });

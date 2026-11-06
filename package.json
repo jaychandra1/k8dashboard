@@ -1,6 +1,6 @@
 {
   "name": "kubepilot",
-  "version": "1.7.9",
+  "version": "1.8.0",
   "description": "A native desktop UI for browsing and operating Kubernetes clusters",
   "author": {
     "name": "K8Board Program",
@@ -97,6 +97,8 @@
       "!eslint.config.js",
       "!**/node_modules/@types/**",
       "!**/node_modules/**/*.ts",
+      "!**/node_modules/**/dist-es/**",
+      "!**/node_modules/**/*.test.js",
       "!**/node_modules/**/{CHANGELOG*,changelog*,HISTORY*,*.tsbuildinfo,tsconfig*.json,.eslintrc*,.prettierrc*,.travis.yml,.npmignore,.editorconfig}"
     ],
     "mac": {

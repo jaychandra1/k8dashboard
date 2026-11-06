@@ -1,7 +1,7 @@
 // Route grammar helpers for the hash router (see hooks/useHashRoute.js).
 //
 //   #/cluster                                                 default / landing view (DEFAULT_VIEW)
-//   #/overview?ns=a,b                                         workloads overview
+//   #/overview                                                → the Dashboard (#/cluster), for old links
 //   #/<resourceKey>[/<namespace|->/<name>]?ns=a,b&q=text     resource list (+ drawer)
 //   #/nodes[/<nodeName>]
 //   #/events?ns=a
@@ -48,7 +48,7 @@ export function isKnownView(view) {
 /** Resource views are the registry entries that go through the shared fan-out (or /api/storage). */
 export function isResourceView(view) {
   const t = byKey[view];
-  return !!t && !t.standalone && view !== 'overview' && view !== 'events';
+  return !!t && !t.standalone && view !== 'events';
 }
 
 /** `#/pod/<ns>/<name>` → { namespace, name } (namespace '' for '-'), else null. */
@@ -83,5 +83,5 @@ export function crSelectionToParams(sel) {
 
 /** The target view for "go to namespace" cross-links: keep list views, otherwise Pods. */
 export function namespaceTargetView(view) {
-  return (!byKey[view] || isStandalone(view) || view === 'overview') ? 'pod' : view;
+  return (!byKey[view] || isStandalone(view)) ? 'pod' : view;
 }

@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 // Landing view when the URL has no hash (and after a context switch): the
 // Cluster overview. Re-exported by components/shell/routes.js.
 export const DEFAULT_VIEW = 'cluster';
+const VIEW_ALIASES = { overview: 'cluster' };
 
 const enc = (s) => encodeURIComponent(String(s));
 const dec = (s) => { try { return decodeURIComponent(s); } catch { return s; } };
@@ -36,6 +37,8 @@ export function parseHash(hash) {
       if (k) query[k] = v;
     }
   }
+  // The workloads overview became part of the Dashboard: old links land there.
+  if (VIEW_ALIASES[segs[0]]) return { view: VIEW_ALIASES[segs[0]], params: [], query };
   return { view: segs[0] || DEFAULT_VIEW, params: segs.slice(1), query };
 }
 

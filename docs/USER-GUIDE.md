@@ -72,7 +72,7 @@ When the app starts it shows one of:
 
 - **Connect a cluster** — no kubeconfig was found. Either enter the path to a kubeconfig file, or use **Add cluster** to import an **AWS EKS** or **Azure AKS** cluster straight from your cloud account (K8Board signs you in and writes the kubeconfig; no CLI needed).
 - **Could not connect to the cluster** — a kubeconfig was loaded but its credentials failed. Use **Add cluster** to onboard an EKS or AKS cluster, switch to another context, or fix the kubeconfig and press **Retry**. Authentication failures are classified for you (expired token, unreachable API server, TLS error, missing auth plugin) with a one-click or copyable fix.
-- The dashboard — the current kubeconfig context loaded. You land on the **Cluster Overview** (`#/cluster`): nodes, CPU/memory capacity, pod health, Kubernetes version and the kubeconfig's contexts and clusters. While the data is fetched the app shows a branded loading screen ("Getting the data from <context>…").
+- The dashboard — the current kubeconfig context loaded. You land on the **Dashboard** (`#/cluster`): the whole cluster at a glance — nodes, CPU/memory capacity, pod health, workloads and the Kubernetes version. While the data is fetched the app shows a branded loading screen ("Getting the data from <context>…").
 
 Switching clusters happens from **one place**: the **cluster menu** at the left end of the top bar (the button showing the current context, above the sidebar, with the back/forward arrows right beside it) — or, in the desktop app, the native **Clusters** menu (between View and Window), which mirrors it. `⌘K` / `Ctrl+K` → type the context name also works. The cluster menu is laid out as:
 
@@ -80,20 +80,25 @@ Switching clusters happens from **one place**: the **cluster menu** at the left 
 2. **All contexts** — with up to 12 contexts every context is listed right here (provider icon, check on the current one); with more, **All contexts ▸** opens them as a submenu. **Search contexts…** opens a searchable picker grouped by provider (type to filter, `↑`/`↓` to move, Enter to switch, Esc to close);
 3. **Pin "<context>"** / **Unpin "<context>"** for the current cluster, and **Add cluster ▸** to import an **AWS EKS** or **Azure AKS** cluster.
 
-After a switch the app returns to the **Cluster Overview** of the new cluster (the selection and namespace filter are cleared) behind the loading screen until the new cluster's summary is in — never longer than about 8 seconds, after which the view shows its own loading placeholders. Pins are stored with the app's settings, so the desktop **Clusters** menu shows the same pinned list; its **All contexts…** entry opens the same searchable picker.
+After a switch the app returns to the **Dashboard** of the new cluster (the selection and namespace filter are cleared) behind the loading screen until the new cluster's summary is in — never longer than about 8 seconds, after which the view shows its own loading placeholders. Pins are stored with the app's settings, so the desktop **Clusters** menu shows the same pinned list; its **All contexts…** entry opens the same searchable picker.
 
 ### 1.4 Getting around
 
 - **Sidebar** — the K8Board brand, version and the Preferences gear at the top; then four sections: **Overview** (Dashboard, Nodes, Namespaces, Topology); **Resources** (Workloads — Overview, Pods, Deployments, StatefulSets, DaemonSets, ReplicaSets, Jobs, CronJobs… — then Network, Storage, Config); **Operations** (Events, Helm, Access Control); **Integrations** (Argo CD when installed, Security Center), followed by Custom Resources. Every item is a real link, so keyboard navigation, middle-click and "open in new tab" work.
 - **Cluster menu** — the button at the top of the sidebar with the current context name (hover it for the full name when it is cut short): pinned clusters (check = current), All contexts (inline list or submenu) + Search contexts…, Pin/Unpin, Add cluster ▸ (see §1.3). Fully keyboard operable (Enter or ↓ opens, arrows move, Esc closes). In the desktop app the same list is in the native **Clusters** menu.
-- **Landing page** — the **Cluster Overview** (`#/cluster`, **Dashboard** in the sidebar) opens on start and after every cluster switch. The **Overview** under Resources → Workloads (`#/overview`) is the pod-health / workload-counts dashboard.
+- **Landing page** — the **Dashboard** (`#/cluster`) opens on start and after every cluster switch. It covers the whole cluster (every namespace):
+  - **Top row:** nodes, CPU, memory, pods (with how many are failing) and namespaces.
+  - **Health and capacity:** node health, pod health and cluster capacity. A pod counts as failing when a container is crash-looping, can't pull its image, was OOM-killed and so on, even though its phase still says "Running".
+  - **Workloads:** deployments, statefulsets, daemonsets, jobs, cronjobs and services, each with how many aren't ready or have failed.
+  - **Links:** the nodes, pods and namespaces cards and every workload tile open their list across all namespaces.
+  - **Old links:** `#/overview` (the workloads overview it replaces) opens the Dashboard.
 - **Command palette** — `⌘K` (`Ctrl+K` on Windows/Linux), or the `⌘ K` button in the toolbar, jumps to any view, switches context (the same contexts as the top-bar cluster selector), refreshes, opens Preferences or changes the theme. Type to filter, arrows to move, Enter to run.
 - **Back / Forward** — the ◀ ▶ arrows next to the cluster selector in the top bar and your browser's back/forward both work, because every view has a URL:
 
   | URL | Opens |
   |---|---|
-  | `#/cluster` (or no hash) | Cluster overview — the landing page |
-  | `#/overview` | Workloads overview (pod health, counts by type) |
+  | `#/cluster` (or no hash) | Dashboard — the landing page |
+  | `#/overview` | Opens the Dashboard (old links to the workloads overview) |
   | `#/pod?ns=default,shop` | Pods filtered to two namespaces |
   | `#/pod/default/my-pod-abc` | Pods list with the detail drawer open on that pod |
   | `#/deployment?q=api` | Deployments with the search box pre-filled |
@@ -138,7 +143,6 @@ Select several rows with the checkboxes to run **bulk Restart / Delete** from th
 
 ### 1.6 Other views
 
-- **Overview** — pod health donut and workload counts; every card and bar is a link into the matching list.
 - **Nodes** — capacity, allocatable, conditions, pods on the node with live metrics (needs `metrics-server` in the cluster; otherwise metrics show `—`).
 - **Topology** — pan/zoom graph of workloads, services, ingress, config and storage. Keyboard: focus the canvas, arrows to pan, `+`/`-` to zoom; a **List view** toggle gives the same data as a table.
 - **Helm** — releases decoded from their release Secrets (the `helm` binary is not needed), with values and rendered manifest.
@@ -390,6 +394,8 @@ npm run dist          # current OS: downloads+verifies Trivy, builds the UI, pac
 npm run app:pack      # macOS only: unpacked .app in release/ for quick testing
 npm run app           # run the Electron shell against the current source
 ```
+
+**The backend is bundled in the desktop package.** `electron/after-pack.cjs` runs `scripts/bundle-backend.mjs` (rolldown, from the client's dependencies): `server.js`, the token helpers and `mcp-stdio.js` each become one file with their libraries, and `node_modules` keeps only `node-pty`. The app is then about 220 files instead of about 5,000, which is what makes Windows updates quick. Docker and source checkouts run the sources. To run the backend tests against a bundled app folder (e.g. `release/win-unpacked/resources/app`): `K8BOARD_TEST_APP_DIR=<folder> npm test`; `test/backend-bundle.test.mjs` checks the bundles on every CI run.
 
 Outputs in `release/`: `K8Board-macos.dmg` (Apple Silicon), `K8Board-windows.exe` (NSIS), `K8Board-linux.AppImage` and `K8Board-linux.deb`. Packaging for macOS requires a Mac; Windows requires Windows (or Wine), Linux requires Linux. Builds are ad-hoc signed; to notarize, obtain a Developer ID, set `hardenedRuntime: true` in `package.json` (the entitlements file is already in `build/`) and provide signing credentials.
 

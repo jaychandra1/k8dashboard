@@ -405,6 +405,10 @@ function findFreePort(preferred) {
 // require/fs), so `import './lib/pty-helper.mjs'` from a packed server.js fails
 // at launch. We therefore ship the app unpacked (`asar: false`); server.js and
 // node_modules live on the real filesystem, where the ESM loader can read them.
+// (Still true in Electron 44: an ESM import or a utilityProcess entry inside
+// app.asar fails.) The packaged server.js is a bundle of the backend and its
+// libraries (scripts/bundle-backend.mjs via electron/after-pack.cjs), so the
+// unpacked app is a few hundred files rather than thousands.
 // It's launched with utilityProcess.fork() (not `node server.js`) so it runs on
 // Electron's bundled Node; server.js resolves client/dist, VERSION and
 // node_modules via import.meta.url.

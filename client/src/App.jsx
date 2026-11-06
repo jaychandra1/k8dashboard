@@ -201,6 +201,10 @@ function App() {
   const goView = useCallback((key, params = []) => {
     navigate(key, params, { ns: nsQueryRef.current });
   }, [navigate]);
+  // From the Dashboard: its counts are cluster-wide, so the list opens on all namespaces.
+  const openClusterWide = useCallback((key) => {
+    navigate(key, [], { ns: nsToQuery([ALL]) });
+  }, [navigate]);
 
   const setSelectedNamespaces = useCallback((list) => {
     const r = routeRef.current;
@@ -327,7 +331,7 @@ function App() {
   const title = useMemo(() => {
     const label = byKey[view]?.label || 'K8Board';
     const nsLabel = selectedNamespaces.includes(ALL) ? 'all namespaces' : selectedNamespaces.join(', ');
-    const scoped = isResourceView(view) || view === 'overview' || view === 'events';
+    const scoped = isResourceView(view) || view === 'events';
     return [label, scoped ? nsLabel : null, configStatus.currentContext].filter(Boolean).join(' · ') + ' — K8Board';
   }, [view, selectedNamespaces, configStatus.currentContext]);
   useDocumentTitle(title, { suffix: false });
@@ -489,6 +493,7 @@ function App() {
                   onAddAws={openAws}
                   onRemoveCluster={openRemoveCluster}
                   onResourceTypeChange={goView}
+                  onOpenClusterWide={openClusterWide}
                   nav={nav}
                   onClusterSummary={onClusterSummary}
                 />
@@ -541,6 +546,8 @@ function App() {
           contextsInfo={configStatus.contextsInfo}
           currentContext={configStatus.currentContext}
           onChange={switchContext}
+          onRemove={openRemoveCluster}
+          canRemove={(ctx) => !(configStatus.demoAvailable && ctx === 'demo-cluster')}
           onAddAws={openAws}
           onAddAzure={openAzure}
           onAddLocal={openLocal}

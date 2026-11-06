@@ -5,7 +5,7 @@ describe('kinds registry', () => {
   it('has unique keys and every legacy App.jsx key', () => {
     const keys = RESOURCE_TYPES.map((t) => t.key);
     expect(new Set(keys).size).toBe(keys.length);
-    for (const k of ['overview', 'cluster', 'nodes', 'namespaces', 'helm', 'customResources', 'accessControl', 'topology', 'argocd', 'security',
+    for (const k of ['cluster', 'nodes', 'namespaces', 'helm', 'customResources', 'accessControl', 'topology', 'argocd', 'security',
       'pod', 'deployment', 'statefulSet', 'daemonSet', 'replicaSet', 'replicationController', 'job', 'cronJob',
       'service', 'ingress', 'networkPolicy', 'persistentVolume', 'persistentVolumeClaim', 'storageClass',
       'configMap', 'secret', 'serviceAccount', 'events', 'preferences']) {
@@ -26,7 +26,7 @@ describe('kinds registry', () => {
     for (const k of ['cluster', 'nodes', 'namespaces', 'helm', 'customResources', 'accessControl', 'topology', 'argocd', 'security']) {
       expect(STANDALONE_KEYS).toContain(k);
     }
-    expect(isStandalone('overview')).toBe(false);
+    expect(byKey.overview).toBeUndefined(); // the workloads overview is part of the Dashboard now
     expect(isStandalone('pod')).toBe(false);
   });
   it('KIND_ICON merges all three former maps', () => {

@@ -35,6 +35,7 @@ import {
 import { CONFIG_DIR, DEMO_ENABLED, configFile, envFlag, findConfigFile, isMcpSource, execEntry } from './lib/paths.mjs';
 import { repairExecEntries } from './lib/kubeconfig-repair.mjs';
 import { createExecGate, CLUSTER_AUTH_CODE, CLUSTER_AUTH_MESSAGE } from './lib/exec-gate.mjs';
+import { POD_BUCKETS, countPod, workloadSummary } from './lib/cluster-health.mjs';
 import {
   createKubectl, positional, spawnBin, collectChild, commandExists, resolveBinSync, loginShellPath,
   hasKubectl, kubectlMissingError, isSpawnMissing,
@@ -3944,6 +3945,38 @@ const parseMemBytes = (s) => {
   return val * (mult[unit] || 1);
 };
 
+// Cluster-wide workload counts and health for the Dashboard: every namespace,
+// paged 500 at a time like the pods, all kinds at once. A kind this user may
+// not list comes back as { error } (shown as unavailable), not as a failure.
+async function listAllPages(list, timeout = 12000) {
+  const items = [];
+  let _continue;
+  for (let page = 0; page < 200; page++) {
+    const resp = await list({ limit: 500, _continue }, requestOptions(timeout));
+    items.push(...(resp.items || []));
+    _continue = resp.metadata?._continue;
+    if (!_continue) break;
+  }
+  return items;
+}
+async function clusterWorkloads() {
+  const apps = kubeConfig.makeApiClient(k8s.AppsV1Api);
+  const batch = kubeConfig.makeApiClient(k8s.BatchV1Api);
+  const core = kubeConfig.makeApiClient(k8s.CoreV1Api);
+  const lists = {
+    deployments: (o, r) => apps.listDeploymentForAllNamespaces(o, r),
+    statefulSets: (o, r) => apps.listStatefulSetForAllNamespaces(o, r),
+    daemonSets: (o, r) => apps.listDaemonSetForAllNamespaces(o, r),
+    jobs: (o, r) => batch.listJobForAllNamespaces(o, r),
+    cronJobs: (o, r) => batch.listCronJobForAllNamespaces(o, r),
+    services: (o, r) => core.listServiceForAllNamespaces(o, r),
+  };
+  const entries = await Promise.all(Object.entries(lists).map(async ([kind, list]) => {
+    try { return [kind, workloadSummary(kind, await listAllPages(list))]; } catch (e) { return [kind, { error: shortReason(e) }]; }
+  }));
+  return Object.fromEntries(entries);
+}
+
 app.get('/api/cluster/summary', async (req, res) => {
   try {
     if (!kubeConfig) return res.status(400).json({ error: 'No kubeconfig loaded' });
@@ -4000,8 +4033,13 @@ app.get('/api/cluster/summary', async (req, res) => {
       if (n.os) osImages.add(n.os);
     }
 
-    // Pod phases
+    // Workloads are counted alongside the pods.
+    const workloadsP = clusterWorkloads().catch(() => null);
+
+    // Pod phases, and health buckets that also look at the containers (a
+    // crash-looping pod's phase is still "Running"; lib/cluster-health.mjs).
     const podPhases = { Running: 0, Pending: 0, Succeeded: 0, Failed: 0, Unknown: 0 };
+    let podBuckets = Object.fromEntries(POD_BUCKETS.map((b) => [b, 0]));
     let podTotal = 0;
     try {
       // Page through all pods (500 at a time) so a large cluster never needs
@@ -4013,6 +4051,7 @@ app.get('/api/cluster/summary', async (req, res) => {
         for (const pod of resp.items || []) {
           const p = pod.status?.phase || 'Unknown';
           podPhases[p] = (podPhases[p] || 0) + 1;
+          podBuckets = countPod(podBuckets, pod);
           podTotal++;
           reserved.addPod(pod);
         }
@@ -4056,7 +4095,8 @@ app.get('/api/cluster/summary', async (req, res) => {
       },
       versions: Array.from(versions),
       osImages: Array.from(osImages),
-      pods: { total: podTotal, phases: podPhases },
+      pods: { total: podTotal, phases: podPhases, buckets: podBuckets },
+      workloads: await workloadsP,
       namespaceCount
     };
     if (errors.length) { result.partial = true; result.errors = errors; }

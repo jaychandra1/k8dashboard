@@ -7,12 +7,83 @@ import useDocumentTitle from '../hooks/useDocumentTitle';
 import { getJson, p } from '../lib/api';
 import { podPhaseBucket, BUCKET_TONE, BUCKET_LABEL } from '../lib/status';
 import { fmtMem, pct } from '../lib/format';
+import { labelFor } from '../lib/kinds';
 
 /** Fold the summary's `{ Running: n, … }` phase counts into the shared buckets. */
 export function bucketPhases(phases) {
   const counts = { running: 0, pending: 0, failed: 0, succeeded: 0, unknown: 0 };
   Object.entries(phases || {}).forEach(([phase, n]) => { counts[podPhaseBucket({ status: phase })] += Number(n) || 0; });
   return counts;
+}
+
+const EMPTY_BUCKETS = { running: 0, pending: 0, failed: 0, succeeded: 0, unknown: 0 };
+/** Pod health counts: the server's container-aware buckets (a crash-looping pod is failing). */
+export function podCounts(pods) {
+  return pods?.buckets ? { ...EMPTY_BUCKETS, ...pods.buckets } : bucketPhases(pods?.phases);
+}
+
+// The Workloads card: one tile per kind, cluster-wide (every namespace).
+export const WORKLOAD_TILES = [
+  { kind: 'deployments', key: 'deployment', tone: 'green' },
+  { kind: 'statefulSets', key: 'statefulSet', tone: 'purple' },
+  { kind: 'daemonSets', key: 'daemonSet', tone: 'cyan' },
+  { kind: 'jobs', key: 'job', tone: 'blue' },
+  { kind: 'cronJobs', key: 'cronJob', tone: 'yellow' },
+  { kind: 'services', key: 'service', tone: 'blue' },
+];
+
+/** One line on how a kind is doing: { tone, text, title? }. */
+export function workloadStatus(kind, s) {
+  if (!s) return { tone: 'muted', text: '—' };
+  if (s.error) return { tone: 'muted', text: 'Not available', title: s.error };
+  if (!s.total) return { tone: 'muted', text: 'None' };
+  if (kind === 'deployments' || kind === 'statefulSets' || kind === 'daemonSets') {
+    const scaled = s.scaledDown ? ` · ${s.scaledDown} scaled to 0` : '';
+    return s.notReady ? { tone: 'warn', text: `${s.notReady} not ready${scaled}` } : { tone: 'ok', text: `All ready${scaled}` };
+  }
+  if (kind === 'jobs') {
+    if (s.failed) return { tone: 'bad', text: `${s.failed} failed` };
+    return s.active ? { tone: 'info', text: `${s.active} running` } : { tone: 'ok', text: 'All complete' };
+  }
+  if (kind === 'cronJobs') return s.suspended ? { tone: 'muted', text: `${s.suspended} suspended` } : { tone: 'ok', text: 'All scheduled' };
+  return { tone: 'muted', text: 'Networking' };
+}
+
+function WorkloadsCard({ workloads, onOpen }) {
+  const tiles = WORKLOAD_TILES.map((t) => ({ ...t, ...labelFor(t.key), summary: workloads?.[t.kind] }));
+  const total = tiles.reduce((n, t) => n + (t.summary?.total || 0), 0);
+  return (
+    <section className="chart-card wl-card" aria-label="Workloads">
+      <div className="chart-card-title">
+        <h2>Workloads</h2>
+        <span className="total">{total} objects · all namespaces</span>
+      </div>
+      <div className="wl-grid">
+        {tiles.map((t) => {
+          const st = workloadStatus(t.kind, t.summary);
+          const count = t.summary?.error ? '—' : (t.summary?.total ?? '—');
+          return (
+            <button
+              key={t.kind}
+              type="button"
+              className="wl-tile"
+              onClick={() => onOpen?.(t.key)}
+              disabled={!onOpen}
+              title={st.title}
+              aria-label={`${t.label}: ${count}, ${st.text}. Open ${t.label}`}
+            >
+              <span className={`kpi-icon ${t.tone}`} aria-hidden="true"><Icon name={t.icon} size={17} /></span>
+              <span className="wl-meta">
+                <span className="wl-label">{t.label}</span>
+                <span className="wl-count">{count}</span>
+              </span>
+              <span className="wl-status" data-tone={st.tone}><i aria-hidden="true" />{st.text}</span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
 }
 
 const fmtCores = (milli) => {
@@ -112,11 +183,14 @@ function CapacityBar({ label, icon, used, total, unit, tone }) {
   );
 }
 
+// The Dashboard: the whole cluster at a glance (every namespace) — nodes,
+// pods, capacity and workloads. `onOpen(viewKey)` opens a list across all
+// namespaces (the counts here are cluster-wide).
 // `onSummaryLoaded(contextName)` fires on every successful summary fetch with
 // the context the payload belongs to; the shell uses it to end the
 // context-switch loading screen once the new cluster's data is on screen.
-export default function Cluster({ refreshSignal = 0, context, onSummaryLoaded }) {
-  useDocumentTitle('Cluster');
+export default function Cluster({ refreshSignal = 0, context, onSummaryLoaded, onOpen }) {
+  useDocumentTitle('Dashboard');
   const { data, error, loading, refetching, refetch } = useRequest(
     ({ signal }) => getJson(p('api', 'cluster', 'summary'), { signal }),
     {
@@ -126,7 +200,7 @@ export default function Cluster({ refreshSignal = 0, context, onSummaryLoaded })
     },
   );
 
-  const counts = bucketPhases(data?.pods?.phases);
+  const counts = podCounts(data?.pods);
   const podTotal = data?.pods?.total || 0;
   const healthy = counts.running + counts.succeeded;
   const podSegments = ['running', 'pending', 'failed', 'succeeded', 'unknown']
@@ -145,11 +219,15 @@ export default function Cluster({ refreshSignal = 0, context, onSummaryLoaded })
   const partialErrors = data?.partial ? (data.errors || []) : [];
 
   const kpis = data ? [
-    { key: 'nodes', label: 'Nodes', value: `${nodesReady}/${nodeTotal}`, sub: 'ready', icon: 'nodes', tone: 'blue' },
+    { key: 'nodes', label: 'Nodes', value: `${nodesReady}/${nodeTotal}`, sub: 'ready', icon: 'nodes', tone: 'blue', open: 'nodes' },
     { key: 'cpu', label: 'CPU Cores', value: cap.cpuCapacity ?? '—', sub: `${cap.cpuAllocatable ?? '—'} allocatable`, icon: 'cpu', tone: 'green' },
     { key: 'memory', label: 'Memory', value: fmtMem(cap.memCapacityBytes), sub: `${fmtMem(cap.memAllocatableBytes)} allocatable`, icon: 'memory', tone: 'purple' },
-    { key: 'pods', label: 'Pods', value: podTotal, sub: `${counts.running} running`, icon: 'pod', tone: 'cyan' },
-    { key: 'namespaces', label: 'Namespaces', value: data.namespaceCount ?? '—', sub: 'total', icon: 'apps', tone: 'yellow' },
+    {
+      key: 'pods', label: 'Pods', value: podTotal, icon: 'pod', tone: 'cyan', open: 'pod',
+      sub: counts.failed ? `${counts.running} running · ${counts.failed} failing` : `${counts.running} running`,
+      subTone: counts.failed ? 'bad' : undefined,
+    },
+    { key: 'namespaces', label: 'Namespaces', value: data.namespaceCount ?? '—', sub: 'total', icon: 'apps', tone: 'yellow', open: 'namespaces' },
   ] : [];
 
   const title = data?.currentContext || context || 'Cluster';
@@ -190,16 +268,23 @@ export default function Cluster({ refreshSignal = 0, context, onSummaryLoaded })
         <div className="dashboard-body">
           {error && <ErrorState compact error={error} title="Latest refresh failed — showing previous data" onRetry={refetch} busy={refetching} />}
           <div className="kpi-row">
-            {kpis.map((k) => (
-              <div key={k.key} className="kpi-card" data-static>
-                <div className={`kpi-icon ${k.tone}`} aria-hidden="true"><Icon name={k.icon} size={22} /></div>
-                <div className="kpi-meta">
-                  <div className="kpi-value">{k.value}</div>
-                  <div className="kpi-label">{k.label}</div>
-                  <div className="kpi-sub">{k.sub}</div>
-                </div>
-              </div>
-            ))}
+            {kpis.map((k) => {
+              const body = (
+                <>
+                  <div className={`kpi-icon ${k.tone}`} aria-hidden="true"><Icon name={k.icon} size={22} /></div>
+                  <div className="kpi-meta">
+                    <div className="kpi-value">{k.value}</div>
+                    <div className="kpi-label">{k.label}</div>
+                    <div className="kpi-sub" data-tone={k.subTone}>{k.sub}</div>
+                  </div>
+                </>
+              );
+              return k.open && onOpen ? (
+                <button key={k.key} type="button" className="kpi-card" onClick={() => onOpen(k.open)} aria-label={`${k.value} ${k.label}, ${k.sub}. Open ${k.label}`}>{body}</button>
+              ) : (
+                <div key={k.key} className="kpi-card" data-static>{body}</div>
+              );
+            })}
           </div>
 
           <div className="chart-grid">
@@ -219,7 +304,14 @@ export default function Cluster({ refreshSignal = 0, context, onSummaryLoaded })
                 <span className="total">{podTotal} pods</span>
               </div>
               <div className="donut-wrap">
-                <Donut segments={podSegments} centerValue={podTotal ? pct(healthy, podTotal) : '0%'} centerLabel="healthy" ariaLabel="Pod health" legend />
+                <Donut
+                  segments={podSegments}
+                  centerValue={podTotal ? pct(healthy, podTotal) : '0%'}
+                  centerLabel="healthy"
+                  ariaLabel="Pod health"
+                  legend
+                  onSegmentClick={onOpen ? () => onOpen('pod') : undefined}
+                />
               </div>
             </section>
 
@@ -242,6 +334,8 @@ export default function Cluster({ refreshSignal = 0, context, onSummaryLoaded })
               </section>
             )}
           </div>
+
+          <WorkloadsCard workloads={data.workloads} onOpen={onOpen} />
 
           <div className="cluster-info-container">
             <section className="cluster-info-card" aria-label="Node roles">

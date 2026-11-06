@@ -28,6 +28,7 @@ import yaml from './lib/yaml.mjs';
 import { formatResource } from './lib/resource-format.mjs';
 import { remediationFor, severityCounts } from './lib/security-insights.mjs';
 import { capacityTotals } from './lib/capacity.mjs';
+import { POD_BUCKETS, WORKLOAD_KINDS, countPod, workloadSummary } from './lib/cluster-health.mjs';
 import { filterEvents, parseWorkload, workloadScope } from './lib/event-scope.mjs';
 
 export const DEMO_CONTEXT = 'demo-cluster';
@@ -1466,14 +1467,17 @@ function clusterSummary() {
   // Requests / limits vs allocatable and node usage, like server.js.
   const reserved = capacityTotals();
   cluster.nodes.forEach(reserved.addNode);
-  for (const po of allPods()) { const ph = po.status?.phase || 'Unknown'; phases[ph] = (phases[ph] || 0) + 1; podTotal++; reserved.addPod(po); }
+  let buckets = Object.fromEntries(POD_BUCKETS.map((b) => [b, 0]));
+  for (const po of allPods()) { const ph = po.status?.phase || 'Unknown'; phases[ph] = (phases[ph] || 0) + 1; buckets = countPod(buckets, po); podTotal++; reserved.addPod(po); }
+  const every = (key) => Object.values(cluster.ns).flatMap((n) => n[key] || []);
+  const workloads = Object.fromEntries(WORKLOAD_KINDS.map((k) => [k, workloadSummary(k, every(k))]));
   const used = cluster.nodes.map((n) => nodeMetricNow(n.metadata.name)).filter(Boolean);
   const usage = { available: true, cpuMilli: Math.round(used.reduce((s, m) => s + m.cpuMilli, 0)), memBytes: Math.round(used.reduce((s, m) => s + m.memBytes, 0)) };
   return {
     currentContext: DEMO_CONTEXT, serverVersion: 'v1.29.4', platform: 'linux/amd64',
     contexts: [DEMO_CONTEXT], clusters: [DEMO_CONTEXT], nodes: nodeSummary, roles,
     capacity: { cpuCapacity: +cpuCapacity.toFixed(1), cpuAllocatable: +cpuAllocatable.toFixed(1), memCapacityBytes: memCapacity, memAllocatableBytes: memAllocatable, ...reserved.result(), usage },
-    versions: [...versions], osImages: [...osImages], pods: { total: podTotal, phases }, namespaceCount: cluster.nsMeta.length,
+    versions: [...versions], osImages: [...osImages], pods: { total: podTotal, phases, buckets }, workloads, namespaceCount: cluster.nsMeta.length,
   };
 }
 

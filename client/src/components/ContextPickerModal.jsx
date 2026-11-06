@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import Icon from './Icons';
+import Tooltip from './ui/Tooltip';
 import Modal from './ui/Modal';
 import Button from './ui/Button';
 
@@ -28,12 +29,15 @@ export function openContextPicker() {
  * grouped `role="listbox"` of `role="option"` rows. Keyboard: ↑/↓ move,
  * Home/End jump, Enter picks, typing filters. It does not manage focus or
  * Escape — the surrounding dialog does (Modal focus trap / Escape).
+ * With `onRemove`, each row gets a remove button, shown on hover and on the
+ * keyboard-active row; Shift+Delete removes the active one. Both only ask:
+ * the caller opens the confirmation (RemoveClusterDialog).
  *
- *   <ContextList contexts contextsInfo currentContext onPick(ctx) label />
+ *   <ContextList contexts contextsInfo currentContext onPick(ctx) onRemove(ctx)? canRemove(ctx)? label />
  *
  * Used by ContextPickerModal and inline by AuthErrorModal.
  */
-export function ContextList({ contexts = [], contextsInfo, currentContext, onPick, label = 'Kubernetes contexts', autoFocus = false }) {
+export function ContextList({ contexts = [], contextsInfo, currentContext, onPick, onRemove, canRemove, label = 'Kubernetes contexts', autoFocus = false }) {
   const id = useId();
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(-1);
@@ -53,7 +57,10 @@ export function ContextList({ contexts = [], contextsInfo, currentContext, onPic
     Object.values(g).forEach((arr) => arr.sort((a, b) => a.localeCompare(b)));
     return g;
   }, [visible, providerOf]);
-  const groupKeys = ORDER.filter((k) => grouped[k]?.length);
+  // Memoised: a new array each render would make `flat` new each render, and
+  // the effect below would put the highlight back on the current context
+  // after every ↑/↓.
+  const groupKeys = useMemo(() => ORDER.filter((k) => grouped[k]?.length), [grouped]);
   // Flat option order (keyboard navigation + aria-activedescendant).
   const flat = useMemo(() => groupKeys.flatMap((k) => grouped[k]), [groupKeys, grouped]);
   useEffect(() => {
@@ -64,6 +71,7 @@ export function ContextList({ contexts = [], contextsInfo, currentContext, onPic
 
   const optId = useCallback((ctx) => `${id}-opt-${String(ctx).replace(/[^a-zA-Z0-9_-]/g, '_')}`, [id]);
   const pick = (ctx) => onPick?.(ctx);
+  const removable = (ctx) => !!onRemove && (!canRemove || canRemove(ctx));
 
   const onSearchKey = (e) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); setActive((a) => Math.min(flat.length - 1, a + 1)); }
@@ -71,6 +79,7 @@ export function ContextList({ contexts = [], contextsInfo, currentContext, onPic
     else if (e.key === 'Home') { e.preventDefault(); setActive(0); }
     else if (e.key === 'End') { e.preventDefault(); setActive(flat.length - 1); }
     else if (e.key === 'Enter') { e.preventDefault(); if (active >= 0 && flat[active]) pick(flat[active]); }
+    else if (e.key === 'Delete' && e.shiftKey && active >= 0 && removable(flat[active])) { e.preventDefault(); onRemove(flat[active]); }
   };
   useEffect(() => {
     if (active < 0 || !flat[active]) return;
@@ -128,6 +137,20 @@ export function ContextList({ contexts = [], contextsInfo, currentContext, onPic
                     <span className="dd-option-check" aria-hidden="true">{isCur && <Icon name="check" size={14} strokeWidth={2.4} />}</span>
                     <span className={`ctx-dot ctx-dot-${k}`} aria-hidden="true" />
                     <span className="dd-option-label">{ctx}</span>
+                    {removable(ctx) && (
+                      <Tooltip content="Remove from kubeconfig… (Shift+Delete)" placement="left">
+                        <button
+                          type="button"
+                          className="ctxp-remove"
+                          tabIndex={-1}
+                          aria-label={`Remove ${ctx}`}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={(e) => { e.stopPropagation(); onRemove(ctx); }}
+                        >
+                          <Icon name="delete" size={14} />
+                        </button>
+                      </Tooltip>
+                    )}
                   </li>
                 );
               })}
@@ -145,13 +168,15 @@ export function ContextList({ contexts = [], contextsInfo, currentContext, onPic
  * and closes the dialog. Opened by App for the top-bar cluster menu, the
  * palette's "All contexts…" and the desktop Clusters menu (OPEN_CONTEXTS_EVENT).
  *
- *   <ContextPickerModal open onClose contexts contextsInfo currentContext onChange(ctx) onAddAws onAddAzure onAddLocal />
+ *   <ContextPickerModal open onClose contexts contextsInfo currentContext onChange(ctx) onRemove(ctx)? canRemove(ctx)? onAddAws onAddAzure onAddLocal />
  */
-export default function ContextPickerModal({ open, onClose, contexts = [], contextsInfo, currentContext, onChange, onAddAws, onAddAzure, onAddLocal }) {
+export default function ContextPickerModal({ open, onClose, contexts = [], contextsInfo, currentContext, onChange, onRemove, canRemove, onAddAws, onAddAzure, onAddLocal }) {
   const pick = (ctx) => {
     onClose?.();
     if (ctx && ctx !== currentContext) onChange?.(ctx);
   };
+  // The confirmation opens on its own (one dialog at a time).
+  const remove = (ctx) => { onClose?.(); onRemove?.(ctx); };
   const run = (fn) => () => { onClose?.(); fn?.(); };
   const canAdd = !!(onAddAws || onAddAzure || onAddLocal);
 
@@ -178,6 +203,8 @@ export default function ContextPickerModal({ open, onClose, contexts = [], conte
           contextsInfo={contextsInfo}
           currentContext={currentContext}
           onPick={pick}
+          onRemove={onRemove ? remove : undefined}
+          canRemove={canRemove}
           label="All contexts"
         />
       )}

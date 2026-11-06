@@ -1,5 +1,4 @@
 import ResourceViewer from '../ResourceViewer';
-import Overview from '../Overview';
 import Cluster from '../Cluster';
 import Nodes from '../Nodes';
 import Namespaces from '../Namespaces';
@@ -19,8 +18,7 @@ import { ALL } from './routes';
  * the shell (App) and the views; every view receives `refreshSignal` (number,
  * bumps on manual/auto refresh — refetch in place, keep data on screen).
  *
- *   Overview            { allResources, selectedNamespaces, namespaces, onNamespaceSelect, loading, refetching, partialErrors, onResourceTypeChange, onNavigate, refreshSignal }
- *   Cluster             { configStatus, context, refreshSignal, onSummaryLoaded(contextName) }
+ *   Cluster (Dashboard) { configStatus, context, refreshSignal, onSummaryLoaded(contextName), onOpen(viewKey) — all namespaces }
  *   Nodes               { focusNode, onFocusHandled, onNavigate, refreshSignal }
  *   Namespaces          { onNavigate, refreshSignal }
  *   Topology            { namespaces, selectedNamespaces, onNavigate, refreshSignal }
@@ -50,29 +48,14 @@ export default function ViewOutlet({
   crSelection, onSelectCustomResource,
   subView, onSubViewChange,
   prefSection, onPrefSectionChange, onClosePreferences, onChangeConfig, onAddAzure, onAddAws, onRemoveCluster,
-  onResourceTypeChange, nav,
+  onResourceTypeChange, onOpenClusterWide, nav,
   onClusterSummary,
 }) {
   const single = selectedNamespaces.length === 1 && selectedNamespaces[0] !== ALL ? selectedNamespaces[0] : ALL;
 
   switch (view) {
-    case 'overview':
-      return (
-        <Overview
-          allResources={allResources}
-          selectedNamespaces={selectedNamespaces}
-          namespaces={namespaces}
-          onNamespaceSelect={onNamespaceChange}
-          loading={loading}
-          refetching={refetching}
-          partialErrors={partialErrors}
-          onResourceTypeChange={onResourceTypeChange}
-          onNavigate={nav}
-          refreshSignal={refreshSignal}
-        />
-      );
     case 'cluster':
-      return <Cluster configStatus={configStatus} context={configStatus.currentContext} refreshSignal={refreshSignal} onSummaryLoaded={onClusterSummary} />;
+      return <Cluster configStatus={configStatus} context={configStatus.currentContext} refreshSignal={refreshSignal} onSummaryLoaded={onClusterSummary} onOpen={onOpenClusterWide} />;
     case 'nodes':
       return <Nodes focusNode={focusNode} onFocusHandled={onFocusHandled} onNavigate={nav} refreshSignal={refreshSignal} />;
     case 'namespaces':

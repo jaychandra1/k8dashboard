@@ -1,7 +1,9 @@
 // electron-builder afterPack hook.
 //
-// Two jobs, in this order (fuses change the binary, so they must land before
-// any signature is computed):
+// Its jobs, in this order (everything here must land before any signature is
+// computed or any installer is built):
+//
+//   0. The bundled backend (all platforms) — see bundleBackendInto() below.
 //
 //   1. Electron fuses (all platforms) — hard-disable the Node.js escape hatches
 //      that an attacker on the machine could otherwise use to run arbitrary
@@ -42,17 +44,59 @@
 
 const { execFileSync } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const { pathToFileURL } = require('url');
 const { flipFuses, FuseVersion, FuseV1Options } = require('@electron/fuses');
 
 exports.default = async function afterPack(context) {
   const platform = context.electronPlatformName; // darwin | win32 | linux
   const appName = context.packager.appInfo.productFilename;
 
+  await bundleBackendInto(context, platform, appName);
   await applyFuses(context, platform, appName);
   if (platform === 'darwin') adHocSign(path.join(context.appOutDir, `${appName}.app`));
   if (platform === 'linux') legacyLinuxExecutable(context);
 };
+
+// ---------------------------------------------------------------------------
+// 0. The backend, bundled: a handful of files instead of ~3,800
+// ---------------------------------------------------------------------------
+// Every file of the app is moved, unpacked and virus-scanned on each update,
+// so the library tree in node_modules made Windows updates slow. The backend's
+// entry points (server.js, the token helpers, the MCP bridge) are bundled with
+// their libraries (scripts/bundle-backend.mjs) and replace the sources here;
+// node_modules then keeps only node-pty, the native terminal library. Runs
+// before signing (macOS) and before any installer is built, so every target
+// ships the same app. A failure stops the build rather than ship a broken app.
+function appFolder(context, platform, appName) {
+  return platform === 'darwin'
+    ? path.join(context.appOutDir, `${appName}.app`, 'Contents', 'Resources', 'app')
+    : path.join(context.appOutDir, 'resources', 'app');
+}
+
+async function bundleBackendInto(context, platform, appName) {
+  const appDir = appFolder(context, platform, appName);
+  if (!fs.existsSync(path.join(appDir, 'server.js'))) throw new Error(`afterPack: no app folder at ${appDir}`);
+  const projectDir = context.packager.projectDir || context.packager.info.projectDir;
+  const { bundleBackend, ENTRIES, KEEP_MODULES } = await import(pathToFileURL(path.join(projectDir, 'scripts', 'bundle-backend.mjs')).href);
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'k8board-backend-'));
+  try {
+    console.log('  • bundling the backend');
+    await bundleBackend({ outDir, log: (m) => console.log(m) });
+    for (const entry of ENTRIES) fs.copyFileSync(path.join(outDir, entry), path.join(appDir, entry));
+  } finally {
+    fs.rmSync(outDir, { recursive: true, force: true });
+  }
+  const modules = path.join(appDir, 'node_modules');
+  for (const name of fs.readdirSync(modules)) {
+    if (!KEEP_MODULES.includes(name)) fs.rmSync(path.join(modules, name), { recursive: true, force: true });
+  }
+  for (const name of KEEP_MODULES) {
+    if (!fs.existsSync(path.join(modules, name, 'package.json'))) throw new Error(`afterPack: ${name} is missing from the app`);
+  }
+  console.log(`  • backend bundled; node_modules keeps ${KEEP_MODULES.join(', ')}`);
+}
 
 // ---------------------------------------------------------------------------
 // 3. Linux: the executable's name before the rename, as a relative symlink

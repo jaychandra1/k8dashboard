@@ -75,10 +75,10 @@ const Navigation = forwardRef(function Navigation({
   }, [onNavigate]);
 
   const groups = useMemo(() => {
-    const cluster = typesInGroup('cluster').filter((t) => t.key !== 'overview');
+    const cluster = typesInGroup('cluster');
     const collapsible = NAV_GROUPS.filter((g) => ['workloads', 'network', 'storage', 'config'].includes(g.key)).map((g) => ({
       ...g,
-      items: g.key === 'workloads' ? [byKey.overview, ...typesInGroup('workloads')] : typesInGroup(g.key),
+      items: typesInGroup(g.key),
     }));
     const other = typesInGroup('other').filter((t) => t.key !== 'customResources');
     return { cluster, collapsible, other };

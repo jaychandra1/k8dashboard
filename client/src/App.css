@@ -5008,3 +5008,46 @@ h3.sec-drawer-section:first-child { margin-top: 0; }
 .prefs-ctx-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 12px; font-size: 0.8125rem; }
 .prefs-ctx-row + .prefs-ctx-row { border-top: 1px solid var(--border-subtle, var(--border)); }
 .prefs-ctx-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-family: var(--font-mono, ui-monospace, monospace); font-size: 0.7813rem; }
+
+/* Switch cluster: a quiet remove action on each row (hover / keyboard-active row) */
+.ctxp-remove {
+  flex-shrink: 0; margin-left: auto; width: 26px; height: 26px; display: grid; place-items: center;
+  border: 0; border-radius: var(--radius-sm, 6px); background: transparent; color: var(--text-muted);
+  opacity: 0; transform: scale(0.92); cursor: pointer;
+  transition: opacity 120ms ease, transform 120ms ease, background-color 120ms ease, color 120ms ease;
+}
+.dd-option:hover .ctxp-remove,
+.dd-option.focused .ctxp-remove { opacity: 1; transform: none; }
+.ctxp-remove:hover { color: var(--danger, #ef4444); background: color-mix(in srgb, var(--danger, #ef4444) 12%, transparent); }
+.ctxp-remove:active { transform: scale(0.94); }
+@media (hover: none) { .ctxp-remove { opacity: 0.7; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .ctxp-remove { transition: none; } }
+
+/* Dashboard: the Workloads card (one tile per kind, cluster-wide) */
+.wl-card { margin-top: 18px; container-type: inline-size; }
+/* Six kinds: one row when there is room, else 3 + 3, else 2 + 2 + 2 (never a lone tile). */
+.wl-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+@container (max-width: 980px) { .wl-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@container (max-width: 520px) { .wl-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.wl-tile {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 12px; row-gap: 10px;
+  padding: 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-surface);
+  font: inherit; color: inherit; text-align: left; cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+.wl-tile:hover:not(:disabled) { border-color: var(--border-strong); transform: translateY(-1px); box-shadow: var(--shadow-1); }
+.wl-tile:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.wl-tile:disabled { cursor: default; }
+.wl-tile .kpi-icon { width: 36px; height: 36px; border-radius: 9px; }
+.wl-meta { display: flex; flex-direction: column; min-width: 0; }
+.wl-label { font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wl-count { font-size: 1.375rem; font-weight: 700; line-height: 1.15; color: var(--text); font-variant-numeric: tabular-nums; }
+.wl-status { grid-column: 1 / -1; display: inline-flex; align-items: center; gap: 7px; font-size: 0.75rem; color: var(--text-secondary); min-width: 0; }
+.wl-status i { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--text-muted); }
+.wl-status[data-tone="ok"] i { background: var(--green); }
+.wl-status[data-tone="warn"] i { background: var(--yellow); }
+.wl-status[data-tone="bad"] i { background: var(--red); }
+.wl-status[data-tone="info"] i { background: var(--accent); }
+.wl-status[data-tone="warn"], .wl-status[data-tone="bad"] { color: var(--text); font-weight: 600; }
+.kpi-sub[data-tone="bad"] { color: var(--red); font-weight: 600; }
+@media (prefers-reduced-motion: reduce) { .wl-tile { transition: none; } .wl-tile:hover:not(:disabled) { transform: none; } }

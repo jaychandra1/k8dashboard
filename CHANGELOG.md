@@ -54,6 +54,11 @@ All notable changes to this project are documented here. The format follows
   - **Repository:** releases stay at `jaychandra1/KubePilot`.
 
 ### Added
+- **The Dashboard covers the whole cluster, workloads included.** The Workloads → Overview page is gone; what it showed is on the Dashboard, cluster-wide:
+  - **New Workloads card:** deployments, statefulsets, daemonsets, jobs, cronjobs and services, each with how many aren't ready, failed or are suspended.
+  - **Links:** the nodes, pods and namespaces cards and every workload tile open their list across all namespaces.
+  - **Old links:** `#/overview` opens the Dashboard.
+- **Remove a cluster from the Switch cluster list.** A trash icon appears on the row you point at or move to with the keyboard, and **Shift+Delete** removes the highlighted cluster. Both open the same confirmation.
 - **Remove a cluster.** Use **Remove "<cluster>"…** in the cluster switcher, or **Remove** next to any cluster in Preferences → Kubernetes, which now lists every cluster.
   - **Confirmation:** before anything changes, the dialog shows exactly what goes: the cluster, plus its credentials and server entries, which stay if another cluster uses them.
   - **Safety:** the kubeconfig file that defines the cluster is backed up (`….k8board-backup-<time>`) and then rewritten. kubectl won't see the cluster either.
@@ -111,6 +116,12 @@ All notable changes to this project are documented here. The format follows
   Bars turn amber at 75% requested and red at 90%. The card also says when pods are waiting for a node with room. Requests are added up the way `kubectl describe node` does: the bigger of the app containers and the largest init container, plus native sidecars and pod overhead. Finished and unscheduled pods don't count. The summary API gains `cpuRequestedMilli`, `memRequestedBytes`, `cpuLimitsMilli`, `memLimitsBytes`, `podsScheduled`, `podsAllocatable`, `podsUnscheduled` and `usage` (`lib/capacity.mjs`, shared with demo mode).
 
 ### Fixed
+- **The Dashboard's pod health counted crash-looping pods as healthy.** It only looked at the pod phase, which stays "Running" while a container is in CrashLoopBackOff, ImagePullBackOff and the like. The Dashboard now counts those pods as failing, by the same rule as the rest of the app (`lib/cluster-health.mjs`, kept in step with the UI by a test). The Pods card says how many are failing.
+- **Windows updates restart K8Board much sooner.** An update moves, unpacks and virus-scans every file of the app, and the app was about 5,000 files, almost all in `node_modules`.
+  - **Change:** the desktop package now bundles the backend, the token helpers and the MCP bridge into one file each (compacted, names kept), keeping only `node-pty` as files.
+  - **Result:** about 220 files instead of about 5,000, and the installer is 10 MB smaller. On a machine with endpoint security, the update's file work went from about 100–150 s to about 10 s.
+  - **Store builds:** the Microsoft Store package benefits as well.
+- **In the Switch cluster list, ↑/↓ couldn't move off the current cluster** unless you typed a search first.
 - **When a cluster's sign-in ends, the sign-in dialog comes up instead of endless loading.** Before, signing out (or the AWS session ending) while K8Board was open left the page on loading placeholders, with the sign-in helper's raw output as error messages, until you switched cluster or restarted.
   - **The open cluster's requests now stop at once and the "session expired" dialog opens.** This covers signing out of it, its sign-in being found missing or over, and the 5-minute renewal finding that it can't be renewed. Retry or signing in resumes it.
   - **Requests waiting together share one sign-in helper run.** Before, every request started its own helper (on Windows, a full start of the app runtime), so a busy page launched a burst of them, again on every refresh.

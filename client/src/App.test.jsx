@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, act, waitFor, within } from '@testing-library/react';
+import { render, screen, act, waitFor, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { _resetHistoryIndex } from './hooks/useHashRoute';
 
@@ -31,8 +31,7 @@ vi.mock('./lib/api', async (orig) => {
 
 // Heavy views are owned by other engineers; stub them so App renders without their deps.
 vi.mock('./components/ResourceViewer', () => ({ default: (p) => <div data-testid="rv" data-type={p.resourceType} data-selected={p.selectedResource?.name || ''} data-count={p.resources.length}><h1>{p.resourceType}</h1></div>, TAB_KEYS: [] }));
-vi.mock('./components/Overview', () => ({ default: (p) => <div data-testid="overview" data-pods={(p.allResources.pods || []).length}><h1>Overview</h1></div> }));
-vi.mock('./components/Cluster', () => ({ default: () => <h1>Cluster</h1> }));
+vi.mock('./components/Cluster', () => ({ default: ({ onOpen }) => <><h1>Cluster</h1><button type="button" onClick={() => onOpen?.('deployment')}>Open deployments</button></> }));
 vi.mock('./components/Nodes', () => ({ default: (p) => <h1>Nodes {p.focusNode || ''}</h1> }));
 vi.mock('./components/Namespaces', () => ({ default: () => <h1>Namespaces</h1> }));
 vi.mock('./components/Topology', () => ({ default: () => <h1>Topology</h1> }));
@@ -63,7 +62,6 @@ describe('App routing', () => {
     expect(screen.getByRole('main')).toHaveAttribute('id', 'main');
     expect(screen.getByRole('banner')).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Cluster' })).toBeInTheDocument());
-    expect(screen.queryByTestId('overview')).toBeNull();
     expect(document.title).toMatch(/^Cluster · test-cluster — K8Board$/);
     // The cluster switcher and, right beside it, the Back/Forward arrows open the
     // top bar (its `lead` slot); the sidebar holds neither.
@@ -98,11 +96,14 @@ describe('App routing', () => {
     expect(screen.getByRole('button', { name: 'Forward' })).toBeEnabled();
   }, 15000);
 
-  it('the workloads overview is still reachable at #/overview', async () => {
-    window.location.hash = '#/overview';
+  it('old #/overview links open the Dashboard; its lists open on all namespaces; Workloads has no Overview item', async () => {
+    window.location.hash = '#/overview?ns=default';
     renderApp();
-    await waitFor(() => expect(screen.getByTestId('overview')).toHaveAttribute('data-pods', '2'));
-    expect(document.title).toMatch(/^Overview · all namespaces · test-cluster — K8Board$/);
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Cluster' })).toBeInTheDocument());
+    const nav = screen.getByRole('navigation', { name: 'Primary' });
+    expect(within(nav).queryByRole('link', { name: 'Overview' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Open deployments' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/deployment')); // all namespaces = no ns filter
   });
 
   it('switching cluster from the sidebar menu lands on the Cluster overview behind the branded loading screen', async () => {

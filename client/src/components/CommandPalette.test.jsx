@@ -64,7 +64,7 @@ describe('CommandPalette', () => {
     expect(input).toHaveAttribute('aria-activedescendant', options[2].id);
     expect(options[2]).toHaveAttribute('aria-selected', 'true');
     await user.keyboard('{Enter}');
-    expect(onNavigate).toHaveBeenCalledWith('nodes');
+    expect(onNavigate).toHaveBeenCalledWith('namespaces'); // Dashboard, Nodes, Namespaces (the workloads overview is part of the Dashboard)
     await user.keyboard('{Escape}');
     expect(onClose).toHaveBeenCalled();
   });
