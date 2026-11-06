@@ -1,6 +1,6 @@
 {
   "name": "kubepilot",
-  "version": "1.7.7",
+  "version": "1.7.8",
   "description": "A native desktop UI for browsing and operating Kubernetes clusters",
   "author": {
     "name": "K8Board Program",
