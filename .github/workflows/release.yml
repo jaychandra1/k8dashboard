@@ -109,8 +109,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # macos-14 is Apple Silicon, so the arm64 .dmg builds natively.
-          - os: macos-14
+          # macos-26 is Apple Silicon, so the arm64 .dmg builds natively.
+          # Pinned (not macos-latest) so the release machine only changes on
+          # purpose. GitHub retires old images (macos-14 went on 2026-11-02);
+          # move to the next arm64 label when this one is announced for
+          # retirement. The macOS the app needs is set by Electron, not by it.
+          - os: macos-26
             name: macOS (arm64)
             artifact: mac
           - os: windows-latest

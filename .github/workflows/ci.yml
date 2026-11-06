@@ -37,7 +37,8 @@ jobs:
         include:
           - os: ubuntu-latest
             name: Linux
-          - os: macos-14
+          # Same arm64 image as the release build (release.yml).
+          - os: macos-26
             name: macOS (arm64)
           - os: windows-latest
             name: Windows
