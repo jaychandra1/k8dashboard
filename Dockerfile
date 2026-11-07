@@ -109,6 +109,10 @@ WORKDIR /app
 
 # Patch OS packages. bash is used by the in-pod shell fallback; libstdc++ by
 # the node-pty addon.
+# This line never changes, so a builder would reuse its cached layer and keep
+# old packages. CI and release builds skip the cache for this stage
+# (`no-cache-filters: runtime`); locally, build with
+# `docker build --no-cache-filter runtime`.
 # NOTE: helm is intentionally NOT installed — Helm releases are read directly
 # via the Kubernetes API (see server.js), which also avoids the large cluster
 # of Go-module CVEs that ship inside the helm binary.

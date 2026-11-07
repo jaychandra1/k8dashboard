@@ -19,6 +19,7 @@ All notable changes to this project are documented here. The format follows
   - `trivy` 0.74.0 → 0.76.2, also the version the desktop app downloads for image scans.
   - `kubelogin` v1.36.4 is compiled from its tagged source with Go 1.26.10, go-jose 4.1.6 and x/net 0.62.0. No release ships them yet, and its release binary had seven fixed vulnerabilities.
   - Three `x/net`/`x/text` denial-of-service issues in `kubectl` have no release with the fix yet. They are accepted for `kubectl` only, until 2027-01-31.
+  - Alpine's packages are upgraded on every CI and release build. A cached `apk upgrade` layer had kept musl 1.2.6-r2 and zlib 1.3.2-r0; builds now get musl 1.2.6-r3 and zlib 1.4 (code-execution fixes).
 - **AWS sign-ins reach only what you expect.** With dev and prod clusters on one IAM Identity Center portal, signing in for dev used to renew prod as well. Now:
   - **Only the cluster in use is kept signed in in the background.** Other clusters' sessions renew when you open them.
   - **Production clusters can have their own sign-in.** Preferences → Cloud Integrations → *AWS sign-ins* lists each sign-in, the clusters it covers, and a **Production** switch per cluster. A production cluster's AWS profile moves to a separate `…-production` session with its own token, so a dev sign-in can't reach it.

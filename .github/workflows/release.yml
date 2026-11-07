@@ -543,6 +543,9 @@ jobs:
           sbom: true
           cache-from: type=gha,scope=docker-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=docker-${{ matrix.arch }}
+          # Always rebuild the runtime stage, so `apk upgrade` installs the
+          # OS security fixes published since the layer was last cached.
+          no-cache-filters: runtime
 
       - name: Export digest
         shell: bash

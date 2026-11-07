@@ -423,12 +423,12 @@ Outputs in `release/`: `K8Board-macos.dmg` (Apple Silicon), `K8Board-windows.exe
 ### 3.3 Building the Docker image locally
 
 ```bash
-docker build -t k8board:dev .
+docker build --no-cache-filter runtime -t k8board:dev .
 docker run --rm -p 127.0.0.1:8080:3001 -e K8BOARD_TOKEN=local-dev-token-1234 \
   -v "$HOME/.kube:/home/node/.kube:ro" k8board:dev
 ```
 
-The image is multi-stage: the client is built, production dependencies are installed with `--ignore-scripts`, and `kubectl` and `trivy` are downloaded at pinned versions and verified against their published SHA256 checksums. `kubelogin` is compiled from its tagged source with a patched Go and fixed modules (its latest release binary has fixed vulnerabilities); the source and modules are verified against the Go checksum database. CI fails on any fixable HIGH or CRITICAL vulnerability in the image unless `.trivyignore.yaml` lists it, scoped to one binary, with a reason and an expiry date. The container runs as the unprivileged `node` user and exposes a `HEALTHCHECK` on `/healthz`.
+The image is multi-stage: the client is built, production dependencies are installed with `--ignore-scripts`, and `kubectl` and `trivy` are downloaded at pinned versions and verified against their published SHA256 checksums. `kubelogin` is compiled from its tagged source with a patched Go and fixed modules (its latest release binary has fixed vulnerabilities); the source and modules are verified against the Go checksum database. The last stage upgrades Alpine's packages; `--no-cache-filter runtime` makes Docker run that again instead of reusing a cached copy with older packages (CI and release builds do the same). CI fails on any fixable HIGH or CRITICAL vulnerability in the image unless `.trivyignore.yaml` lists it, scoped to one binary, with a reason and an expiry date. The container runs as the unprivileged `node` user and exposes a `HEALTHCHECK` on `/healthz`.
 
 ### 3.4 Bumping pinned tools and dependencies
 
