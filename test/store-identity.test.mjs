@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { storeIdentity, identityArgs, appxConfig, STORE_ENV, RETIRED_DISPLAY_NAME_ENV } from '../scripts/store-identity.mjs';
+import { storeIdentity, identityArgs, appxConfig, storePackageName, STORE_ENV, RETIRED_DISPLAY_NAME_ENV } from '../scripts/store-identity.mjs';
 import { ROOT_DIR } from '../lib/paths.mjs';
 
 const FULL = { MS_STORE_IDENTITY_NAME: 'Example.App', MS_STORE_PUBLISHER: 'CN=00000000-0000-0000-0000-000000000000' };
@@ -29,11 +29,17 @@ test('passed to electron-builder as overrides of the package.json placeholders',
   assert.deepEqual(identityArgs(storeIdentity(FULL)), [
     '-c.appx.identityName=Example.App',
     `-c.appx.publisher=${FULL.MS_STORE_PUBLISHER}`,
+    '-c.appx.artifactName=K8Board-windows-store.msix',
   ]);
   assert.deepEqual(identityArgs(null), []);
   const appx = appxConfig(ROOT_DIR);
   assert.deepEqual([appx.identityName, appx.publisher], ['K8Board.Desktop', 'CN=K8Board'], 'only placeholders for the identity in the repository');
   assert.equal(appx.publisherDisplayName, 'JDG Initiates', "the Partner Center account's publisher display name");
+});
+
+test('only a package with the identity gets the name to upload', () => {
+  assert.equal(storePackageName(ROOT_DIR), 'K8Board-windows-store.msix');
+  assert.equal(appxConfig(ROOT_DIR).artifactName, '${productName}-windows-store-placeholder.msix', 'any other build is visibly a placeholder');
 });
 
 test('a Store build without the identity refuses to run', () => {

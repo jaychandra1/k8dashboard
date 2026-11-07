@@ -245,15 +245,23 @@ jobs:
       # Microsoft Store package (MSIX). Unsigned on purpose: the Store
       # signs it with Microsoft's certificate after certification, and it only
       # installs through the Store — so it stays out of the GitHub release
-      # (and SHA256SUMS). The `store` job below submits it.
+      # (and SHA256SUMS). The `store` job below submits it. Only a package
+      # with the Partner Center identity is uploaded: without the repository
+      # variables the build writes *-placeholder.msix, which Partner Center
+      # rejects, so there is no artifact to download by mistake.
       - name: Upload Microsoft Store package
-        if: matrix.artifact == 'windows'
+        if: matrix.artifact == 'windows' && vars.MS_STORE_IDENTITY_NAME != '' && vars.MS_STORE_PUBLISHER != ''
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: store-k8board-windows
           if-no-files-found: error
           retention-days: 30
-          path: release/*.msix
+          path: release/*-windows-store.msix
+
+      - name: No Microsoft Store package without the identity
+        if: matrix.artifact == 'windows' && (vars.MS_STORE_IDENTITY_NAME == '' || vars.MS_STORE_PUBLISHER == '')
+        shell: bash
+        run: echo "::warning::No Microsoft Store package for this release. Set the repository variables MS_STORE_IDENTITY_NAME and MS_STORE_PUBLISHER (Partner Center -> Product management -> Product identity) to build one."
 
   # ---------------------------------------------------------------------------
   release:

@@ -158,7 +158,7 @@
       "minVersion": "10.0.17763.0",
       "maxVersionTested": "10.0.26100.0",
       "customExtensionsPath": "build/appx-extensions.xml",
-      "artifactName": "${productName}-windows-store.msix"
+      "artifactName": "${productName}-windows-store-placeholder.msix"
     },
     "nsis": {
       "shortcutName": "K8Board",

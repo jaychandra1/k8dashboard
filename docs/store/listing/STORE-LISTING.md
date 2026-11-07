@@ -19,6 +19,8 @@ Everything Partner Center asks for, in the order it asks, ready to paste. Writte
 2. **Build the MSIX after setting them.** Get it either way:
    - Tag a release, then download the **`store-k8board-windows`** artifact from the **Build & Release** run's summary page. It's a zip containing `K8Board-windows-store.msix`, kept for 30 days.
    - Or run `npm run dist:store` on Windows; it writes `release/K8Board-windows-store.msix`.
+
+   Never upload `K8Board-windows-store-placeholder.msix`: it's what a build without the variables writes, and Partner Center rejects its identity.
 3. The package declares `runFullTrust`, so section 7 needs the justification text given there. Packaged Win32 apps always declare it.
 
 ## 1. Pricing and availability

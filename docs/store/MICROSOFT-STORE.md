@@ -37,7 +37,7 @@ The release workflow builds both on every tagged release. The `.msix` is uploade
    - **From a release build:** tag a release as usual; when the **Build & Release** run finishes, download the `store-k8board-windows` artifact from the run's summary page and unzip it.
    - **On your Windows machine:** `npm ci && npm ci --prefix client`, then `npm run dist:store`. The package is written to `release/K8Board-windows-store.msix` (electron-builder downloads the Windows packaging tools the first time).
 
-   Either way, build it **after** step 1.3: the package carries the identity from those variables (`npm run dist:store` refuses to build without them).
+   Either way, build it **after** step 1.3: the package carries the identity from those variables (`npm run dist:store` refuses to build without them). A build without them, such as a plain `npm run dist`, writes `K8Board-windows-store-placeholder.msix` instead. That file installs for local testing (section 5), but Partner Center rejects it with *Invalid package identity name* and *Invalid package publisher name*. A release without the variables uploads no Store package and says so in a warning.
 2. Partner Center → the product → **Start your submission**:
    - **Pricing and availability:** Free; choose markets.
    - **Properties:** Category **Developer tools**. Privacy policy URL: `https://k8dashboard.in/privacy`. Website: `https://k8dashboard.in`. Support contact: `kubepilot.dashboard@gmail.com`.

@@ -11,6 +11,11 @@
 // lives in package.json (build.appx.publisherDisplayName) and is not read from
 // the environment.
 //
+// Only a build with the identity is named K8Board-windows-store.msix. Any
+// other build (no variables, or a plain `npm run dist`) writes
+// K8Board-windows-store-placeholder.msix (package.json build.appx.artifactName):
+// it installs for local testing, but Partner Center rejects it.
+//
 //   node scripts/store-identity.mjs [--allow-placeholder] [electron-builder args…]
 //   e.g. node scripts/store-identity.mjs --win appx --publish never
 // Without the variables it refuses (the package would carry placeholders that
@@ -31,10 +36,15 @@ export const STORE_ENV = Object.freeze({
 /** No longer read: the display name is in package.json. Set, it only earns a notice. */
 export const RETIRED_DISPLAY_NAME_ENV = 'MS_STORE_PUBLISHER_DISPLAY_NAME';
 
+const packageJson = (root) => JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+
 /** package.json build.appx: the identity placeholders and the publisher display name. */
 export function appxConfig(root = ROOT) {
-  return JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).build?.appx || {};
+  return packageJson(root).build?.appx || {};
 }
+
+/** The file name of an MSIX that carries the Store identity (the one to upload). */
+export const storePackageName = (root = ROOT) => `${packageJson(root).build?.productName || 'K8Board'}-windows-store.msix`;
 
 /**
  * The identity from the environment, null when none of it is set. Throws when
@@ -55,9 +65,9 @@ export function storeIdentity(env = process.env, placeholders = appxConfig()) {
   return id;
 }
 
-/** electron-builder overrides for an identity (none for null). */
-export const identityArgs = (id) => (id
-  ? [`-c.appx.identityName=${id.identityName}`, `-c.appx.publisher=${id.publisher}`]
+/** electron-builder overrides for an identity (none for null), with the uploadable file name. */
+export const identityArgs = (id, root = ROOT) => (id
+  ? [`-c.appx.identityName=${id.identityName}`, `-c.appx.publisher=${id.publisher}`, `-c.appx.artifactName=${storePackageName(root)}`]
   : []);
 
 function main(argv) {
@@ -71,7 +81,9 @@ function main(argv) {
     return 1;
   }
   const { publisherDisplayName } = appxConfig();
-  console.log(id ? `  • Store identity from the environment: ${id.identityName}` : '  • no Store identity set: the MSIX keeps the placeholders (not uploadable)');
+  console.log(id
+    ? `  • Store identity from the environment: ${id.identityName} → ${storePackageName()}`
+    : `  • no Store identity set: the MSIX keeps the placeholders and is named ${appxConfig().artifactName} (Partner Center rejects it)`);
   console.log(`  • publisher display name (package.json): ${publisherDisplayName}`);
   if (String(process.env[RETIRED_DISPLAY_NAME_ENV] ?? '').trim()) {
     console.log(`  • ${RETIRED_DISPLAY_NAME_ENV} is ignored (the display name comes from package.json); it can be deleted.`);
