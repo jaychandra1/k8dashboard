@@ -444,7 +444,7 @@ describe('verification', () => {
     assert.equal(ok({ checksumsText: text.replace(good.slice(0, 4), 'ffff') }), false, 'tampered list');
     assert.equal(ok({ signature: 'not base64 at all' }), false);
     assert.equal(ok({ keys: ['bm90IGEga2V5'] }), false, 'malformed key');
-    const rsa = crypto.generateKeyPairSync('rsa', { modulusLength: 1024 }).publicKey;
+    const rsa = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 }).publicKey;
     assert.equal(ok({ keys: [rsa.export({ type: 'spki', format: 'der' }).toString('base64')] }), false, 'non-Ed25519 key');
     const signedOnly = new Map([['K8Board-windows.exe', good]]);
     assert.deepEqual(expectedSha256({ name: 'K8Board-windows.exe', digest: good }, signedOnly, { signed: true }).sources, [

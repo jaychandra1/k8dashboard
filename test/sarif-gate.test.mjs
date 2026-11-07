@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { evaluate, securityFindings } from '../scripts/sarif-gate.mjs';
+import { evaluate, listing, securityFindings } from '../scripts/sarif-gate.mjs';
 
 const SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'scripts', 'sarif-gate.mjs');
 
@@ -60,6 +60,17 @@ describe('sarif-gate', () => {
     assert.deepEqual(evaluate([{ runs: [] }, {}]), { blocking: [], warnings: [] });
   });
 
+  test('the listing has every finding with its location, blocking ones first', () => {
+    const { blocking, warnings } = evaluate([sarif([
+      result('js/missing-rate-limiting', 2), result('js/clear-text-logging', 1), result('js/command-line-injection', 0),
+    ])]);
+    assert.deepEqual(listing(blocking, warnings).split('\n'), [
+      'BLOCK 9.8 js/command-line-injection server.js:10 js/command-line-injection here',
+      'BLOCK 7.5 js/clear-text-logging server.js:11 js/clear-text-logging here',
+      'warn  5.3 js/missing-rate-limiting server.js:12 js/missing-rate-limiting here',
+    ]);
+  });
+
   test('the CLI exits 1 with annotations on blocking findings, 0 when clean', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kp-sarif-'));
     try {
@@ -72,6 +83,7 @@ describe('sarif-gate', () => {
       const bad = spawnSync(process.execPath, [SCRIPT, dir], { encoding: 'utf8' });
       assert.equal(bad.status, 1);
       assert.match(bad.stdout, /::error file=server.js,line=10::js\/command-line-injection \(security-severity 9.8\)/);
+      assert.match(bad.stdout, /^BLOCK 9\.8 js\/command-line-injection server\.js:10 /m, 'the log lists every finding with its location');
 
       const empty = spawnSync(process.execPath, [SCRIPT, fs.mkdtempSync(path.join(dir, 'e-'))], { encoding: 'utf8' });
       assert.equal(empty.status, 2, 'no SARIF at all is an error, not a pass');

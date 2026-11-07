@@ -74,6 +74,13 @@ const sarifFiles = (target) => {
   return fs.readdirSync(target).filter((n) => n.endsWith('.sarif')).map((n) => path.join(target, n));
 };
 
+/** Every finding, one line each, blocking first: `BLOCK 7.5 js/path-injection lib/x.mjs:12 message`. */
+export function listing(blocking, warnings) {
+  const line = (tag, f) => `${tag} ${f.severity.toFixed(1)} ${f.ruleId} ${f.file || '?'}:${f.line} ${f.message}`;
+  const bySpot = (a, b) => a.file.localeCompare(b.file) || a.line - b.line;
+  return [...[...blocking].sort(bySpot).map((f) => line('BLOCK', f)), ...[...warnings].sort(bySpot).map((f) => line('warn ', f))].join('\n');
+}
+
 const escape = (s) => String(s).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
 const annotate = (level, f) =>
   `::${level} file=${escape(f.file)},line=${f.line}::${escape(`${f.ruleId} (security-severity ${f.severity}): ${f.message}`)}`;
@@ -98,6 +105,9 @@ if (isMainModule(import.meta.url)) {
   const { blocking, warnings } = evaluate(files.map((f) => JSON.parse(fs.readFileSync(f, 'utf8'))), minSeverity);
   for (const f of warnings) console.log(annotate('warning', f));
   for (const f of blocking) console.log(annotate('error', f));
+  // GitHub shows only the first 10 annotations of each kind per step, so the
+  // full list (with locations) also goes to the log.
+  if (blocking.length || warnings.length) console.log(`\n${listing(blocking, warnings)}\n`);
   console.log(`${files.length} SARIF file(s): ${blocking.length} finding(s) at security-severity >= ${minSeverity}, ${warnings.length} below.`);
   process.exit(blocking.length ? 1 : 0);
 }

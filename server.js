@@ -52,6 +52,7 @@ import { localShellAllowed, pinnedKubeconfig, helmShellEnv, helmShellCommand, he
 import { childEnv, holdAppSecrets } from './lib/child-env.mjs';
 import { scrubResponseForAgent } from './lib/agent-scrub.mjs';
 import { endpointKind, networkFailure, shortReason, unreachableMessage } from './lib/cluster-network.mjs';
+import { providerOfServer } from './lib/cloud-provider.mjs';
 import { formatResource } from './lib/resource-format.mjs';
 import { capacityTotals, nodeUsage } from './lib/capacity.mjs';
 import { filterEvents, parseWorkload, workloadScope } from './lib/event-scope.mjs';
@@ -700,17 +701,6 @@ app.put('/api/settings/pins', mcpWriteGate, (req, res) => {
 });
 
 app.get('/api/config/status', (req, res) => {
-  // Tag each context with its cloud provider (derived from the cluster's server
-  // URL) so the UI can group and icon them.
-  const providerOf = (server = '') => {
-    const s = server.toLowerCase();
-    if (s.includes('.azmk8s.io') || s.includes('azure')) return 'azure';
-    if (s.includes('.eks.amazonaws.com') || s.includes('eks.') ) return 'aws';
-    if (s.includes('.gke.') || s.includes('container.googleapis.com')) return 'gcp';
-    if (/(127\.0\.0\.1|localhost|:6443|:8443|host\.docker|kubernetes\.docker|minikube|kind|orbstack|rancher)/.test(s)) return 'local';
-    return 'other';
-  };
-
   let contexts = [], contextsInfo = [], clusters = [];
   if (kubeConfig) {
     const clusterByName = new Map(kubeConfig.clusters.map((c) => [c.name, c]));
@@ -718,7 +708,7 @@ app.get('/api/config/status', (req, res) => {
     contextsInfo = kubeConfig.contexts.map((c) => {
       const cl = clusterByName.get(c.cluster);
       const signIn = hints.get(c.name);
-      return { name: c.name, cluster: c.cluster, provider: providerOf(cl?.server), ...(signIn ? { signIn } : {}) };
+      return { name: c.name, cluster: c.cluster, provider: providerOfServer(cl?.server) /* cloud from the server host name, for grouping and icons */, ...(signIn ? { signIn } : {}) };
     });
     contexts = kubeConfig.contexts.map((c) => c.name);
     clusters = kubeConfig.clusters.map((c) => c.name);

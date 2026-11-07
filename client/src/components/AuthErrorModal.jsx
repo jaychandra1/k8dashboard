@@ -53,19 +53,28 @@ export function classify(auth) {
   return out.provider ? out : { ...out, provider: guessProvider(auth) };
 }
 
-const guessProvider = (auth) => {
-  const server = (auth?.server || '').toLowerCase();
-  return /azmk8s.io|.azure/.test(server) ? 'azure' : /eks.amazonaws|.eks./.test(server) ? 'aws' : /gke|container.googleapis/.test(server) ? 'gcp' : null;
-};
+// The cloud behind an API server URL, from its host name only (a path, query
+// or userinfo that mentions a cloud domain doesn't count).
+export function providerOfServer(server) {
+  const raw = String(server || '').trim();
+  if (!raw) return null;
+  let host;
+  try { host = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `https://${raw}`).hostname.toLowerCase(); } catch { return null; }
+  const labels = host.split('.');
+  const under = (domain) => host === domain || host.endsWith(`.${domain}`);
+  if (under('azmk8s.io') || labels.includes('azure')) return 'azure';
+  if (labels.includes('eks')) return 'aws';
+  if (labels.includes('gke') || under('gke.goog') || under('container.googleapis.com')) return 'gcp';
+  return null;
+}
+
+const guessProvider = (auth) => providerOfServer(auth?.server);
 
 function classifyRaw(auth) {
   const reason = auth?.reason || 'error';
   const raw = auth?.message || '';
   const s = raw.toLowerCase();
-  const server = (auth?.server || '').toLowerCase();
-  const provider = /azmk8s\.io|\.azure/.test(server) ? 'azure'
-    : /eks\.amazonaws|\.eks\./.test(server) ? 'aws'
-      : /gke|container\.googleapis/.test(server) ? 'gcp' : null;
+  const provider = providerOfServer(auth?.server);
 
   // Server-side classifications of the bundled token helpers come first: the
   // backend has already looked at the exec plugin's stderr / exit status.
