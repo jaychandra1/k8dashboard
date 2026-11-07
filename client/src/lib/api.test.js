@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { p, withQuery, wsUrl, setToken, getToken, clearToken, bootstrapTokenFromHash, ApiError, api, onUnauthorized, resetUnauthorized, getJson, sseFetch, errorMessage, onClusterAuthRequired, CLUSTER_AUTH_MESSAGE } from './api';
+import { p, withQuery, wsUrl, setToken, getToken, clearToken, bootstrapTokenFromHash, ApiError, api, onUnauthorized, resetUnauthorized, getJson, sseFetch, errorMessage, onClusterAuthRequired, CLUSTER_AUTH_MESSAGE, REQUEST_TIMEOUT_MS } from './api';
 
 beforeEach(() => { clearToken(); sessionStorage.clear(); resetUnauthorized(); });
 
@@ -97,6 +97,13 @@ describe('axios instance', () => {
     expect(needsSignIn).toHaveBeenCalledTimes(1);
     expect(unauthorized).not.toHaveBeenCalled();
     offA(); offB();
+  });
+  it('bounds every request, and a timed-out one reads as a timeout (REL-01)', async () => {
+    expect(api.defaults.timeout).toBe(REQUEST_TIMEOUT_MS);
+    expect(REQUEST_TIMEOUT_MS).toBeGreaterThan(3 * 60 * 1000); // longer than the server's credential-helper bound
+    const rejected = api.interceptors.response.handlers[0].rejected;
+    const err = { code: 'ECONNABORTED', message: 'timeout of 300000ms exceeded', config: { url: '/api/pods' } };
+    await expect(rejected(err)).rejects.toMatchObject({ status: 0, code: 'timeout', isNetwork: true });
   });
   it('getJson returns data', async () => {
     const spy = vi.spyOn(api, 'get').mockResolvedValue({ data: { a: 1 } });

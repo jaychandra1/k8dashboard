@@ -170,6 +170,7 @@ if (tokenHelperAt !== -1) {
 }
 
 const { BrowserWindow, shell, dialog, Menu, session, utilityProcess, ipcMain } = require('electron');
+const fs = require('fs');
 const os = require('os');
 const net = require('net');
 const http = require('http');
@@ -177,6 +178,12 @@ const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 const { createUpdateHost } = require('./update-host.cjs');
 const { registerReportPdf } = require('./report-pdf.cjs');
+const { createLogFile, diagnosticsReport } = require('./diagnostics.cjs');
+
+// The app's own log (backend output and main-process events), in the OS log
+// folder, credentials scrubbed (electron/diagnostics.cjs). Opened in boot().
+let logFile = null;
+const logEvent = (text) => { logFile?.write('main', text); };
 
 const PREFERRED_PORT = 3001; // used when free — keeps documented MCP URLs stable
 // Microsoft Store → Library / updates (Help → Check for Updates on a Store install).
@@ -440,15 +447,20 @@ function startServer({ fixedPath, port, token }) {
     if (updateHost) updateHost.onMessage(msg, (reply) => { if (serverProcess === child) child.postMessage(reply); });
   });
 
-  serverProcess.stdout?.on('data', (d) => process.stdout.write(`[server] ${d}`));
+  serverProcess.stdout?.on('data', (d) => {
+    process.stdout.write(`[server] ${d}`);
+    logFile?.write('server', d);
+  });
   serverProcess.stderr?.on('data', (d) => {
     stderrTail = (stderrTail + d).slice(-2000);
     process.stderr.write(`[server] ${d}`);
+    logFile?.write('server', d);
   });
 
   // utilityProcess 'exit' reports the exit code only (no signal argument).
   serverProcess.on('exit', (code) => {
     serverProcess = null;
+    logEvent(`backend exited (code ${code})`);
     // If the server dies unexpectedly while the app is up, restart it in place
     // (a crash, an OOM kill, or another process taking the port must not take
     // the whole desktop app down). Only after repeated failures in a short
@@ -771,6 +783,10 @@ function clustersMenu() {
 }
 
 async function boot() {
+  if (!logFile) {
+    try { logFile = createLogFile(app.getPath('logs')); } catch { /* no log folder: no log */ }
+    logEvent(`K8Board ${app.getVersion()} starting (${process.platform} ${process.arch}, Electron ${process.versions.electron})`);
+  }
   createWindow();
 
   // Unwrap (or, on first run, create) the secrets key before the backend starts.
@@ -873,6 +889,47 @@ app.on('will-quit', () => {
   if (updateHost) updateHost.onWillQuit();
 });
 
+// Help → Export Diagnostics: versions, the shape of the settings and the end of
+// the log, masked for sharing (electron/diagnostics.cjs), saved where the user picks.
+async function exportDiagnostics() {
+  let settings = null;
+  try {
+    settings = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.config', 'kubepilot', 'settings.json'), 'utf8'));
+  } catch { /* none yet */ }
+  const text = diagnosticsReport({
+    app: {
+      version: app.getVersion(),
+      packaged: app.isPackaged,
+      install: updateHost?.install?.kind || (app.isPackaged ? 'unknown' : 'development'),
+      backend: serverProcess ? 'running' : 'stopped',
+    },
+    system: {
+      os: `${process.platform} ${os.release()} (${process.arch})`,
+      electron: process.versions.electron,
+      chrome: process.versions.chrome,
+      node: process.versions.node,
+      memory: `${Math.round(os.totalmem() / 2 ** 30)} GB`,
+      uptime: `${Math.round(process.uptime())} s`,
+    },
+    settings,
+    log: logFile ? logFile.tail(512 * 1024) : '',
+  });
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined, {
+    title: 'Export Diagnostics',
+    defaultPath: path.join(app.getPath('downloads'), `k8board-diagnostics-${stamp}.txt`),
+    filters: [{ name: 'Text', extensions: ['txt'] }],
+  });
+  if (canceled || !filePath) return;
+  try {
+    fs.writeFileSync(filePath, text, { mode: 0o600 });
+    logEvent('diagnostics exported');
+    shell.showItemInFolder(filePath);
+  } catch (err) {
+    dialog.showErrorBox('K8Board', `Couldn't save the diagnostics file:\n${err.message}`);
+  }
+}
+
 function buildMenu() {
   const isMac = process.platform === 'darwin';
   const template = [
@@ -918,6 +975,9 @@ function buildMenu() {
       submenu: [
         { label: 'Show Release Notes', click: () => notifyRendererWhenReady({ type: 'show-release-notes' }) },
         { label: 'Check for Updates', click: () => notifyRendererWhenReady({ type: 'check-updates' }) },
+        { type: 'separator' },
+        { label: 'Export Diagnostics…', click: () => { exportDiagnostics(); } },
+        { label: 'Open Logs Folder', enabled: !!logFile, click: () => { if (logFile) shell.openPath(logFile.dir); } },
       ],
     },
   ];

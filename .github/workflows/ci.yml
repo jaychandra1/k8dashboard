@@ -1,7 +1,10 @@
 name: CI
 
 # Lint, test (with coverage), build, audit and scan on every pull request and
-# on pushes to main. Pull requests from branches of this repo run once (the
+# on pushes to main. Every job here is a gate: a release (release.yml) is only
+# built from a main commit whose CI run succeeded, so a CodeQL finding at High
+# or Critical, a fixable HIGH/CRITICAL image vulnerability or a committed
+# secret blocks the release too (audit BLD-01). Pull requests from branches of this repo run once (the
 # pull_request event); the push event is limited to main so a PR merge does
 # not fan out into two runs per commit.
 #
@@ -129,19 +132,40 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version-file: .nvmrc
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
         with:
           languages: javascript-typescript
           queries: security-and-quality
 
-      # Uploading results requires Code scanning to be enabled for the repository
-      # (Settings → Code security and analysis → Code scanning). Until then the
-      # analysis still runs but the upload failure must not fail CI.
+      # The results are written to codeql-results/ and gated below, so the gate
+      # doesn't depend on Code scanning being enabled for the repository.
       - name: Analyze
-        continue-on-error: true
         uses: github/codeql-action/analyze@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
         with:
+          category: /language:javascript-typescript
+          upload: never
+          output: codeql-results
+
+      # The gate: High and Critical security findings (security-severity >= 7.0)
+      # fail the job; lower ones are printed as warnings. A reviewed false
+      # positive is suppressed in the source with a `// codeql[<rule-id>]` comment.
+      - name: Fail on High/Critical security findings
+        run: node scripts/sarif-gate.mjs codeql-results --min-severity 7.0
+
+      # Uploading needs Code scanning enabled (Settings → Code security and
+      # analysis); until then it fails, and that must not fail CI.
+      - name: Upload results to code scanning
+        if: always()
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
+        with:
+          sarif_file: codeql-results
           category: /language:javascript-typescript
 
   # ---------------------------------------------------------------------------
@@ -200,9 +224,7 @@ jobs:
           echo "container never became healthy" >&2
           exit 1
 
-      # Report-only for now: findings are uploaded to Code scanning (when enabled)
-      # and printed below. Flip exit-code back to '1' once the current CRITICAL
-      # findings are triaged (fixed, or listed in .trivyignore with a reason).
+      # SARIF for Code scanning (when enabled). The gate is the step at the end.
       - name: Scan image with Trivy
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
         with:
@@ -213,19 +235,52 @@ jobs:
           exit-code: '0'
           ignore-unfixed: true
 
-      - name: Print Trivy findings (human-readable)
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
-        with:
-          image-ref: k8board:ci
-          format: table
-          severity: CRITICAL,HIGH
-          exit-code: '0'
-          ignore-unfixed: true
-          skip-setup-trivy: true
-
       - name: Upload Trivy results to code scanning
         if: always()
         continue-on-error: true # needs Code scanning enabled on the repo
         uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
         with:
           sarif_file: trivy-image.sarif
+
+      # The gate: a HIGH or CRITICAL vulnerability that has a fix fails CI.
+      # One that can't be fixed yet goes in .trivyignore with the reason and a
+      # review date, never silently.
+      - name: Fail on fixable HIGH/CRITICAL vulnerabilities
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          image-ref: k8board:ci
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+          skip-setup-trivy: true
+
+  # ---------------------------------------------------------------------------
+  # Committed secrets. On a push or pull request gitleaks scans the new
+  # commits; a manual run scans the whole history. Test fixtures (fake keys
+  # that exercise the redaction code) are allowed in .gitleaks.toml.
+  # gitleaks-action needs no licence key on a personal account; under an
+  # organisation it needs the GITLEAKS_LICENSE secret.
+  secrets:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write # the action comments on the offending line of a PR
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Scan for secrets
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+          # The report holds the findings; keep it out of downloadable artifacts.
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false

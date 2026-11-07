@@ -83,7 +83,7 @@ Keep the port published on `127.0.0.1`. If you must expose it on a network, put 
 
 It then opens the **Dashboard** (`#/cluster`), and resource lists load as you open their views.
 
-**If the sign-in fails,** the connection dialog explains why (expired token, unreachable API server, TLS error, missing auth plugin) with a fix, **Retry**, another cluster, or **Back to clusters**.
+**If the sign-in fails,** the connection dialog explains why (expired token, unreachable API server, TLS error, missing auth plugin) and offers a fix. For an expired AWS session that's **Sign in with AWS**, which reconnects by itself once you're signed in. The dialog is only about the cluster you're connecting to. **Retry** tries again, and **Back to clusters** returns to Home to pick or add another cluster.
 
 **Leaving a cluster:** **Disconnect** in the cluster menu returns to Home, and stops any background work for that cluster.
 
@@ -291,7 +291,7 @@ A development build (`npm run app`), an unpacked copy (`release/win-unpacked`), 
 - **Use a sign-in code instead** shows a code to confirm on the AWS page — the right choice if the browser can't reach this machine, and what a K8Board *server* always uses.
 - Nothing starts on its own: you can instead pick any other cluster from the list (grouped by provider — AWS, Azure, GKE, on-prem…), or use **Add cluster** for AWS EKS, Azure AKS or a kubeconfig file (GKE, on-prem, kind…).
 
-**One sign-in, several clusters.** IAM Identity Center signs you in once per access portal (start URL), and that one sign-in reaches every account and role you're assigned. So clusters whose AWS profiles use the same portal share a sign-in: signing in for a dev cluster also gives access to a prod cluster in another account. The "session expired" dialog lists the other clusters a sign-in also unlocks.
+**One sign-in, several clusters.** IAM Identity Center signs you in once per access portal (start URL), and that one sign-in reaches every account and role you're assigned. So clusters whose AWS profiles use the same portal share a sign-in: signing in for a dev cluster also gives access to a prod cluster in another account. Preferences → Cloud Integrations → *AWS sign-ins* lists which clusters each sign-in covers. The "session expired" dialog doesn't name other clusters; a production cluster shows a **Production** tag there.
 
 **Production clusters and signing out** (Preferences → Cloud Integrations → *AWS sign-ins*). Each sign-in is listed with its status and the clusters it covers (account IDs and the portal address are masked).
 
@@ -385,10 +385,10 @@ Versions follow **Semantic Versioning**: patch for fixes (`1.2.0 → 1.2.1`), mi
 
    | Job | What happens |
    |---|---|
-   | **Verify tag == VERSION** | Fails immediately if the tag and `VERSION` disagree, or if a manual run was started from a branch other than `main`. |
+   | **Verify tag == VERSION, main and green CI** | Fails immediately if the tag and `VERSION` disagree, if a manual run was started from a branch other than `main`, or if the commit isn't on `main`. It then requires a successful **CI** run (lint, tests, `npm audit`, CodeQL, Trivy, gitleaks) for that exact commit, and waits for one that's still running. |
    | **Build** (macOS arm64, Windows x64, Linux x64) | `npm ci`, tests, `npm run dist` → installers uploaded as artifacts. |
-   | **Publish GitHub Release** | Waits for approval on the `release` environment, then generates `SHA256SUMS.txt` and a CycloneDX SBOM. Publishes on the public [jaychandra1/K8Board](https://github.com/jaychandra1/K8Board) repo using the `RELEASE_TOKEN` secret (a fine-grained PAT with Contents: read & write on that repo); the job fails with a clear error if the secret is missing. |
-   | **Docker image (amd64 / arm64)** → **Publish Docker image (GHCR)** | Also gated by the `release` environment. Each architecture builds on its own native runner (`ubuntu-24.04` and `ubuntu-24.04-arm` — no QEMU emulation) and is pushed by digest; the publish job then tags one multi-arch image `ghcr.io/jaychandra1/k8board:v1.2.0`, `:1.2` and `:latest`. |
+   | **Publish GitHub Release** | Waits for approval on the `release` environment, then generates `SHA256SUMS.txt` and a CycloneDX SBOM. Publishes on the public [jaychandra1/K8Board](https://github.com/jaychandra1/K8Board) repo with a short-lived **GitHub App** token when the repository variable `RELEASE_APP_CLIENT_ID` and the `release` environment secret `RELEASE_APP_PRIVATE_KEY` are set (an App installed only on that repo, with Contents: read & write). Without them it falls back to the `RELEASE_TOKEN` secret (a fine-grained PAT with the same scope) and warns. The job fails with a clear error when neither is set. |
+   | **Docker image (amd64 / arm64)** → **Publish Docker image (GHCR)** | Also gated by the `release` environment. Each architecture builds on its own native runner (`ubuntu-24.04` and `ubuntu-24.04-arm` — no QEMU emulation) and is pushed by digest; the publish job then tags one multi-arch image `ghcr.io/jaychandra1/k8board:v1.2.0`, `:1.2` and `:latest`, and signs it with **cosign** (keyless, Sigstore). |
 
    When the workflow pauses, a reviewer on the `release` environment approves it in the Actions UI. Nothing is published before that approval, and a release in progress is never cancelled by a newer run.
 
@@ -398,6 +398,12 @@ Versions follow **Semantic Versioning**: patch for fixes (`1.2.0 → 1.2.1`), mi
    sha256sum -c SHA256SUMS.txt --ignore-missing
    docker run --rm -p 127.0.0.1:8080:3001 ghcr.io/jaychandra1/k8board:v1.2.0
    curl http://127.0.0.1:8080/healthz
+   ```
+
+   Check the image signature (keyless, so there's no key to fetch; the identity is the source repository's release workflow):
+
+   ```bash
+   cosign verify ghcr.io/jaychandra1/k8board:v1.2.0 --certificate-oidc-issuer https://token.actions.githubusercontent.com --certificate-identity-regexp '^https://github.com/jaychandra1/k8dashboard/.github/workflows/release.yml@refs/'
    ```
 
 **Manual trigger.** Actions → *Build & Release* → *Run workflow* is accepted only from `main`; it releases whatever `VERSION` says, and the tag `v<VERSION>` must already exist.

@@ -14,6 +14,7 @@ import { SSOClient, ListAccountsCommand, ListAccountRolesCommand, GetRoleCredent
 import { loadSharedConfigFiles, loadSsoSessionData } from '@smithy/shared-ini-file-loader';
 import { awsConfigPath, ensureSsoSession, isProductionSession, profileSsoInfo, saveAwsConfig, upsertSsoProfile } from './lib/aws-sso.mjs';
 import { execEntry } from './lib/paths.mjs';
+import { awsRequestHandler } from './lib/net-timeouts.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const EKS_TOKEN_HELPER = path.join(__dirname, 'eks-token.js');
@@ -91,7 +92,7 @@ export async function resolveCredentials(method, opts = {}) {
     const { roleArn, sessionName, region } = opts;
     if (!roleArn) throw new Error('Role ARN is required');
     // Base credentials come from the ambient chain / source profile.
-    const sts = new STSClient({ region: region || 'us-east-1', ...(opts.sourceProfile ? { profile: opts.sourceProfile } : {}) });
+    const sts = new STSClient({ region: region || 'us-east-1', requestHandler: awsRequestHandler(), ...(opts.sourceProfile ? { profile: opts.sourceProfile } : {}) });
     const out = await sts.send(new AssumeRoleCommand({ RoleArn: roleArn, RoleSessionName: sessionName || 'k8board', DurationSeconds: 3600 }));
     const c = out.Credentials;
     return { credentials: { accessKeyId: c.AccessKeyId, secretAccessKey: c.SecretAccessKey, sessionToken: c.SessionToken }, region };
@@ -100,7 +101,7 @@ export async function resolveCredentials(method, opts = {}) {
 }
 
 export async function validateCredentials(credentials, region) {
-  const sts = new STSClient({ region: region || 'us-east-1', credentials });
+  const sts = new STSClient({ region: region || 'us-east-1', credentials, requestHandler: awsRequestHandler() });
   const id = await sts.send(new GetCallerIdentityCommand({}));
   return { account: id.Account, arn: id.Arn, userId: id.UserId };
 }
@@ -117,7 +118,7 @@ export async function discoverClusters({ credentials, region, regions, account, 
   const scan = wanted.length ? wanted : regionsFor(region);
   const perRegion = await Promise.all(scan.map(async (r) => {
     try {
-      const eks = new EKSClient({ region: r, credentials });
+      const eks = new EKSClient({ region: r, credentials, requestHandler: awsRequestHandler() });
       const out = await eks.send(new ListClustersCommand({}));
       return (out.clusters || []).map((name) => ({ name, region: r, account, accountName }));
     } catch { return []; }
@@ -132,19 +133,19 @@ export async function discoverClusters({ credentials, region, regions, account, 
 
 // Granular SSO steps (guided account → role → clusters flow).
 export async function ssoListAccounts({ accessToken, ssoRegion }) {
-  const sso = new SSOClient({ region: ssoRegion });
+  const sso = new SSOClient({ region: ssoRegion, requestHandler: awsRequestHandler() });
   const accounts = []; let nextToken;
   do { const out = await sso.send(new ListAccountsCommand({ accessToken, nextToken })); accounts.push(...(out.accountList || [])); nextToken = out.nextToken; } while (nextToken);
   return accounts.map((a) => ({ accountId: a.accountId, accountName: a.accountName, email: a.emailAddress })).sort((a, b) => (a.accountName || '').localeCompare(b.accountName || ''));
 }
 export async function ssoListRoles({ accessToken, ssoRegion }, accountId) {
-  const sso = new SSOClient({ region: ssoRegion });
+  const sso = new SSOClient({ region: ssoRegion, requestHandler: awsRequestHandler() });
   const roles = []; let nextToken;
   do { const out = await sso.send(new ListAccountRolesCommand({ accessToken, accountId, nextToken })); roles.push(...(out.roleList || [])); nextToken = out.nextToken; } while (nextToken);
   return roles.map((r) => r.roleName);
 }
 export async function ssoRoleCredentials({ accessToken, ssoRegion }, accountId, roleName) {
-  const sso = new SSOClient({ region: ssoRegion });
+  const sso = new SSOClient({ region: ssoRegion, requestHandler: awsRequestHandler() });
   const rc = await sso.send(new GetRoleCredentialsCommand({ accessToken, accountId, roleName }));
   return { accessKeyId: rc.roleCredentials.accessKeyId, secretAccessKey: rc.roleCredentials.secretAccessKey, sessionToken: rc.roleCredentials.sessionToken };
 }
@@ -199,7 +200,7 @@ function upsert(arr, name, entry) {
 // { profile } (access-key / role / SSO saved as a profile) or nothing (helper
 // falls back to the ambient environment / instance role).
 export async function writeCluster({ credentials, region, name, alias, profile }) {
-  const eks = new EKSClient({ region, credentials });
+  const eks = new EKSClient({ region, credentials, requestHandler: awsRequestHandler() });
   const d = await eks.send(new DescribeClusterCommand({ name }));
   const c = d.cluster;
   const server = c.endpoint;

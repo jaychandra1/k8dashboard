@@ -331,20 +331,6 @@ body {
 /* Danger variant of the modal icon (auth / connectivity failures) */
 .modal-icon.danger { background: var(--red-tint); color: var(--red); }
 
-/* switch-cluster control on the auth-error screen */
-.auth-switch { margin-top: 16px; }
-.auth-switch-label {
-  display: block;
-  font-size: 0.6875rem;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  font-weight: 700;
-  color: var(--text-muted);
-  margin-bottom: 7px;
-}
-/* Inline context list (ContextList) inside the auth-error modal */
-.auth-switch .ctxp { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-elevated); overflow: hidden; }
-.auth-switch .dd-list { max-height: 200px; }
 
 /* Auth-error modal: parsed summary + one-click fix + collapsible raw error */
 .auth-modal { max-width: 560px; }
@@ -3456,8 +3442,6 @@ h5.md-h, h6.md-h { font-size: 0.7813rem; color: var(--text-secondary); }
 .awsi-prod-toggle { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); cursor: pointer; white-space: nowrap; }
 .awsi-legacy { border: 1px dashed var(--border); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 12px; }
 .awsi-legacy p { margin: 0 0 10px; }
-.auth-scope { font-size: 0.75rem; color: var(--text-muted); line-height: 1.5; margin: 10px 0 0; }
-.auth-scope strong { color: var(--text-secondary); font-weight: 600; }
 @media (max-width: 640px) {
   .awsi-cluster { grid-template-columns: 1fr auto; }
   .awsi-cluster-meta { grid-column: 1 / -1; grid-row: 2; }
@@ -4869,7 +4853,8 @@ h3.sec-drawer-section:first-child { margin-top: 0; }
 }
 .auth-card-meta { font-size: 0.75rem; line-height: 1.4; color: var(--text-muted); overflow-wrap: anywhere; }
 .auth-card-head { align-items: flex-start; }
-.auth-card-head .auth-provider, .auth-card-head .auth-pill { margin-top: 2px; }
+.auth-card-head .auth-provider, .auth-card-head .auth-card-tags { margin-top: 2px; }
+.auth-card-tags { flex: none; display: inline-flex; align-items: center; gap: 6px; }
 .auth-pill {
   flex: none; padding: 3px 9px; border-radius: 999px;
   font-size: 0.6875rem; font-weight: 650; font-variant-numeric: tabular-nums;
@@ -4881,36 +4866,9 @@ h3.sec-drawer-section:first-child { margin-top: 0; }
 .auth-card .auth-fix { margin: 0; border: 0; border-radius: 0; background: transparent; }
 .auth-card .auth-fix-btn.ui-btn { min-height: 42px; font-weight: 650; }
 
-/* footer: Add cluster on the left, Retry on the right */
+/* footer: Back to clusters and Retry, on the right */
 .auth-modal .auth-actions { align-items: center; }
 .auth-actions-spacer { flex: 1; }
-
-/* the way out: switch to (or connect) another cluster */
-.auth-switch { margin-top: 20px; }
-.auth-divider {
-  display: flex; align-items: center; gap: 10px;
-  margin-bottom: 10px;
-  font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
-  color: var(--text-muted);
-}
-.auth-divider::before, .auth-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
-.auth-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
-.auth-tile {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--border); border-radius: var(--radius-sm);
-  background: var(--bg-surface); color: var(--text);
-  font: inherit; text-align: left; cursor: pointer;
-  transition: border-color 0.15s, box-shadow 0.15s, transform 0.12s;
-}
-.auth-tile:hover:not(:disabled) { border-color: var(--border-strong); box-shadow: var(--shadow-2); transform: translateY(-1px); }
-.auth-tile:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-.auth-tile:disabled { opacity: 0.55; cursor: not-allowed; }
-.auth-tile .auth-provider { width: 30px; height: 30px; border-radius: 8px; }
-.auth-tile-text { display: flex; flex-direction: column; min-width: 0; }
-.auth-tile-text strong { font-size: 0.8125rem; font-weight: 650; }
-.auth-tile-text { gap: 2px; }
-.auth-tile-text span { font-size: 0.7188rem; line-height: 1.35; color: var(--text-muted); }
 
 /* ---- AWS sign-in panel (AwsSsoSignIn) ---- */
 .sso-panel { display: flex; flex-direction: column; gap: 12px; }

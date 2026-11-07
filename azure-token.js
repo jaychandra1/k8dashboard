@@ -17,6 +17,7 @@
 import fs from 'fs';
 import { CONFIG_DIR, configFile, findConfigFile, isMainModule } from './lib/paths.mjs';
 import { seal, unseal, isSealed, PURPOSE } from './lib/secret-store.mjs';
+import { cloudSignal } from './lib/net-timeouts.mjs';
 
 const AAD = 'https://login.microsoftonline.com';
 // Azure CLI's well-known first-party public client — the same one the app's
@@ -71,6 +72,7 @@ export async function run(argv = []) {
   const tenant = argOf(argv, 'tenant') || store.tenant || 'organizations';
   const r = await fetch(`${AAD}/${tenant}/oauth2/v2.0/token`, {
     method: 'POST',
+    signal: cloudSignal(),
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       grant_type: 'refresh_token',

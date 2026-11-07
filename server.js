@@ -21,7 +21,7 @@ import * as awsEks from './aws-eks.js';
 import * as trivyScan from './trivy-scan.js';
 import * as demo from './demo.js';
 import { ensurePtyHelperExecutable } from './lib/pty-helper.mjs';
-import { logger as log, requestLogger } from './lib/logger.mjs';
+import { logger as log, requestLogger, requestIdOf } from './lib/logger.mjs';
 import { HttpError, badRequest, conflict, sendError, apiNotFound, errorMiddleware } from './lib/http-errors.mjs';
 import {
   isDnsLabel, isDnsSubdomain, isNamespace, isKind, isGroup, isVersion, isPlural,
@@ -44,11 +44,13 @@ import {
   restMappingFor, restartPatch, restartTarget, scaleTarget, scalePatch, argoSyncPatch, argoRefreshPatch,
   dropFinalizersPatch, parseApplyDocuments, validateApplyDocument, requestOptions, patchOptions, PatchStrategy, applyDocumentsEach,
   deleteResource, execInPod, openPodShell, resourceLabel, labelSelectorFor, discoverResource, replaceDocument, apiRequest, resourcePath,
+  withDefaultTimeout,
 } from './lib/k8s-ops.mjs';
 import { eksEntryFor as eksEntryForKc, sameEksCluster, eksClusterStatus as eksClusterStatusKc } from './lib/eks-kubeconfig.mjs';
 import { createUpdates, registerUpdateRoutes } from './lib/updater/routes.mjs';
 import { localShellAllowed, pinnedKubeconfig, helmShellEnv, helmShellCommand, helmShellBanner, helmDirOf, shq, agentPromptArg } from './lib/helm-shell.mjs';
-import { childEnv } from './lib/child-env.mjs';
+import { childEnv, holdAppSecrets } from './lib/child-env.mjs';
+import { scrubResponseForAgent } from './lib/agent-scrub.mjs';
 import { endpointKind, networkFailure, shortReason, unreachableMessage } from './lib/cluster-network.mjs';
 import { formatResource } from './lib/resource-format.mjs';
 import { capacityTotals, nodeUsage } from './lib/capacity.mjs';
@@ -74,6 +76,11 @@ try {
 } catch (e) {
   log.warn('node-pty is unavailable; pod shells are disabled', { err: e });
 }
+
+// K8Board's own secrets (API and MCP tokens, the LLM key) leave process.env
+// before anything can start a process: kubeconfig exec credential plugins are
+// spawned by @kubernetes/client-node with this process's environment.
+holdAppSecrets();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -130,6 +137,14 @@ const checkParams = (res, pairs) => {
 // its sign-in dialog instead of showing the helper's raw output.
 const needsClusterSignIn = (error) => !!error?.clusterAuth || (typeof error?.stderr === 'string' && SSO_EXPIRED_RE.test(error.stderr));
 const fail = (res, error, extra, fallback) => {
+  // What failed and why, for the log (and Help → Export Diagnostics). The
+  // request line that follows has the status; the id links the two.
+  log.info('request failed', {
+    requestId: requestIdOf(res.req),
+    path: res.req?.path,
+    code: error?.code ?? error?.statusCode,
+    reason: firstLine(error?.body?.message || error?.message || '').slice(0, 300),
+  });
   if (!needsClusterSignIn(error)) return sendError(res, error, extra, fallback);
   if (res.headersSent) return undefined;
   return res.status(424).json({ ...(extra || {}), error: CLUSTER_AUTH_MESSAGE, code: CLUSTER_AUTH_CODE });
@@ -292,6 +307,23 @@ app.use(UI_ONLY_PREFIXES, (req, res, next) => (isMcpSource(req)
   ? res.status(403).json({ error: 'This action is not available to MCP clients', code: 'mcp_forbidden' })
   : next()));
 
+// Routes whose answers can carry credentials as text or as arbitrary data:
+// pod logs, events, Helm values and manifests, custom resources, Argo CD
+// objects, and objects and their YAML. An AI agent gets them with credentials
+// masked (lib/agent-scrub.mjs), like the built-in assistant's LLM does, unless
+// the user lets agents read secret values (Preferences → MCP). Registered
+// before the demo cluster so its answers are masked the same way.
+const AGENT_SCRUBBED_PREFIXES = [
+  '/api/logs', '/api/events', '/api/helm/releases', '/api/customresources', '/api/customresource',
+  '/api/argocd', '/api/resource', '/api/resources', '/api/yaml',
+];
+app.use(AGENT_SCRUBBED_PREFIXES, (req, res, next) => {
+  if (!isMcpSource(req) || mcpAllowSecrets) return next();
+  const json = res.json.bind(res);
+  res.json = (body) => json(scrubResponseForAgent(body));
+  next();
+});
+
 // ------------------------------------------------------------------
 // Demo mode (test/dev fixture, KUBEPILOT_DEMO=1 only) — when the flag is set
 // and the active context is the synthetic 'demo-cluster', serve an in-memory
@@ -428,7 +460,7 @@ const loadKubeConfig = (filePath) => {
   try {
     repairKubeconfigFiles(filePath);
     const kc = parseKubeConfig({ filePath });
-    kubeConfig = execGate.attach(kc);
+    kubeConfig = withDefaultTimeout(execGate.attach(kc));
     execGate.clear(); // a fresh kubeconfig: every helper gets a new chance
     currentContext = kc.getCurrentContext();
     warnDemoCollision(kc);
@@ -765,7 +797,7 @@ app.post('/api/config/load', (req, res) => {
   let kc;
   try { kc = parseKubeConfig({ filePath: resolved }); }
   catch (e) { return res.status(400).json({ error: `Invalid kubeconfig: ${firstLine(e.message)}`, code: 'invalid_kubeconfig' }); }
-  kubeConfig = execGate.attach(kc);
+  kubeConfig = withDefaultTimeout(execGate.attach(kc));
   execGate.clear();
   currentContext = kc.getCurrentContext();
   activeKubeconfigPath = resolved;

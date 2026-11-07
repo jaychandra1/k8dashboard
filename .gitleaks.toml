@@ -1,0 +1,20 @@
+# gitleaks configuration for the CI secret scan (.github/workflows/ci.yml).
+# The default rules apply everywhere except the paths below, which hold fake
+# credentials on purpose or values that only look like secrets.
+title = "K8Board"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test fixtures, lock-file integrity hashes and the public release-signing keys"
+paths = [
+  # Fake keys, tokens and JWTs that exercise the redaction, auth and MCP code.
+  '''(^|/)test/''',
+  '''\.test\.(js|jsx|mjs|cjs|ts|tsx)$''',
+  '''(^|/)client/src/test/''',
+  # Subresource integrity hashes.
+  '''(^|/)package-lock\.json$''',
+  # Ed25519 PUBLIC keys the in-app updater trusts (not secrets).
+  '''^lib/updater/keys\.mjs$''',
+]

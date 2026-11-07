@@ -12,16 +12,35 @@ All notable changes to this project are documented here. The format follows
   - **Production clusters can have their own sign-in.** Preferences → Cloud Integrations → *AWS sign-ins* lists each sign-in, the clusters it covers, and a **Production** switch per cluster. A production cluster's AWS profile moves to a separate `…-production` session with its own token, so a dev sign-in can't reach it.
   - **Sign out** removes a sign-in's stored token from this computer. Clusters stop using cached credentials at once, and signing out of the cluster you're on brings up its sign-in dialog straight away.
   - **Signing in changes only the profile you sign in for.** Other older-format profiles for the same portal are no longer rewritten silently; Preferences lists them with an opt-in button. Sign-ins no longer write a second token copy keyed by the portal address, which older-format profiles would have picked up.
-  - The "session expired" dialog says which other clusters a sign-in also unlocks, or that it is a production sign-in.
+  - The "session expired" dialog stays about the cluster you're connecting to. It never names the other clusters a sign-in covers; those are listed in Preferences → Cloud Integrations → AWS sign-ins. A production cluster gets a **Production** tag on its card.
   - Account IDs and the portal address are masked throughout. Every change asks first, and `~/.aws/config` is backed up.
 - **All 35 dependency vulnerabilities GitHub reported are fixed** (`npm audit`: 0 in the app and in the client). Updates within the same major version only:
   - **Shipped in the app:** Electron 44.0.0 → 44.10.2 (8 advisories, including the mitigation for the compromised eMudhra certificates); Express 4.22.3 with body-parser 1.20.9 (denial of service via a compressed request body) and qs 6.17.1; zod 4.6.7 (memory exhaustion on oversized input); the MCP SDK 1.32.2 with hono 4.13.16, @hono/node-server 2.1.6 and fast-uri 3.1.9; axios 1.21.0 with follow-redirects 1.16.2 (credential headers kept on cross-origin redirects).
   - **Developer tools:** Vite 8.3.6, Vitest 5.1.0, jsdom 30.1.3 with undici 8.12.4.
   - **Installer builder:** electron-builder 26.18.1 still depends on vulnerable `minimatch` versions, so `package.json` overrides only those (`minimatch@>=7.0.0 <11.0.1` → 11.0.4); the older, unaffected 3.x and 5.x copies are left alone.
   - The minimum versions in `package.json` were raised to the fixed ones, so a fresh install can't fall back.
+- **Kubeconfig credential plugins no longer receive K8Board's API token** (2026-11-07 architecture audit, SEC-02). The Kubernetes client starts exec plugins (kubelogin, aws-iam-authenticator, custom scripts) with the backend's own environment, which held the per-launch API token, and also the MCP token and the AI provider's key when they were set as environment variables.
+  - **At startup** the backend now takes these out of its environment and keeps them in memory.
+  - **Plugin starts** also get the filtered environment K8Board gives every other process.
+  - **A new test** runs a stub plugin through the real server, with and without its own `env` in the kubeconfig, and checks what it received.
+- **AI agents get logs, events, Helm values and custom resources with credentials masked** (audit SEC-03).
+  - **What was exposed:** Secret values were already masked for MCP clients, but free text wasn't. A password printed in a pod log, a token in Helm values, or a credential in a custom resource (an ExternalSecret spec, say) reached the agent and its AI provider.
+  - **What's covered now:** every route an agent reads text or arbitrary data from:
+    - pod logs, events, Helm values and manifests;
+    - custom resources, Argo CD objects;
+    - object YAML and resource lists.
+  - **How it's masked** (`lib/agent-scrub.mjs`):
+    - the built-in assistant's credential patterns;
+    - fields named like a credential;
+    - env-style name/value pairs;
+    - Secret objects inside manifests;
+    - JSON kept in annotations.
+  - **What stays readable:** fields that only name a secret (`secretName`, `existingSecret`).
+  - **Opting out:** Preferences → MCP → *Secret values* turns all of this off. The UI always sees everything.
 - **K8Board's secrets set with the new `K8BOARD_` prefix stay out of child processes.** `K8BOARD_TOKEN`, `K8BOARD_SECRET_KEY` and `K8BOARD_MCP_TOKEN` are now removed from the environment of kubectl, helm, credential plugins and terminals, like their `KUBEPILOT_` names (the desktop app sets the latter; Docker and server setups may use either). A test now checks every settings prefix the app reads is covered.
 
 ### Changed
+- **The sign-in dialog shows only the cluster you're connecting to.** It used to repeat the whole cluster list ("Or open a different cluster") and an **Add cluster** button, both already on Home behind it, which made it long enough to scroll. Its footer is now **Back to clusters** and **Retry**. The note listing other clusters the same AWS sign-in covers is gone too.
 - **K8Board opens on Home and connects to nothing at startup.** Before, it signed in to the kubeconfig's current context while starting, which could take many seconds, or hang on an offline cluster, before anything showed.
   - **Startup** now reads only the kubeconfig and the app's settings.
   - **Home** lists the last connected cluster, every cluster (pinned and recent first, searchable, with Pin and Remove), and **Add cluster**. Badges come from local files only: production sign-ins, and expired or signed-out AWS sessions.
@@ -64,6 +83,20 @@ All notable changes to this project are documented here. The format follows
   - **Repository:** releases stay at `jaychandra1/KubePilot`.
 
 ### Added
+- **Help → Export Diagnostics and a log file** (audit OBS-01). Before, the desktop app kept no record of what went wrong, so a reported problem left nothing to look at.
+  - **Log file:** the backend's output and the app's own events go to a rotating log in the OS log folder (`k8board.log`, at most 2 MB × 4 files). Tokens, keys and passwords are scrubbed before anything is written. **Help → Open Logs Folder** shows it.
+  - **Export Diagnostics:** saves a text file to attach to a bug report:
+    - the app, OS and runtime versions;
+    - the *shape* of the settings, never their values;
+    - the end of the log, with cluster endpoints, IP addresses, AWS account and Azure subscription IDs, emails and your home folder masked.
+  - **Request IDs:** every API answer has an `X-Request-Id`, which appears in the log line for that request. A failed request also logs its cause.
+- **Release builds need a green CI run** (audit BLD-01). Before, a release ran only the tests, could be cut from any tagged commit, and published with a long-lived personal access token; the scanners only reported.
+  - **Release gate:** a release is built only from a commit on `main` whose CI run passed: lint, tests, `npm audit`, CodeQL, Trivy and the new secret scan. It waits for a CI run that's still going.
+  - **CodeQL:** High and Critical findings now fail CI (`scripts/sarif-gate.mjs`). This no longer depends on GitHub code scanning being enabled.
+  - **Trivy:** fixable HIGH and CRITICAL image vulnerabilities fail CI. Accepted exceptions go in `.trivyignore` with a reason.
+  - **gitleaks:** a new CI job scans new commits for secrets. Test fixtures are allowed in `.gitleaks.toml`.
+  - **Image signing:** the GHCR images are signed with cosign (keyless, Sigstore) and verified in the same job.
+  - **Publishing token:** uses a short-lived GitHub App token once `RELEASE_APP_CLIENT_ID` and `RELEASE_APP_PRIVATE_KEY` are set. Until then the `RELEASE_TOKEN` personal access token is used, with a warning.
 - **The Dashboard covers the whole cluster, workloads included.** The Workloads → Overview page is gone; what it showed is on the Dashboard, cluster-wide:
   - **New Workloads card:** deployments, statefulsets, daemonsets, jobs, cronjobs and services, each with how many aren't ready, failed or are suspended.
   - **Links:** the nodes, pods and namespaces cards and every workload tile open their list across all namespaces.
@@ -126,6 +159,11 @@ All notable changes to this project are documented here. The format follows
   Bars turn amber at 75% requested and red at 90%. The card also says when pods are waiting for a node with room. Requests are added up the way `kubectl describe node` does: the bigger of the app containers and the largest init container, plus native sidecars and pod overhead. Finished and unscheduled pods don't count. The summary API gains `cpuRequestedMilli`, `memRequestedBytes`, `cpuLimitsMilli`, `memLimitsBytes`, `podsScheduled`, `podsAllocatable`, `podsUnscheduled` and `usage` (`lib/capacity.mjs`, shared with demo mode).
 
 ### Fixed
+- **A slow or unreachable cluster or cloud API could leave a view loading indefinitely** (audit REL-02). About two-thirds of the Kubernetes calls, and every AWS and Azure call, had no time limit.
+  - **Kubernetes API calls:** now fail after 30 seconds unless the call sets its own limit. Watches, followed logs, shells and port-forwards are unaffected.
+  - **AWS:** SDK requests fail after 30 seconds, or 10 seconds to connect.
+  - **Azure:** sign-in and Resource Manager requests carry the same 30-second limit.
+  - **The UI:** gives up on a request after 5 minutes and says it took too long. That's longer than any of the server's own limits.
 - **The Dashboard's pod health counted crash-looping pods as healthy.** It only looked at the pod phase, which stays "Running" while a container is in CrashLoopBackOff, ImagePullBackOff and the like. The Dashboard now counts those pods as failing, by the same rule as the rest of the app (`lib/cluster-health.mjs`, kept in step with the UI by a test). The Pods card says how many are failing.
 - **Windows updates restart K8Board much sooner.** An update moves, unpacks and virus-scans every file of the app, and the app was about 5,000 files, almost all in `node_modules`.
   - **Change:** the desktop package now bundles the backend, the token helpers and the MCP bridge into one file each (compacted, names kept), keeping only `node-pty` as files.

@@ -54,7 +54,13 @@ Out of scope:
   construction — the write gate applies, terminals, settings, kubeconfig loading, cloud sign-ins and updates
   are refused — and Kubernetes Secret values are masked for agents unless the user opts in.
 - K8Board's own secrets (API/MCP tokens, secret key, LLM key) are removed from the environment of every
-  process it starts; the Helm and AI-agent terminals are desktop-only and see only the selected cluster.
+  process it starts, including the kubeconfig exec credential plugins the Kubernetes client starts: the
+  server takes them out of its own environment at startup and keeps them in memory
+  (`test/exec-plugin-env.test.mjs`). The Helm and AI-agent terminals are desktop-only and see only the
+  selected cluster.
+- Over MCP, pod logs, events, Helm values and manifests, custom resources, Argo CD objects and object YAML
+  reach agents with credentials masked (`lib/agent-scrub.mjs`), unless the user opts in to secret values.
+- Kubernetes API calls (30 s), AWS and Azure calls (30 s) and credential helpers (3 min) are bounded.
 - Loopback bind by default; `Host` allowlist (HTTP 421 otherwise); strict same-origin checks.
 - CSP, `X-Frame-Options: DENY`, `nosniff`, rate limiting, body-size limits, strict input validation.
 - Electron: sandboxed renderer, `contextIsolation`, no `nodeIntegration`, navigation pinned to the

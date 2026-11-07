@@ -17,6 +17,7 @@ import { isIP, isIPv4, isIPv6 } from 'net';
 import { CONFIG_DIR, configFile, findConfigFile } from './lib/paths.mjs';
 import { seal, unseal, needsSealing, PURPOSE } from './lib/secret-store.mjs';
 import { redactSecretsInText } from './lib/redact-secrets.mjs';
+import { appSecretEnv } from './lib/child-env.mjs';
 
 const MAX_TOOL_ITERATIONS = 12;
 const MAX_TOOL_OUTPUT = 14000; // chars — keep tool results bounded
@@ -55,7 +56,7 @@ let stored = loadStoredLlm(); // { baseUrl, apiKey, model }
 
 const envConfig = () => {
   const baseUrl = process.env.LLM_BASE_URL;
-  const apiKey = process.env.LLM_API_KEY;
+  const apiKey = appSecretEnv('LLM_API_KEY'); // held out of process.env by server.js
   const model = process.env.LLM_MODEL;
   return baseUrl && apiKey && model ? { baseUrl, apiKey, model } : null;
 };

@@ -17,6 +17,22 @@ Two changes were being made while this review ran. They are treated as in flux: 
 
 Considerations for the Home work are listed at the end of section 4 as notes, not findings.
 
+### Remediation status (added 2026-11-07, after the review)
+
+The report below is unchanged; this table tracks what has been done since. Details are in `CHANGELOG.md` under [Unreleased].
+
+| Finding | Status | What changed |
+|---|---|---|
+| SEC-02 | **Fixed** | The backend takes K8Board's secrets out of its own environment at startup (`holdAppSecrets`, `lib/child-env.mjs`). The exec gate also passes a filtered environment to every credential plugin. Tested with a stub plugin (`test/exec-plugin-env.test.mjs`). |
+| SEC-03 | **Fixed** | MCP responses from logs, events, Helm, custom resources, Argo CD, objects and YAML are scrubbed (`lib/agent-scrub.mjs`), governed by the *Secret values* switch (`test/mcp-scrub.test.mjs`). |
+| REL-01 | **Fixed** | Credential helpers time out after 3 minutes and are killed. Disconnect and Cancel stop them. The client bounds requests at 5 minutes. |
+| REL-02 | **Fixed** | Typed Kubernetes clients default to a 30 s timeout (`withDefaultTimeout`, `lib/k8s-ops.mjs`). AWS SDK clients get `requestHandler` limits, and Azure fetches get an `AbortSignal` (`lib/net-timeouts.mjs`). |
+| REL-04 | **Fixed** | `settings.json` is written atomically. |
+| BLD-01 | **Mostly fixed** | Done: green CI and a `main` commit are required, CodeQL and Trivy block, gitleaks is added, images are cosign-signed, and a GitHub App token is used when configured. Open: build provenance stays best-effort on a private repository (a platform limit). The PAT is removed once the App is set up. |
+| OBS-01 | **Mostly fixed** | Done: a rotating, scrubbed log file, Help → Export Diagnostics (masked) and request IDs. Open: replacing the silent `catch {}` blocks. |
+| SEC-01 | **Open, needs accounts** | OS code signing needs a Windows signing service (for example Azure Trusted Signing) and an Apple Developer ID. asar needs a CJS backend bundle. |
+| ARC-01 | **Open, planned** | Splitting `server.js` into domain routers is a multi-release refactor. It needs a plan before it starts. |
+
 ---
 
 ## 1. Executive summary

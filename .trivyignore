@@ -1,0 +1,11 @@
+# Trivy findings accepted on purpose. CI fails on any fixable HIGH or CRITICAL
+# vulnerability in the Docker image (.github/workflows/ci.yml) unless it is
+# listed here.
+#
+# One ID per line, each with a comment saying why it is accepted and when to
+# look at it again. For example:
+#
+#   # Not reachable: K8Board never calls <function>. Review by 2027-01-31.
+#   CVE-2026-00000
+#
+# Prefer a fix (bump the base image digest or the dependency) over an entry.

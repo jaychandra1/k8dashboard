@@ -95,6 +95,9 @@ export const isAbortError = (e) => e?.code === 'aborted' || e?.name === 'AbortEr
 function toApiError(err, url) {
   if (err instanceof ApiError) return err;
   if (isAbortError(err)) return new ApiError({ status: 0, code: 'aborted', message: 'Request aborted', url, cause: err });
+  if (!err?.response && (err?.code === 'ECONNABORTED' || err?.code === 'ETIMEDOUT')) {
+    return new ApiError({ status: 0, code: 'timeout', message: 'The request took too long. Check the connection and try again.', url, cause: err });
+  }
   const res = err?.response;
   if (res) {
     const body = res.data;
@@ -159,7 +162,12 @@ export const authHeaders = () => {
   return h;
 };
 
-export const api = axios.create({ baseURL: '', timeout: 0 });
+// A last-resort bound so a request never hangs a view for good (audit REL-01).
+// The server bounds its own work well within it: Kubernetes calls (30 s),
+// cloud calls (30 s), credential helpers (3 min). Long jobs (scans, update
+// downloads, sign-ins) start in one request and are polled.
+export const REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
+export const api = axios.create({ baseURL: '', timeout: REQUEST_TIMEOUT_MS });
 
 api.interceptors.request.use((config) => {
   config.headers = { ...(config.headers || {}), ...authHeaders() };

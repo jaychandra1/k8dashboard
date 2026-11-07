@@ -15,6 +15,7 @@ import fs from 'fs';
 import path from 'path';
 import { configFile, findConfigFile } from './lib/paths.mjs';
 import { seal, unseal, needsSealing, needsUnsealing, PURPOSE } from './lib/secret-store.mjs';
+import { cloudSignal } from './lib/net-timeouts.mjs';
 
 // Where the CLI-free AKS token helper (azure-token.js) reads the refresh token.
 // Persisted so kubelogin/az are never needed for app-imported AAD clusters.
@@ -164,6 +165,7 @@ export async function startBrowserLogin(rawTenant = 'organizations') {
       if (!code || st !== flow.state) { send(false, 'Invalid or mismatched response.'); return; }
       const r = await fetch(`${AAD}/${tenant}/oauth2/v2.0/token`, {
         method: 'POST',
+        signal: cloudSignal(),
         headers: { 'content-type': 'application/x-www-form-urlencoded' },
         body: form({ grant_type: 'authorization_code', client_id: CLIENT_ID, code, redirect_uri: redirectUri, code_verifier: flow.verifier, scope: SCOPE }),
       });
@@ -209,6 +211,7 @@ async function accessToken() {
   if (session.refreshToken) {
     const r = await fetch(`${AAD}/${session.tenant}/oauth2/v2.0/token`, {
       method: 'POST',
+      signal: cloudSignal(),
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: form({ grant_type: 'refresh_token', client_id: CLIENT_ID, refresh_token: session.refreshToken, scope: SCOPE }),
     });
@@ -228,6 +231,7 @@ async function arm(url, { method = 'GET', body } = {}) {
   const tk = await accessToken();
   const r = await fetch(url, {
     method,
+    signal: cloudSignal(),
     headers: { authorization: `Bearer ${tk}`, 'content-type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
   });

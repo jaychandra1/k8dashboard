@@ -475,12 +475,9 @@ function App() {
         <AuthErrorModal
           auth={gate.authState}
           onRetry={retryAuth}
-          onChangeConfig={openLocal}
           retrying={gate.authRetrying}
-          contexts={configStatus.contexts || []}
           contextsInfo={configStatus.contextsInfo}
           currentContext={configStatus.currentContext}
-          onSwitchContext={switchContext}
           onAddAzure={openAzure}
           onAddAws={openAws}
           onBack={disconnect}

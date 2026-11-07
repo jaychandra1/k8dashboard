@@ -35,7 +35,7 @@ export function openContextPicker() {
  *
  *   <ContextList contexts contextsInfo currentContext onPick(ctx) onRemove(ctx)? canRemove(ctx)? label />
  *
- * Used by ContextPickerModal and inline by AuthErrorModal.
+ * Used by ContextPickerModal.
  */
 export function ContextList({ contexts = [], contextsInfo, currentContext, onPick, onRemove, canRemove, label = 'Kubernetes contexts', autoFocus = false }) {
   const id = useId();

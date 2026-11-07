@@ -74,7 +74,7 @@ describe('AuthErrorModal rendering', () => {
   });
 
   it('cluster card: context, provider, masked account and role; nothing starts on its own', () => {
-    render(<AuthErrorModal auth={expiredAuth({ aws: { ...AWS, expiredAt: new Date().toISOString() } })} onRetry={() => {}} contexts={CONTEXTS} contextsInfo={INFO} currentContext="dev-env-cluster" onSwitchContext={() => {}} />);
+    render(<AuthErrorModal auth={expiredAuth({ aws: { ...AWS, expiredAt: new Date().toISOString() } })} onRetry={() => {}} contextsInfo={INFO} currentContext="dev-env-cluster" />);
     const card = screen.getByRole('region', { name: 'dev-env-cluster connection' });
     expect(card).toHaveTextContent('dev-env-cluster');
     expect(card).toHaveTextContent('AWS EKS · Account ••••8296 · AdministratorAccess');
@@ -108,7 +108,7 @@ describe('AuthErrorModal rendering', () => {
       server: 'https://49B8A64035E12DFA22A9C44C3ABF0985.gr7.eu-west-1.eks.amazonaws.com',
       currentContext: 'tr-prod-cashierbackend',
     };
-    const { container } = render(<AuthErrorModal auth={auth} onRetry={() => {}} contexts={['tr-prod-cashierbackend', 'dev-env-cluster']} contextsInfo={[{ name: 'tr-prod-cashierbackend', provider: 'aws' }, { name: 'dev-env-cluster', provider: 'aws' }]} currentContext="tr-prod-cashierbackend" onSwitchContext={() => {}} />);
+    const { container } = render(<AuthErrorModal auth={auth} onRetry={() => {}} contextsInfo={[{ name: 'tr-prod-cashierbackend', provider: 'aws' }, { name: 'dev-env-cluster', provider: 'aws' }]} currentContext="tr-prod-cashierbackend" />);
     expect(screen.getByText('Cluster unreachable')).toBeInTheDocument();
     expect(screen.getByText("The cluster's public endpoint didn't answer (connection timed out).")).toBeInTheDocument();
     const card = screen.getByRole('region', { name: 'tr-prod-cashierbackend connection' });
@@ -132,7 +132,7 @@ describe('AuthErrorModal rendering', () => {
     getJson.mockResolvedValue({ status: 'done', converted: ['sso-241533118296'], session: 'kubepilot-d-906600a9b0' });
     const onRetry = vi.fn();
     const user = userEvent.setup();
-    render(<AuthErrorModal auth={expiredAuth()} onRetry={onRetry} contexts={CONTEXTS} contextsInfo={INFO} currentContext="dev-env-cluster" onSwitchContext={() => {}} />);
+    render(<AuthErrorModal auth={expiredAuth()} onRetry={onRetry} contextsInfo={INFO} currentContext="dev-env-cluster" />);
     await user.click(screen.getByRole('button', { name: 'Sign in with AWS' }));
     expect(postJson).toHaveBeenCalledWith('/api/aws/sso-login', { profile: 'sso-241533118296', startUrl: AWS.startUrl, ssoRegion: 'us-east-1', method: undefined });
     expect(await screen.findByText('Finish signing in in your browser')).toBeInTheDocument();
@@ -169,30 +169,22 @@ describe('AuthErrorModal rendering', () => {
     expect(screen.getByRole('button', { name: 'Use a sign-in code instead' })).toBeInTheDocument();
   });
 
-  it('any other cluster stays one click away: switching cancels a sign-in in progress', async () => {
+  it('is about this cluster only: no list of other clusters, no Add cluster; Back to clusters cancels a sign-in in progress', async () => {
     postJson.mockImplementation(async (url) => (url === '/api/aws/sso-login' ? { status: 'pending', method: 'browser', authUrl: 'https://oidc.us-east-1.amazonaws.com/authorize' } : { ok: true }));
     getJson.mockResolvedValue({ status: 'pending', method: 'browser' });
-    const onSwitchContext = vi.fn();
+    const onBack = vi.fn();
     const user = userEvent.setup();
-    render(<AuthErrorModal auth={expiredAuth()} onRetry={() => {}} contexts={CONTEXTS} contextsInfo={INFO} currentContext="dev-env-cluster" onSwitchContext={onSwitchContext} />);
-    expect(screen.getByText('Or open a different cluster')).toBeInTheDocument();
+    const { container } = render(<AuthErrorModal auth={expiredAuth({ aws: { ...AWS, covers: CONTEXTS } })} onRetry={() => {}} contextsInfo={INFO} currentContext="dev-env-cluster" onAddAws={() => {}} onAddAzure={() => {}} onBack={onBack} />);
+    const text = container.ownerDocument.body.textContent;
+    for (const other of ['qa-cluster', 'aks-prod', 'kind-local']) expect(text).not.toContain(other);
+    expect(screen.queryByText(/different cluster/i)).toBeNull();
+    expect(screen.queryByRole('button', { name: /Add cluster/ })).toBeNull();
+    expect(screen.getByText('Your AWS sign-in for this cluster has ended. Sign in again to reconnect.')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Sign in with AWS' }));
     await screen.findByText('Finish signing in in your browser');
-    await user.click(screen.getByText('aks-prod'));
-    expect(onSwitchContext).toHaveBeenCalledWith('aks-prod');
+    await user.click(screen.getByRole('button', { name: 'Back to clusters' }));
+    expect(onBack).toHaveBeenCalledTimes(1);
     expect(postJson).toHaveBeenLastCalledWith('/api/aws/sso-login/cancel');
-  });
-
-  it('with nothing to switch to, offers AWS, Azure and kubeconfig (GKE, on-prem) tiles', async () => {
-    const onAddAzure = vi.fn();
-    const onChangeConfig = vi.fn();
-    const user = userEvent.setup();
-    render(<AuthErrorModal auth={expiredAuth()} onRetry={() => {}} contexts={['dev-env-cluster']} onSwitchContext={() => {}} onAddAws={() => {}} onAddAzure={onAddAzure} onChangeConfig={onChangeConfig} />);
-    expect(screen.getByText('Or connect a different cluster')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /Azure AKS/ }));
-    expect(onAddAzure).toHaveBeenCalled();
-    await user.click(screen.getByRole('button', { name: /Kubeconfig.*GKE, on-prem/ }));
-    expect(onChangeConfig).toHaveBeenCalled();
   });
 
   it('exec-helper: title, note and Retry as the only primary action', () => {
@@ -204,35 +196,34 @@ describe('AuthErrorModal rendering', () => {
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
-  it('offers only real-cluster paths: Add cluster and Retry, never a Demo button', () => {
-    render(<AuthErrorModal auth={{ reason: 'error', message: 'connection refused' }} onRetry={() => {}} onAddAws={() => {}} onAddAzure={() => {}} onChangeConfig={() => {}} />);
-    expect(screen.getByRole('button', { name: /Add cluster/ })).toBeInTheDocument();
+  it('offers only real paths: Back to clusters and Retry, never a Demo button', () => {
+    render(<AuthErrorModal auth={{ reason: 'error', message: 'connection refused' }} onRetry={() => {}} onAddAws={() => {}} onAddAzure={() => {}} onBack={() => {}} />);
+    expect(screen.getByRole('button', { name: 'Back to clusters' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Retry$/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /demo/i })).toBeNull();
     expect(screen.queryByText(/demo/i)).toBeNull();
   });
 });
 
-describe('AuthErrorModal: what the AWS sign-in reaches', () => {
-  const show = (aws) => render(<AuthErrorModal auth={expiredAuth({ aws: { ...AWS, ...aws } })} onRetry={() => {}} contexts={CONTEXTS} contextsInfo={INFO} currentContext="dev-env-cluster" onSwitchContext={() => {}} />);
+describe('AuthErrorModal: the AWS sign-in', () => {
+  const show = (aws) => render(<AuthErrorModal auth={expiredAuth({ aws: { ...AWS, ...aws } })} onRetry={() => {}} contextsInfo={INFO} currentContext="dev-env-cluster" />);
 
-  it('a shared sign-in names the other clusters it also unlocks, and where to separate production', () => {
+  it('a shared sign-in never names the other clusters it covers', () => {
     show({ sessionName: 'kubepilot-d-906600a9b0', covers: ['dev-env-cluster', 'qa-cluster', 'prod-cluster'] });
-    const note = screen.getByText(/This sign-in also gives access to/);
-    expect(note).toHaveTextContent('qa-cluster and prod-cluster');
-    expect(note).not.toHaveTextContent('dev-env-cluster');
-    expect(note).toHaveTextContent('Preferences → Cloud Integrations');
+    expect(screen.queryByText(/qa-cluster|prod-cluster/)).toBeNull();
+    expect(screen.queryByText(/also gives access to/)).toBeNull();
+    expect(screen.queryByText(/Preferences/)).toBeNull();
   });
 
-  it('a production sign-in says it is for that cluster only', () => {
+  it('a production cluster gets a Production tag on its card, and no extra text', () => {
     show({ sessionName: 'kubepilot-d-906600a9b0-production', production: true, covers: ['dev-env-cluster'] });
-    expect(screen.getByText(/Production sign-in\./).closest('p')).toHaveTextContent('only for dev-env-cluster');
-    expect(screen.queryByText(/also gives access to/)).toBeNull();
+    const card = screen.getByRole('region', { name: 'dev-env-cluster connection' });
+    expect(within(card).getByText('Production')).toBeInTheDocument();
+    expect(screen.queryByText(/Production sign-in/)).toBeNull();
   });
 
-  it('nothing to say when the sign-in covers only this cluster', () => {
+  it('no Production tag for an ordinary sign-in', () => {
     show({ sessionName: 'kubepilot-d-906600a9b0', covers: ['dev-env-cluster'] });
-    expect(screen.queryByText(/also gives access to/)).toBeNull();
-    expect(screen.queryByText(/Production sign-in/)).toBeNull();
+    expect(screen.queryByText('Production')).toBeNull();
   });
 });

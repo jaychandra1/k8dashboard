@@ -5,9 +5,21 @@ name: Build & Release
 # SHA256SUMS.txt + CycloneDX SBOM) and push the Docker image to
 # ghcr.io/jaychandra1/k8board. The source stays in this private repo.
 #
-# RELEASE_TOKEN is a fine-grained PAT scoped to jaychandra1/K8Board
-# with "Contents: Read and write" — store it as a secret on the `release`
-# environment (or the repo). The release job fails early without it.
+# Publishing to jaychandra1/K8Board uses a short-lived GitHub App token when
+# the repository variable RELEASE_APP_CLIENT_ID and the `release` environment
+# secret RELEASE_APP_PRIVATE_KEY are set (an App installed on that repo only,
+# with "Contents: Read and write"). Until then it falls back to RELEASE_TOKEN,
+# a fine-grained PAT with the same scope. The release job fails early without
+# either.
+#
+# A release is only built from a commit on main whose CI run (ci.yml: lint,
+# tests, npm audit, CodeQL, Trivy, gitleaks) succeeded; the verify job waits
+# for a CI run that is still going.
+#
+# The GHCR images are signed with cosign (keyless, Sigstore): verify with
+#   cosign verify ghcr.io/jaychandra1/k8board:<tag> \
+#     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+#     --certificate-identity-regexp '^https://github.com/<this repo>/.github/workflows/release.yml@refs/'
 #
 # GitHub artifact attestations are not available on private repos without
 # GitHub Enterprise, so the attestation step is continue-on-error.
@@ -38,11 +50,13 @@ env:
 jobs:
   # ---------------------------------------------------------------------------
   verify:
-    name: Verify tag == VERSION
+    name: Verify tag == VERSION, main and green CI
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # Mostly waiting for a CI run of the same commit that's still going.
+    timeout-minutes: 60
     permissions:
       contents: read
+      actions: read # the CI runs of the release commit
     outputs:
       tag: ${{ steps.ver.outputs.tag }}
       version: ${{ steps.ver.outputs.version }}
@@ -51,6 +65,7 @@ jobs:
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
+          fetch-depth: 0 # main's history, for the check below
 
       - name: Resolve and validate the release tag
         id: ver
@@ -80,6 +95,48 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Release tag: $TAG (VERSION=$VERSION)"
+
+      # A version tag pushed on any other branch (or on a commit that never
+      # went through review) is refused.
+      - name: Require a commit on main
+        shell: bash
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git rev-parse --verify --quiet origin/main >/dev/null || { echo "::error::origin/main is not available"; exit 1; }
+          if ! git merge-base --is-ancestor "$SHA" origin/main; then
+            echo "::error::$SHA is not on main. Merge it to main first, then tag the main commit."
+            exit 1
+          fi
+          echo "$SHA is on main"
+
+      # The release gate is the same as CI's, not weaker: a successful ci.yml
+      # run for this exact commit. A run that's still going is waited for.
+      - name: Require a successful CI run for this commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 110); do
+            runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$SHA&per_page=50" \
+              --jq '[.workflow_runs[] | {status, conclusion, url: .html_url}]')"
+            if jq -e 'any(.[]; .conclusion == "success")' <<< "$runs" >/dev/null; then
+              echo "CI passed for $SHA: $(jq -r '[.[] | select(.conclusion == "success")][0].url' <<< "$runs")"
+              exit 0
+            fi
+            if jq -e 'any(.[]; .status != "completed")' <<< "$runs" >/dev/null; then
+              echo "CI for $SHA is still running; waiting ($attempt)…"
+              sleep 30
+              continue
+            fi
+            echo "::error::No successful CI run for $SHA. Runs: $(jq -c '[.[] | {conclusion, url}]' <<< "$runs"). Fix CI (or re-run it) on this commit, then release again."
+            exit 1
+          done
+          echo "::error::CI for $SHA did not finish in time"
+          exit 1
 
       # The app refuses updates that aren't signed with a key it trusts, so a
       # release is only built once the trust anchor is in place (the release
@@ -214,6 +271,19 @@ jobs:
       id-token: write
       attestations: write
     steps:
+      # A short-lived token from the release GitHub App, limited to the public
+      # repo. Skipped (PAT fallback below) until the App is configured.
+      - name: Release App token
+        id: app-token
+        if: ${{ vars.RELEASE_APP_CLIENT_ID != '' }}
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: jaychandra1
+          repositories: K8Board
+          permission-contents: write
+
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -236,19 +306,23 @@ jobs:
           npm ci --omit=dev --ignore-scripts
           npm ci --prefix client --omit=dev --ignore-scripts
 
-      # Publishing happens on the PUBLIC repo, which needs a PAT — GITHUB_TOKEN
-      # is scoped to this (source) repo only. Fail fast with instructions
-      # instead of creating a release in the wrong place.
-      - name: Require RELEASE_TOKEN
+      # Publishing happens on the PUBLIC repo; GITHUB_TOKEN is scoped to this
+      # (source) repo only. Fail fast with instructions instead of creating a
+      # release in the wrong place.
+      - name: Require a publishing token
         env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           set -euo pipefail
-          if [ -z "${RELEASE_TOKEN:-}" ]; then
-            echo "::error::secrets.RELEASE_TOKEN is empty. Create a fine-grained personal access token (GitHub → Settings → Developer settings → Fine-grained tokens) with Repository access limited to ${RELEASE_REPO} and the permission 'Contents: Read and write', then add it as RELEASE_TOKEN under Settings → Environments → release (or Settings → Secrets and variables → Actions) on ${GITHUB_REPOSITORY}."
+          if [ -n "${APP_TOKEN:-}" ]; then
+            echo "Publishing to ${RELEASE_REPO} with the release GitHub App token"
+          elif [ -n "${RELEASE_TOKEN:-}" ]; then
+            echo "::warning::Publishing with the RELEASE_TOKEN personal access token. Prefer a GitHub App: set the variable RELEASE_APP_CLIENT_ID and the release-environment secret RELEASE_APP_PRIVATE_KEY, then delete RELEASE_TOKEN."
+          else
+            echo "::error::No publishing token. Either create a GitHub App installed only on ${RELEASE_REPO} with 'Contents: Read and write' and set the repository variable RELEASE_APP_CLIENT_ID plus the 'release' environment secret RELEASE_APP_PRIVATE_KEY, or add a fine-grained personal access token limited to ${RELEASE_REPO} ('Contents: Read and write') as RELEASE_TOKEN."
             exit 1
           fi
-          echo "RELEASE_TOKEN is set; publishing to ${RELEASE_REPO}"
 
       # Fail before touching anything if the signing secret is missing or
       # doesn't match a key the app trusts (lib/updater/keys.mjs).
@@ -354,7 +428,7 @@ jobs:
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           repository: jaychandra1/K8Board
-          token: ${{ secrets.RELEASE_TOKEN }}
+          token: ${{ steps.app-token.outputs.token || secrets.RELEASE_TOKEN }}
           tag_name: ${{ needs.verify.outputs.tag }}
           # No target_commitish: K8Board holds no source, so the tag is created
           # on its default branch (the repo must have at least one commit).
@@ -495,10 +569,11 @@ jobs:
     # Runs only after both approved, successful architecture builds.
     needs: [verify, docker]
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       contents: read
       packages: write
+      id-token: write # cosign keyless signing (Sigstore)
     steps:
       - name: Image names
         id: img
@@ -565,6 +640,30 @@ jobs:
           IMAGES: ${{ steps.img.outputs.name }} ${{ steps.img.outputs.legacy }}
           TAG: ${{ needs.verify.outputs.tag }}
         run: for image in $IMAGES; do docker buildx imagetools inspect "${image}:${TAG}"; done
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+
+      # Keyless: the signature binds the image digest to this workflow's
+      # GitHub identity through Sigstore (no key to keep). Signed by digest, so
+      # every tag of the image is covered. The certificate names this workflow
+      # (repository and ref) and is recorded in Sigstore's public transparency log.
+      - name: Sign the images (cosign)
+        shell: bash
+        env:
+          IMAGES: ${{ steps.img.outputs.name }} ${{ steps.img.outputs.legacy }}
+          TAG: ${{ needs.verify.outputs.tag }}
+        run: |
+          set -euo pipefail
+          for image in $IMAGES; do
+            digest="$(docker buildx imagetools inspect "${image}:${TAG}" --format '{{json .Manifest}}' | jq -r .digest)"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no digest for ${image}:${TAG}"; exit 1; }
+            cosign sign --yes "${image}@${digest}"
+            cosign verify "${image}@${digest}" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              --certificate-identity-regexp "^https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/" >/dev/null
+            echo "signed and verified ${image}@${digest}"
+          done
 
   # ---------------------------------------------------------------------------
   # Microsoft Store: submit the MSIX built above as a new submission of the
