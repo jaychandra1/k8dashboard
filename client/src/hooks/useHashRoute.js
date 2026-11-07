@@ -12,7 +12,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 // Landing view when the URL has no hash (and after a context switch): the
 // Cluster overview. Re-exported by components/shell/routes.js.
-export const DEFAULT_VIEW = 'cluster';
+// The app opens on Home (the clusters to connect to); nothing connects at startup.
+export const DEFAULT_VIEW = 'home';
 const VIEW_ALIASES = { overview: 'cluster' };
 
 const enc = (s) => encodeURIComponent(String(s));

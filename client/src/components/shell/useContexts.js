@@ -2,69 +2,114 @@ import { useCallback, useRef, useState } from 'react';
 import { postJson, errorMessage } from '../../lib/api';
 import { navigateTo } from '../../hooks/useHashRoute';
 
-// Context switching (top-bar switcher + context picker, palette, auth-error
-// modal, desktop "Clusters" menu). Extracted from App.jsx.
+// Connecting to a cluster. Nothing connects at startup: the app opens on the
+// Home page, and a connection starts only when the user picks a cluster
+// (Home, cluster switcher, context picker, palette, auth-error dialog, the
+// desktop "Clusters" menu). Extracted from App.jsx.
 //
-//   const { switchContext, afterSwitch, switching, switchTarget } = useContexts({ gate, toast, onBeforeSwitch? });
+//   const { connect, switchContext, afterSwitch, cancel, disconnect, switching, switchTarget, step } = useContexts({ gate, toast });
 //
-// `switchContext(ctx)` POSTs the switch then runs `afterSwitch`. `afterSwitch`
-// alone is the post-switch path (route → Cluster overview, reload config
-// status, re-check auth, toast) for switches made elsewhere — the desktop
-// app's native menu talks to the backend directly and then tells the renderer
-// via a `kubepilot:host` `context-changed` event.
-//
-// `switching` is true from the moment a switch starts (before the POST) until
-// config status + auth have been re-checked for the new context; App uses it
-// to drive the branded LoadingScreen over the main region. `switchTarget` is
-// the context being switched to (null after a failed switch).
+// connect(ctx): select ctx (POST /api/config/context, when it isn't the
+//   selected one) → sign in (GET /api/config/auth: the kubeconfig's
+//   credentials, the first call to the cluster) → the Dashboard, whose summary
+//   loads behind the loading screen; resource lists load as their views open.
+// switchContext(ctx): connect to another cluster (no-op for the current one).
+// afterSwitch(ctx): the same once ctx is already selected (the desktop menu
+//   selects it itself and then tells the renderer).
+// cancel() / disconnect(): stop — the server forgets the connection — and go
+//   back to Home. A late answer from a cancelled sign-in is dropped.
+// `switching`: a connection is under way; `step`: its current CONNECT_STEPS key.
 export const POST_SWITCH_VIEW = 'cluster';
+export const HOME_VIEW = 'home';
+export const CONNECT_STEPS = Object.freeze([
+  { key: 'select', label: 'Reading the kubeconfig entry' },
+  { key: 'auth', label: 'Signing in to the cluster' },
+  { key: 'dashboard', label: 'Loading the cluster summary' },
+]);
 
 export default function useContexts({ gate, toast, onBeforeSwitch }) {
-  const { configStatus, fetchConfigStatus, checkAuth } = gate;
+  const { configStatus, fetchConfigStatus, checkAuth, resetAuth } = gate;
   const toastRef = useRef(toast); toastRef.current = toast;
   const beforeRef = useRef(onBeforeSwitch); beforeRef.current = onBeforeSwitch;
   const current = configStatus.currentContext;
   const [switching, setSwitching] = useState(false);
   const [switchTarget, setSwitchTarget] = useState(null);
+  const [step, setStep] = useState(null);
+  const runRef = useRef(0); // the connection in progress; bumped by cancel/disconnect
 
-  const afterSwitch = useCallback(async (ctx) => {
+  const afterSwitch = useCallback(async (ctx, run = ++runRef.current) => {
+    const live = () => run === runRef.current;
     setSwitching(true);
     setSwitchTarget(ctx || null);
+    setStep('auth');
     try {
-      // Land on the Cluster overview for the new cluster (selection and
-      // namespace filter cleared), then reload config + re-check auth.
-      // Namespaces/resources re-fetch on their own because they are keyed on
-      // the current context.
+      // The Dashboard is where a connection lands (selection and namespace
+      // filter cleared); it shows once the sign-in passes.
       navigateTo(POST_SWITCH_VIEW, [], {});
       beforeRef.current?.(ctx);
       const status = await fetchConfigStatus();
+      if (!live()) return false;
       const name = ctx || status?.currentContext || 'cluster';
       if (!ctx && status?.currentContext) setSwitchTarget(status.currentContext);
-      const ok = await checkAuth();
-      if (ok) toastRef.current?.success(`Switched to ${name}`, { title: 'Cluster' });
-      else toastRef.current?.info(`Switched to ${name} — cluster not reachable`, { title: 'Cluster' });
-      return ok;
+      const ok = await checkAuth({ isCurrent: live });
+      if (!live()) {
+        // Cancelled while signing in: if it got through anyway, let go again.
+        if (ok) postJson('/api/config/disconnect').catch(() => {});
+        return false;
+      }
+      if (ok) {
+        setStep('dashboard');
+        toastRef.current?.success(`Connected to ${name}`, { title: 'Cluster' });
+      }
+      return !!ok;
     } finally {
-      setSwitching(false);
+      if (live()) {
+        setSwitching(false);
+        setStep(null);
+      }
     }
   }, [fetchConfigStatus, checkAuth]);
 
-  const switchContext = useCallback(async (ctx) => {
-    if (!ctx || ctx === current) return false;
+  const connect = useCallback(async (ctx) => {
+    const target = ctx || current;
+    if (!target) return false;
+    const run = ++runRef.current;
     setSwitching(true);
-    setSwitchTarget(ctx);
-    try {
-      await postJson('/api/config/context', { contextName: ctx });
-    } catch (err) {
-      setSwitching(false);
-      setSwitchTarget(null);
-      toastRef.current?.error(errorMessage(err, `Failed to switch to ${ctx}`), { title: 'Cluster' });
-      return false;
+    setSwitchTarget(target);
+    setStep('select');
+    if (target !== current) {
+      try {
+        await postJson('/api/config/context', { contextName: target });
+      } catch (err) {
+        if (run !== runRef.current) return false;
+        setSwitching(false);
+        setSwitchTarget(null);
+        setStep(null);
+        toastRef.current?.error(errorMessage(err, `Failed to switch to ${target}`), { title: 'Cluster' });
+        return false;
+      }
+      if (run !== runRef.current) return false;
     }
-    return afterSwitch(ctx);
+    return afterSwitch(target, run);
   }, [current, afterSwitch]);
 
-  return { switchContext, afterSwitch, switching, switchTarget };
+  const switchContext = useCallback(
+    (ctx) => (ctx && ctx !== current ? connect(ctx) : Promise.resolve(false)),
+    [current, connect],
+  );
+
+  // Back to Home: stop a connection under way, or end the current one.
+  const leave = useCallback(() => {
+    runRef.current += 1;
+    setSwitching(false);
+    setSwitchTarget(null);
+    setStep(null);
+    resetAuth?.();
+    postJson('/api/config/disconnect').catch(() => {});
+    navigateTo(HOME_VIEW, [], {});
+  }, [resetAuth]);
+
+  return { connect, switchContext, afterSwitch, cancel: leave, disconnect: leave, switching, switchTarget, step };
 }
 
 export { useContexts };

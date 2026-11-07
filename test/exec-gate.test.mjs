@@ -96,3 +96,44 @@ describe('createExecGate', () => {
     assert.equal(gate.attach(null), null);
   });
 });
+
+describe('createExecGate: a helper that never answers', () => {
+  const hangingKubeConfig = () => {
+    const children = [];
+    const execAuth = {
+      execFn: () => {
+        const child = { killed: false, kill() { this.killed = true; this.onClose?.(); }, once(ev, fn) { if (ev === 'close') this.onClose = fn; } };
+        children.push(child);
+        return child;
+      },
+      getCredential(user) { this.execFn('helper', [user.name]); return new Promise(() => {}); },
+    };
+    return { kc: { execAuth }, children };
+  };
+
+  test('times out, stops the helper, and blocks like any other failed sign-in', async () => {
+    const gate = createExecGate({ timeoutMs: 40 });
+    const { kc, children } = hangingKubeConfig();
+    gate.attach(kc);
+    await assert.rejects(kc.execAuth.getCredential({ name: 'dev' }), (e) => e.clusterAuth && /didn't answer within/.test(e.message));
+    assert.equal(children.length, 1);
+    assert.equal(children[0].killed, true);
+    assert.ok(gate.blockedError('dev'));
+    gate.clear('dev');
+    // A new attempt runs a new helper instead of joining the stuck one.
+    await assert.rejects(kc.execAuth.getCredential({ name: 'dev' }));
+    assert.equal(children.length, 2);
+  });
+
+  test('stopAll (Disconnect / Cancel) stops the running helper', async () => {
+    const gate = createExecGate({ timeoutMs: 60000 });
+    const { kc, children } = hangingKubeConfig();
+    gate.attach(kc);
+    const run = kc.execAuth.getCredential({ name: 'dev' });
+    await new Promise((r) => setImmediate(r));
+    gate.stopAll();
+    assert.equal(children[0].killed, true);
+    gate.clear(); // the run itself is left to ExecAuth's own close handling
+    void run.catch(() => {});
+  });
+});

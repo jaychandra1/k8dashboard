@@ -156,11 +156,20 @@ jobs:
         run: npm test
 
       - name: Build & package
-        # `npm run dist` builds the client and runs electron-builder for the
-        # host OS with --publish never (Windows: the NSIS installer and the
-        # Microsoft Store AppX); the release and store jobs below publish. No
-        # GitHub token is exposed here.
-        run: npm run dist
+        # Builds the client, then electron-builder for the host OS with
+        # --publish never (Windows: the NSIS installer and the Microsoft Store
+        # MSIX); the release and store jobs below publish. The Store identity
+        # comes from repository variables (never stored in the repository;
+        # scripts/store-identity.mjs); without them the MSIX keeps placeholders
+        # and the store job refuses it. No GitHub token is exposed here.
+        shell: bash
+        env:
+          MS_STORE_IDENTITY_NAME: ${{ vars.MS_STORE_IDENTITY_NAME }}
+          MS_STORE_PUBLISHER: ${{ vars.MS_STORE_PUBLISHER }}
+          MS_STORE_PUBLISHER_DISPLAY_NAME: ${{ vars.MS_STORE_PUBLISHER_DISPLAY_NAME }}
+        run: |
+          npm run build
+          node scripts/store-identity.mjs --allow-placeholder --publish never
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
@@ -585,16 +594,21 @@ jobs:
           persist-credentials: false
 
       # The package identity must be the one Partner Center reserved for the
-      # product, or the submission is rejected.
-      - name: Require the Partner Center identity in package.json
+      # product, or the submission is rejected. It lives in repository
+      # variables, not in the repository (scripts/store-identity.mjs).
+      - name: Require the Partner Center identity
         shell: pwsh
+        env:
+          MS_STORE_IDENTITY_NAME: ${{ vars.MS_STORE_IDENTITY_NAME }}
+          MS_STORE_PUBLISHER: ${{ vars.MS_STORE_PUBLISHER }}
+          MS_STORE_PUBLISHER_DISPLAY_NAME: ${{ vars.MS_STORE_PUBLISHER_DISPLAY_NAME }}
         run: |
-          $appx = (Get-Content package.json -Raw | ConvertFrom-Json).build.appx
-          if ($appx.identityName -eq 'K8Board.Desktop' -or $appx.publisher -eq 'CN=K8Board') {
-            Write-Output "::error::package.json build.appx still has the placeholder identity. Copy Package/Identity/Name, Package/Identity/Publisher and Package/Properties/PublisherDisplayName from Partner Center (Product management -> Product identity) into build.appx identityName, publisher and publisherDisplayName."
-            exit 1
+          foreach ($name in 'MS_STORE_IDENTITY_NAME', 'MS_STORE_PUBLISHER', 'MS_STORE_PUBLISHER_DISPLAY_NAME') {
+            if (-not [Environment]::GetEnvironmentVariable($name)) {
+              Write-Output "::error::Repository variable $name is not set. Copy Package/Identity/Name, Package/Identity/Publisher and Package/Properties/PublisherDisplayName from Partner Center (Product management -> Product identity) into MS_STORE_IDENTITY_NAME, MS_STORE_PUBLISHER and MS_STORE_PUBLISHER_DISPLAY_NAME (Settings -> Secrets and variables -> Actions -> Variables)."
+              exit 1
+            }
           }
-          Write-Output "Package identity: $($appx.identityName) / $($appx.publisher)"
 
       - name: Download the Store package
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
@@ -610,6 +624,8 @@ jobs:
       - name: Submit to the Microsoft Store
         shell: pwsh
         env:
+          MS_STORE_IDENTITY_NAME: ${{ vars.MS_STORE_IDENTITY_NAME }}
+          MS_STORE_PUBLISHER: ${{ vars.MS_STORE_PUBLISHER }}
           TENANT_ID: ${{ secrets.MS_STORE_TENANT_ID }}
           SELLER_ID: ${{ secrets.MS_STORE_SELLER_ID }}
           CLIENT_ID: ${{ secrets.MS_STORE_CLIENT_ID }}
@@ -627,5 +643,14 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $pkg = Get-ChildItem store -Filter *.msix | Select-Object -First 1
           if (-not $pkg) { Write-Output "::error::no .msix in the store-k8board-windows artifact"; exit 1 }
+          # The package must carry the Partner Center identity (built with the variables set).
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [IO.Compression.ZipFile]::OpenRead($pkg.FullName)
+          try { $reader = New-Object IO.StreamReader($zip.GetEntry('AppxManifest.xml').Open()); [xml]$manifest = $reader.ReadToEnd(); $reader.Close() } finally { $zip.Dispose() }
+          $identity = $manifest.Package.Identity
+          if ($identity.Name -ne $env:MS_STORE_IDENTITY_NAME -or $identity.Publisher -ne $env:MS_STORE_PUBLISHER) {
+            Write-Output "::error::The MSIX carries the identity $($identity.Name) / $($identity.Publisher), not the one in the repository variables: it was built before they were set. Run the release again."
+            exit 1
+          }
           msstore publish $pkg.FullName -id $env:PRODUCT_ID
           exit $LASTEXITCODE

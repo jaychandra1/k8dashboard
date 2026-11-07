@@ -22,6 +22,16 @@ All notable changes to this project are documented here. The format follows
 - **K8Board's secrets set with the new `K8BOARD_` prefix stay out of child processes.** `K8BOARD_TOKEN`, `K8BOARD_SECRET_KEY` and `K8BOARD_MCP_TOKEN` are now removed from the environment of kubectl, helm, credential plugins and terminals, like their `KUBEPILOT_` names (the desktop app sets the latter; Docker and server setups may use either). A test now checks every settings prefix the app reads is covered.
 
 ### Changed
+- **K8Board opens on Home and connects to nothing at startup.** Before, it signed in to the kubeconfig's current context while starting, which could take many seconds, or hang on an offline cluster, before anything showed.
+  - **Startup** now reads only the kubeconfig and the app's settings.
+  - **Home** lists the last connected cluster, every cluster (pinned and recent first, searchable, with Pin and Remove), and **Add cluster**. Badges come from local files only: production sign-ins, and expired or signed-out AWS sessions.
+  - **Connect** runs the steps you can see and cancel (kubeconfig entry, sign-in, cluster summary), then opens the Dashboard. Resources load as their views open.
+  - **Failures** open the sign-in dialog, now with **Back to clusters**. **Disconnect** in the cluster menu returns to Home.
+  - **Background session renewal** runs only for a connected cluster.
+  - **Recent clusters** are remembered.
+  - **Optional:** Preferences → General → "Connect to the last cluster at startup" brings back automatic connection; it's off by default.
+  - **AI agents (MCP)** can still query the selected cluster when they ask.
+- **The Microsoft Store identity is no longer kept in the repository.** `package.json` holds placeholders. Release builds take the Partner Center values from repository variables, and local builds from environment variables: `MS_STORE_IDENTITY_NAME`, `MS_STORE_PUBLISHER` and `MS_STORE_PUBLISHER_DISPLAY_NAME` (`scripts/store-identity.mjs`). The Store job refuses to submit an MSIX that doesn't carry them.
 - **The KubePilot name is gone from releases and public names.**
   - **Releases** publish the K8Board installers only (no more `KubePilot-*` copies) and the SBOM as `k8board-<tag>.cdx.json`. KubePilot 1.7.3 and older can't find their installer any more: their updater says "No compatible installer" and links to the release page, whose notes say to install once by hand.
   - **Public repository** `jaychandra1/K8Board` (was `jaychandra1/KubePilot`): the release workflow, `releaseRepository`, Docker labels, docs and website. Installed copies from 1.4.0 on follow GitHub's redirect from the old name. **Rename the public repository in GitHub before publishing the next release.**
@@ -122,6 +132,8 @@ All notable changes to this project are documented here. The format follows
   - **Result:** about 220 files instead of about 5,000, and the installer is 10 MB smaller. On a machine with endpoint security, the update's file work went from about 100–150 s to about 10 s.
   - **Store builds:** the Microsoft Store package benefits as well.
 - **In the Switch cluster list, ↑/↓ couldn't move off the current cluster** unless you typed a search first.
+- **A credential helper that never answered could hold a cluster's requests indefinitely**, and Cancel didn't stop it. Helper runs now give up after 3 minutes, which leaves time for helpers that open a browser sign-in, and Disconnect or Cancel stop a helper that's still running. Found by the 2026-11-07 architecture audit (REL-01).
+- **`settings.json` is written atomically**, through a temporary file and a rename. A crash mid-write can no longer leave the pins, MCP switches or recent clusters half-written (audit REL-04).
 - **The token helpers did nothing when started through a symlinked path.** This affected `node eks-token.js` and `node azure-token.js` (source and Docker kubeconfigs), and macOS's `/var` → `/private/var` link. Their "run as a script?" check compared paths as plain text, while Node resolves links for the script itself. The helpers exited without a word, and kubectl failed with "Unexpected end of JSON input". Real paths are compared now (`lib/paths.mjs` `isMainModule`). The new bundle tests caught it on the macOS CI runner.
 - **When a cluster's sign-in ends, the sign-in dialog comes up instead of endless loading.** Before, signing out (or the AWS session ending) while K8Board was open left the page on loading placeholders, with the sign-in helper's raw output as error messages, until you switched cluster or restarted.
   - **The open cluster's requests now stop at once and the "session expired" dialog opens.** This covers signing out of it, its sign-in being found missing or over, and the 5-minute renewal finding that it can't be renewed. Retry or signing in resumes it.

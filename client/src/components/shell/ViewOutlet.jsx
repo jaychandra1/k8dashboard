@@ -48,12 +48,14 @@ export default function ViewOutlet({
   crSelection, onSelectCustomResource,
   subView, onSubViewChange,
   prefSection, onPrefSectionChange, onClosePreferences, onChangeConfig, onAddAzure, onAddAws, onRemoveCluster,
-  onResourceTypeChange, onOpenClusterWide, nav,
+  onResourceTypeChange, onOpenClusterWide, nav, home, onSetAutoConnect,
   onClusterSummary,
 }) {
   const single = selectedNamespaces.length === 1 && selectedNamespaces[0] !== ALL ? selectedNamespaces[0] : ALL;
 
   switch (view) {
+    case 'home':
+      return home || null;
     case 'cluster':
       return <Cluster configStatus={configStatus} context={configStatus.currentContext} refreshSignal={refreshSignal} onSummaryLoaded={onClusterSummary} onOpen={onOpenClusterWide} />;
     case 'nodes':
@@ -97,6 +99,7 @@ export default function ViewOutlet({
           onAddAzure={onAddAzure}
           onAddAws={onAddAws}
           onRemoveCluster={onRemoveCluster}
+          onSetAutoConnect={onSetAutoConnect}
           section={prefSection}
           onSectionChange={onPrefSectionChange}
           onClose={onClosePreferences}

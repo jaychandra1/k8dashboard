@@ -18,13 +18,16 @@ import ErrorBoundary from './components/ui/ErrorBoundary';
 import useHashRoute from './hooks/useHashRoute';
 import useDocumentTitle from './hooks/useDocumentTitle';
 import useRequest from './hooks/useRequest';
-import { bootstrapTokenFromHash, getToken, onUnauthorized, getJson } from './lib/api';
+import { bootstrapTokenFromHash, getToken, onUnauthorized, getJson, putJson, errorMessage } from './lib/api';
 import { RESOURCE_TYPES, byKey, pluralKey } from './lib/kinds';
 import { refreshMs } from './components/RefreshControl';
 import useAuthGate from './components/shell/useAuthGate';
 import useContexts from './components/shell/useContexts';
 import usePins from './components/shell/usePins';
 import RemoveClusterDialog from './components/RemoveClusterDialog';
+import Home from './components/Home';
+import Preferences from './components/Preferences';
+import { CONNECT_STEPS } from './components/shell/useContexts';
 import useNamespaces from './components/shell/useNamespaces';
 import useResourceFanOut from './components/shell/useResourceFanOut';
 import useNavDrawer from './components/shell/useNavDrawer';
@@ -101,9 +104,13 @@ function App() {
   const { configStatus, authOk } = gate;
   const contextKey = configStatus.currentContext || '';
 
-  // useContexts routes to the Cluster overview itself (POST_SWITCH_VIEW).
-  const { switchContext, afterSwitch, switching, switchTarget } = useContexts({ gate, toast });
-  const { pins, togglePin, refetch: refetchPins } = usePins({ enabled: tokenOk && authOk, toast });
+  // Connecting: nothing connects at startup; the app opens on Home and a
+  // connection starts when the user picks a cluster (useContexts.connect),
+  // landing on the Dashboard (POST_SWITCH_VIEW). Pins are app settings: Home
+  // shows them before any connection.
+  const { connect, switchContext, afterSwitch, cancel: cancelConnect, disconnect, switching, switchTarget, step: connectStep } = useContexts({ gate, toast });
+  const { pins, togglePin, refetch: refetchPins } = usePins({ enabled: tokenOk, toast });
+  const authOkRef = useRef(authOk); authOkRef.current = authOk;
 
   // ---- remove a cluster (switcher menu, Preferences → Kubernetes) ----------
   // The open cluster removed: K8Board is already on another one (server side),
@@ -116,9 +123,28 @@ function App() {
     setRemoveTarget(null);
     toast.success(`Removed ${out?.context || 'the cluster'} from your kubeconfig`, { title: 'Cluster' });
     refetchPins?.();
-    if (out?.current && out.currentContext) afterSwitch(out.currentContext);
-    else gate.fetchConfigStatus();
-  }, [toast, refetchPins, afterSwitch, gate]);
+    // The connected cluster removed: back to Home (no silent connection to another one).
+    if (out?.current && authOkRef.current) disconnect();
+    gate.fetchConfigStatus();
+  }, [toast, refetchPins, disconnect, gate]);
+
+  // "Connect to the last cluster at startup" (Preferences → General, off by
+  // default): once, when the kubeconfig is first read.
+  const autoConnectTried = useRef(false);
+  useEffect(() => {
+    if (autoConnectTried.current || !configStatus.loaded) return;
+    autoConnectTried.current = true;
+    const last = configStatus.lastConnected;
+    if (configStatus.autoConnect && last && (configStatus.contexts || []).includes(last)) connect(last);
+  }, [configStatus, connect]);
+  const setAutoConnect = useCallback(async (on) => {
+    try {
+      await putJson('/api/settings/startup', { autoConnect: !!on });
+      await gate.fetchConfigStatus();
+    } catch (err) {
+      toast.error(errorMessage(err, 'The setting could not be saved.'), { title: 'Preferences' });
+    }
+  }, [gate, toast]);
 
   // ---- context-switch loading screen ------------------------------------
   // Shown over <main> from the moment a switch starts (`switching`) until the
@@ -272,7 +298,8 @@ function App() {
   const openPalette = useCallback(() => setPaletteOpen(true), []);
   const closeShortcuts = useCallback(() => setShortcutsOpen(false), []);
   const { fetchConfigStatus, retryAuth } = gate;
-  const onCloudImported = useCallback(async () => { await fetchConfigStatus(); retryAuth(); }, [fetchConfigStatus, retryAuth]);
+  // A cloud import adds clusters: Home lists them; a connected app re-reads its kubeconfig.
+  const onCloudImported = useCallback(async () => { await fetchConfigStatus(); if (authOkRef.current) retryAuth(); }, [fetchConfigStatus, retryAuth]);
 
   // Global keyboard: ⌘K palette, ? shortcuts, / focus search.
   useEffect(() => {
@@ -332,8 +359,8 @@ function App() {
     const label = byKey[view]?.label || 'K8Board';
     const nsLabel = selectedNamespaces.includes(ALL) ? 'all namespaces' : selectedNamespaces.join(', ');
     const scoped = isResourceView(view) || view === 'events';
-    return [label, scoped ? nsLabel : null, configStatus.currentContext].filter(Boolean).join(' · ') + ' — K8Board';
-  }, [view, selectedNamespaces, configStatus.currentContext]);
+    return [label, scoped ? nsLabel : null, authOk ? configStatus.currentContext : null].filter(Boolean).join(' · ') + ' — K8Board';
+  }, [view, selectedNamespaces, configStatus.currentContext, authOk]);
   useDocumentTitle(title, { suffix: false });
 
   // ---- top-bar lead: [ cluster switcher ] [ ◀ ] [ ▶ ] ----------------------
@@ -355,6 +382,7 @@ function App() {
         onAddAws={openAws}
         onAddAzure={openAzure}
         onRemove={configStatus.demoAvailable && currentContext === 'demo-cluster' ? undefined : openRemoveCluster}
+        onDisconnect={disconnect}
       />
       <div className="topbar-hist" role="group" aria-label="History">
         <Tooltip content="Back">
@@ -365,7 +393,38 @@ function App() {
         </Tooltip>
       </div>
     </>
-  ), [ctxList, contextsInfo, currentContext, pins, switchContext, togglePin, openContexts, openAws, openAzure, openRemoveCluster, configStatus.demoAvailable, canBack, canForward, back, forward]);
+  ), [ctxList, contextsInfo, currentContext, pins, switchContext, togglePin, openContexts, openAws, openAzure, openRemoveCluster, disconnect, configStatus.demoAvailable, canBack, canForward, back, forward]);
+
+  // ---- Home (the landing page) ---------------------------------------------
+  // Not connected: Home (or Preferences) fills the window. Old links to cluster
+  // views land on Home until a connection is made.
+  const canRemoveCluster = useCallback((ctx) => !(configStatus.demoAvailable && ctx === 'demo-cluster'), [configStatus.demoAvailable]);
+  const goDashboard = useCallback(() => navigate('cluster', [], {}), [navigate]);
+  const homeElement = (
+    <Home
+      contexts={configStatus.contexts || []}
+      contextsInfo={configStatus.contextsInfo || []}
+      lastConnected={configStatus.lastConnected}
+      recent={configStatus.recent || []}
+      pins={pins}
+      connected={authOk ? configStatus.currentContext : null}
+      connecting={switching ? { context: switchTarget } : null}
+      onConnect={connect}
+      onOpenDashboard={goDashboard}
+      onDisconnect={disconnect}
+      onTogglePin={togglePin}
+      onRemove={openRemoveCluster}
+      canRemove={canRemoveCluster}
+      onAddAws={openAws}
+      onAddAzure={openAzure}
+      onAddLocal={openLocal}
+      onOpenPreferences={goPrefs}
+    />
+  );
+  useEffect(() => {
+    if (!tokenOk || authOk || switching || gate.showAuthError || gate.autoRecovering) return;
+    if (view !== 'home' && view !== 'preferences') navigate('home', [], {}, { replace: true });
+  }, [tokenOk, authOk, switching, gate.showAuthError, gate.autoRecovering, view, navigate]);
 
   // ---- render -------------------------------------------------------------
   const { serverError, showConfigModal, showAuthError, checkingAuth, configChecked, autoRecovering } = gate;
@@ -424,6 +483,7 @@ function App() {
           onSwitchContext={switchContext}
           onAddAzure={openAzure}
           onAddAws={openAws}
+          onBack={disconnect}
         />
       )}
 
@@ -454,7 +514,14 @@ function App() {
           <div className="content-col">
             <main id="main" className="app-main" tabIndex={-1} aria-busy={showSwitchOverlay || undefined}>
               {showSwitchOverlay && (
-                <LoadingScreen overlay context={switchTarget || configStatus.currentContext} />
+                <LoadingScreen
+                  overlay
+                  context={switchTarget || configStatus.currentContext}
+                  label={switching ? `Connecting to ${switchTarget || configStatus.currentContext}…` : undefined}
+                  steps={CONNECT_STEPS}
+                  step={connectStep || 'dashboard'}
+                  onCancel={switching ? cancelConnect : undefined}
+                />
               )}
               <ErrorBoundary resetKey={view} title="This view crashed">
                 <ViewOutlet
@@ -494,6 +561,8 @@ function App() {
                   onRemoveCluster={openRemoveCluster}
                   onResourceTypeChange={goView}
                   onOpenClusterWide={openClusterWide}
+                  home={homeElement}
+                  onSetAutoConnect={setAutoConnect}
                   nav={nav}
                   onClusterSummary={onClusterSummary}
                 />
@@ -508,19 +577,38 @@ function App() {
         <div className="loading-state" />
       ) : !configChecked ? (
         <div className="loading-state">
-          <LoadingScreen hint="Loading kubeconfig…" />
+          <LoadingScreen label="Starting K8Board…" hint="Reading your kubeconfig" />
         </div>
-      ) : checkingAuth ? (
+      ) : (switching || checkingAuth) && !showAuthError ? (
         <div className="loading-state">
           <LoadingScreen
-            context={configStatus.currentContext}
-            hint={autoRecovering ? 'Reconnecting — refreshing credentials…' : 'Checking cluster authentication…'}
+            context={switchTarget || configStatus.currentContext}
+            label={`Connecting to ${switchTarget || configStatus.currentContext || 'the cluster'}…`}
+            hint={autoRecovering ? 'Refreshing credentials…' : undefined}
+            steps={CONNECT_STEPS}
+            step={checkingAuth ? 'auth' : connectStep}
+            onCancel={cancelConnect}
           />
         </div>
       ) : (
-        // A modal (config / auth / server error) is overlaid above; keep a
-        // neutral backdrop underneath it.
-        <div className="loading-state" />
+        // Not connected: Home (dialogs — kubeconfig, sign-in, server — open above it).
+        <div className="home-shell">
+          {view === 'preferences' ? (
+            <Preferences
+              configStatus={configStatus}
+              theme={theme}
+              onSetTheme={setTheme}
+              onChangeConfig={openLocal}
+              onAddAzure={openAzure}
+              onAddAws={openAws}
+              onRemoveCluster={openRemoveCluster}
+              onSetAutoConnect={setAutoConnect}
+              section={prefSection}
+              onSectionChange={onPrefSectionChange}
+              onClose={closePreferences}
+            />
+          ) : homeElement}
+        </div>
       )}
 
       {tokenOk && authOk && (

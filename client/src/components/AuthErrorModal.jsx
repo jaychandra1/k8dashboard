@@ -177,7 +177,7 @@ function AddClusterTiles({ onAddAws, onAddAzure, onChangeConfig, disabled }) {
   );
 }
 
-export default function AuthErrorModal({ open = true, auth, onRetry, onChangeConfig, retrying, contexts = [], contextsInfo, currentContext, onSwitchContext, onAddAzure, onAddAws }) {
+export default function AuthErrorModal({ open = true, auth, onRetry, onChangeConfig, retrying, contexts = [], contextsInfo, currentContext, onSwitchContext, onAddAzure, onAddAws, onBack }) {
   // `detail` carries the exec plugin's raw stderr when the backend replaced the
   // message with a friendlier one (sso-expired / exec-helper).
   // Nothing environment-identifying is displayed: account ids, endpoints, IPs,
@@ -250,6 +250,9 @@ export default function AuthErrorModal({ open = true, auth, onRetry, onChangeCon
             </>
           )}
           <span className="auth-actions-spacer" />
+          {onBack && (
+            <Button variant="ghost" icon="arrowLeft" onClick={() => { sso.cancel(); onBack(); }} disabled={retrying}>Back to clusters</Button>
+          )}
           <Button variant={awsInline ? 'secondary' : 'primary'} icon="refresh" onClick={onRetry} busy={retrying} disabled={signingIn && sso.state.phase !== 'done'} className="auth-retry">
             {retrying ? 'Retrying…' : 'Retry'}
           </Button>

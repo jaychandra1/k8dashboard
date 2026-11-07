@@ -17,15 +17,19 @@ The release workflow builds both on every tagged release. The `.msix` is uploade
 
 1. **Developer account.** Sign up at <https://storedeveloper.microsoft.com> as an individual developer. Registration is free; Microsoft verifies your identity with an ID document and a selfie.
 2. **Reserve the name.** Partner Center → **Apps and games** → **New product** → **MSIX or PWA app** → reserve **K8Board** (or the name you want to show).
-3. **Copy the package identity into `package.json`.** Partner Center → the product → **Product management → Product identity**. Copy three values into `build.appx` in `package.json`:
+3. **Give the build the package identity — not the repository.** Partner Center → the product → **Product management → Product identity** shows three values. They are never committed: `package.json` keeps placeholders, and builds read the real values from variables (`scripts/store-identity.mjs`).
 
-   | Partner Center field | `package.json` → `build.appx` | Placeholder today |
+   | Partner Center field | Variable | Placeholder in `package.json` |
    |---|---|---|
-   | Package/Identity/Name | `identityName` | `K8Board.Desktop` |
-   | Package/Identity/Publisher | `publisher` | `CN=K8Board` |
-   | Package/Properties/PublisherDisplayName | `publisherDisplayName` | `K8Board Program` |
+   | Package/Identity/Name | `MS_STORE_IDENTITY_NAME` | `K8Board.Desktop` |
+   | Package/Identity/Publisher | `MS_STORE_PUBLISHER` | `CN=K8Board` |
+   | Package/Properties/PublisherDisplayName | `MS_STORE_PUBLISHER_DISPLAY_NAME` | `K8Board Program` |
 
-   Commit the change. The `store` job refuses to submit while the placeholders are there, and Partner Center rejects a package whose identity doesn't match these three values exactly. Note the **Store ID** shown on the same page (it looks like `9NXXXXXXXXXX`); you'll need it in step 4.
+   **For release builds:** add them as repository variables (GitHub → Settings → Secrets and variables → Actions → **Variables**).
+
+   **For a local build:** set them as environment variables first.
+
+   The `store` job refuses to submit without them, and checks that the built MSIX carries them. Partner Center rejects a package whose identity doesn't match these values exactly. Note the **Store ID** shown on the same page (it looks like `9NXXXXXXXXXX`); you'll need it in step 4.
 
 ## 2. First submission (by hand — Microsoft requires it)
 
@@ -33,7 +37,7 @@ The release workflow builds both on every tagged release. The `.msix` is uploade
    - **From a release build:** tag a release as usual; when the **Build & Release** run finishes, download the `store-k8board-windows` artifact from the run's summary page and unzip it.
    - **On your Windows machine:** `npm ci && npm ci --prefix client`, then `npm run dist:store`. The package is written to `release/K8Board-windows-store.msix` (electron-builder downloads the Windows packaging tools the first time).
 
-   Either way, build it **after** step 1.3: the package carries the identity from `package.json`.
+   Either way, build it **after** step 1.3: the package carries the identity from those variables (`npm run dist:store` refuses to build without them).
 2. Partner Center → the product → **Start your submission**:
    - **Pricing and availability:** Free; choose markets.
    - **Properties:** Category **Developer tools**. Privacy policy URL: `https://k8dashboard.in/privacy`. Website: `https://k8dashboard.in`. Support contact: `kubepilot.dashboard@gmail.com`.

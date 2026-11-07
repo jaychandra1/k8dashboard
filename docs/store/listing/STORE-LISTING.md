@@ -11,13 +11,13 @@ Everything Partner Center asks for, in the order it asks, ready to paste. Writte
 
 ## 0. Before you start: the package
 
-1. ✏️ **Package identity.** Go to Partner Center → your app → **Product management → Product identity**. Copy these values into `package.json` → `build.appx`, then commit:
-   - `Package/Identity/Name` → `identityName`
-   - `Package/Identity/Publisher` → `publisher`
-   - `Package/Properties/PublisherDisplayName` → `publisherDisplayName`
+1. ✏️ **Package identity — set as variables, never committed.** Go to Partner Center → your app → **Product management → Product identity**. Add the three values as GitHub repository variables (Settings → Secrets and variables → Actions → **Variables**). For a local build, set them as environment variables instead.
+   - `Package/Identity/Name` → `MS_STORE_IDENTITY_NAME`
+   - `Package/Identity/Publisher` → `MS_STORE_PUBLISHER`
+   - `Package/Properties/PublisherDisplayName` → `MS_STORE_PUBLISHER_DISPLAY_NAME`
 
-   `publisherDisplayName` is already set to **JDG Initiates** (Partner Center's publisher display name). The other two are still placeholders (`K8Board.Desktop`, `CN=K8Board`). Partner Center rejects a package whose identity doesn't match exactly.
-2. **Build the MSIX after that commit.** Get it either way:
+   `package.json` keeps placeholders. The build passes the variables to electron-builder (`scripts/store-identity.mjs`). Partner Center rejects a package whose identity doesn't match exactly.
+2. **Build the MSIX after setting them.** Get it either way:
    - Tag a release, then download the **`store-k8board-windows`** artifact from the **Build & Release** run's summary page. It's a zip containing `K8Board-windows-store.msix`, kept for 30 days.
    - Or run `npm run dist:store` on Windows; it writes `release/K8Board-windows-store.msix`.
 3. The package declares `runFullTrust`, so section 7 needs the justification text given there. Packaged Win32 apps always declare it.

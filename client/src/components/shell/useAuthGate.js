@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getJson, postJson, errorMessage, onClusterAuthRequired } from '../../lib/api';
 
-// Startup gate: kubeconfig status → cluster auth pre-check → auto-recovery →
-// (KubeConfigModal | AuthErrorModal | app). Extracted from App.jsx. While the
+// Kubeconfig status and cluster sign-in. Startup reads the kubeconfig only
+// (the Home page lists its clusters); the auth check — the first call to a
+// cluster — runs when the user connects (useContexts.connect), then
+// auto-recovery → (AuthErrorModal | app). Extracted from App.jsx. While the
 // app runs, a request answered `cluster_auth_required` (the open cluster's
 // sign-in is missing or over) re-runs the check, which brings the dialog up.
 //
@@ -38,18 +40,25 @@ export default function useAuthGate({ enabled = true, session = 0, toast }) {
     }
   }, []);
 
-  // Verify the loaded kubeconfig can authenticate + reach the cluster.
-  const checkAuth = useCallback(async () => {
+  // Verify the selected cluster can authenticate + is reachable (this is the
+  // connection). `isCurrent()` false when the answer arrives (the user
+  // cancelled): the answer is dropped and null returned.
+  const checkAuth = useCallback(async ({ isCurrent } = {}) => {
     try {
       const data = await getJson('/api/config/auth');
+      if (isCurrent && !isCurrent()) return null;
       setAuthState({ ...data, checked: true });
       if (!data.ok && data.limited) toastRef.current?.info(data.message, { title: 'Limited access' });
       return !!data.ok;
     } catch (err) {
+      if (isCurrent && !isCurrent()) return null;
       setAuthState({ checked: true, ok: false, reason: 'error', message: err?.status ? errorMessage(err) : 'Failed to reach the backend server on port 3001.' });
       return false;
     }
   }, []);
+
+  // Not connected (Disconnect, Cancel, Back to clusters): the Home page.
+  const resetAuth = useCallback(() => setAuthState({ checked: false, ok: false }), []);
 
   const retryAuth = useCallback(async () => {
     setAuthRetrying(true);
@@ -71,12 +80,6 @@ export default function useAuthGate({ enabled = true, session = 0, toast }) {
     setAuthState({ checked: false, ok: false });
     fetchConfigStatus();
   }, [enabled, session, fetchConfigStatus]);
-
-  // Once a kubeconfig is parsed, verify the credentials actually work before
-  // loading the app (unless the user asked to switch configs).
-  useEffect(() => {
-    if (enabled && configStatus.loaded && !forceConfigModal) checkAuth();
-  }, [enabled, configStatus.loaded, forceConfigModal, checkAuth]);
 
   // Mid-session: the open cluster needs a sign-in (signed out, session over).
   // One re-check at a time and at most every few seconds: it runs the
@@ -125,8 +128,10 @@ export default function useAuthGate({ enabled = true, session = 0, toast }) {
     }
   }, [fetchConfigStatus]);
 
-  const showConfigModal = configChecked && !serverUnreachable && (!configStatus.loaded || forceConfigModal);
-  const checkingAuth = configStatus.loaded && !forceConfigModal && (!authState.checked || autoRecovering);
+  // The kubeconfig dialog only on request (Home → Add cluster → Kubeconfig
+  // file, or its "no clusters" state): without a kubeconfig, Home says so.
+  const showConfigModal = configChecked && !serverUnreachable && forceConfigModal;
+  const checkingAuth = configStatus.loaded && !forceConfigModal && autoRecovering;
   const showAuthError = configStatus.loaded && !forceConfigModal && authState.checked && !authState.ok && !autoRecovering;
   const serverError = serverUnreachable && configChecked ? { reason: 'error', message: SERVER_DOWN } : null;
 
@@ -134,7 +139,7 @@ export default function useAuthGate({ enabled = true, session = 0, toast }) {
     configStatus, configChecked, serverUnreachable, serverError,
     authState, authOk, authRetrying, autoRecovering,
     forceConfigModal, setForceConfigModal,
-    fetchConfigStatus, checkAuth, retryAuth, loadConfigFromPath,
+    fetchConfigStatus, checkAuth, resetAuth, retryAuth, loadConfigFromPath,
     showConfigModal, checkingAuth, showAuthError,
   };
 }

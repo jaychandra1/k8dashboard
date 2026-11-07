@@ -66,13 +66,28 @@ Then open `http://localhost:8080/#token=<token>`. To use a fixed token instead, 
 
 Keep the port published on `127.0.0.1`. If you must expose it on a network, put an authenticating reverse proxy in front and add the proxy's hostname to `ALLOWED_HOSTS` and its origin to `ALLOWED_ORIGINS` (see §1.9), otherwise requests through another hostname are refused with HTTP 421.
 
-### 1.3 First run: pick a cluster
+### 1.3 First run: Home, then Connect
 
-When the app starts it shows one of:
+**K8Board opens on Home** (`#/home`) and connects to nothing at startup. It reads your kubeconfig and its own settings, nothing more. There's no sign-in, no Kubernetes API call and no resource loading, so it opens quickly even when clusters are offline or misconfigured.
 
-- **Connect a cluster** — no kubeconfig was found. Either enter the path to a kubeconfig file, or use **Add cluster** to import an **AWS EKS** or **Azure AKS** cluster straight from your cloud account (K8Board signs you in and writes the kubeconfig; no CLI needed).
-- **Could not connect to the cluster** — a kubeconfig was loaded but its credentials failed. Use **Add cluster** to onboard an EKS or AKS cluster, switch to another context, or fix the kubeconfig and press **Retry**. Authentication failures are classified for you (expired token, unreachable API server, TLS error, missing auth plugin) with a one-click or copyable fix.
-- The dashboard — the current kubeconfig context loaded. You land on the **Dashboard** (`#/cluster`): the whole cluster at a glance — nodes, CPU/memory capacity, pod health, workloads and the Kubernetes version. While the data is fetched the app shows a branded loading screen ("Getting the data from <context>…").
+**Home lists:**
+- **Last connected:** the cluster you used last, with a **Connect** button.
+- **Clusters:** every context in your kubeconfig, pinned first, then the most recently used, then by name. Each has **Connect**, **Pin** and **Remove** (shown on hover). Use the search box to filter.
+- **Badges, read from local files only:** **Production** (a cluster with its own AWS sign-in), and **Signed out of AWS** or **AWS session expired**, from the AWS token cache.
+- **Add cluster:** **AWS EKS**, **Azure AKS** or a **kubeconfig file**. With no kubeconfig at all, Home says so and offers the same choices.
+
+**Connect** shows its steps, with a **Cancel** button:
+1. reading the kubeconfig entry;
+2. signing in to the cluster (its credential helper runs now, never before);
+3. loading the cluster summary.
+
+It then opens the **Dashboard** (`#/cluster`), and resource lists load as you open their views.
+
+**If the sign-in fails,** the connection dialog explains why (expired token, unreachable API server, TLS error, missing auth plugin) with a fix, **Retry**, another cluster, or **Back to clusters**.
+
+**Leaving a cluster:** **Disconnect** in the cluster menu returns to Home, and stops any background work for that cluster.
+
+**Optional:** Preferences → General → **Connect to the last cluster at startup** brings back automatic connection, with the same steps and Cancel. It's off by default.
 
 Switching clusters happens from **one place**: the **cluster menu** at the left end of the top bar (the button showing the current context, above the sidebar, with the back/forward arrows right beside it) — or, in the desktop app, the native **Clusters** menu (between View and Window), which mirrors it. `⌘K` / `Ctrl+K` → type the context name also works. The cluster menu is laid out as:
 
@@ -86,7 +101,7 @@ After a switch the app returns to the **Dashboard** of the new cluster (the sele
 
 - **Sidebar** — the K8Board brand, version and the Preferences gear at the top; then four sections: **Overview** (Dashboard, Nodes, Namespaces, Topology); **Resources** (Workloads — Overview, Pods, Deployments, StatefulSets, DaemonSets, ReplicaSets, Jobs, CronJobs… — then Network, Storage, Config); **Operations** (Events, Helm, Access Control); **Integrations** (Argo CD when installed, Security Center), followed by Custom Resources. Every item is a real link, so keyboard navigation, middle-click and "open in new tab" work.
 - **Cluster menu** — the button at the top of the sidebar with the current context name (hover it for the full name when it is cut short): pinned clusters (check = current), All contexts (inline list or submenu) + Search contexts…, Pin/Unpin, Add cluster ▸ (see §1.3). Fully keyboard operable (Enter or ↓ opens, arrows move, Esc closes). In the desktop app the same list is in the native **Clusters** menu.
-- **Landing page** — the **Dashboard** (`#/cluster`) opens on start and after every cluster switch. It covers the whole cluster (every namespace):
+- **Landing page** — **Home** (`#/home`, the clusters to connect to) opens on start. The **Dashboard** (`#/cluster`) opens after every connection. It covers the whole cluster (every namespace):
   - **Top row:** nodes, CPU, memory, pods (with how many are failing) and namespaces.
   - **Health and capacity:** node health, pod health and cluster capacity. A pod counts as failing when a container is crash-looping, can't pull its image, was OOM-killed and so on, even though its phase still says "Running".
   - **Workloads:** deployments, statefulsets, daemonsets, jobs, cronjobs and services, each with how many aren't ready or have failed.

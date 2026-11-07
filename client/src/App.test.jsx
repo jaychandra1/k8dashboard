@@ -50,15 +50,38 @@ import { ToastProvider } from './components/Toast';
 
 const renderApp = () => render(<ToastProvider><App /></ToastProvider>);
 const settle = () => act(async () => { await new Promise((r) => setTimeout(r, 30)); });
+// The app opens on Home; a connection starts only from a Connect button.
+const CLUSTER_CALLS = ['/api/config/auth', '/api/namespaces', '/api/argocd/status', '/api/resources', '/api/cluster'];
+const clusterCalls = async () => {
+  const { getJson } = await import('./lib/api');
+  return getJson.mock.calls.map(([u]) => u.split('?')[0]).filter((u) => CLUSTER_CALLS.some((c) => u.startsWith(c)));
+};
+const connectFromHome = async (name = 'test-cluster') => {
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole('button', { name: 'Connect to ' + name }, { timeout: 5000 }));
+  await waitFor(() => expect(screen.getByRole('navigation', { name: 'Primary' })).toBeInTheDocument());
+  return user;
+};
+const go = (hash) => act(async () => { window.location.hash = hash; await new Promise((r) => setTimeout(r, 20)); });
 
 describe('App routing', () => {
-  beforeEach(() => { _resetHistoryIndex(); window.location.hash = ''; localStorage.clear(); });
+  beforeEach(async () => {
+    _resetHistoryIndex(); window.location.hash = ''; localStorage.clear();
+    const { getJson } = await import('./lib/api');
+    getJson.mockClear();
+  });
 
-  it('boots into the Cluster overview and navigates by changing the hash', async () => {
+  it('opens on Home without contacting any cluster; Connect opens the Dashboard; hash navigation', async () => {
     renderApp();
-    // Startup: branded loading screen until config status + auth are in.
-    expect(screen.getByRole('status')).toHaveTextContent('Getting the data');
-    await waitFor(() => expect(screen.getByRole('navigation', { name: 'Primary' })).toBeInTheDocument());
+    expect(await screen.findByRole('heading', { name: 'Welcome to K8Board' }, { timeout: 5000 })).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Clusters in your kubeconfig' })).toHaveTextContent('test-cluster');
+    expect(screen.queryByRole('navigation', { name: 'Primary' })).toBeNull();
+    await settle();
+    expect(await clusterCalls()).toEqual([]); // no sign-in, no API call, no resources
+    expect(document.title).toMatch(/^Home — K8Board$/);
+
+    await connectFromHome('test-cluster');
+    expect(await clusterCalls()).toContain('/api/config/auth');
     expect(screen.getByRole('main')).toHaveAttribute('id', 'main');
     expect(screen.getByRole('banner')).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Cluster' })).toBeInTheDocument());
@@ -78,7 +101,6 @@ describe('App routing', () => {
     expect(lead.firstElementChild).toBe(switcher.closest('.cluster-switcher'));
     expect(lead.lastElementChild).toHaveClass('topbar-hist');
     expect(nav.contains(switcher) || nav.contains(backBtn) || nav.contains(fwdBtn)).toBe(false);
-    expect(backBtn).toBeDisabled();
     expect(header.querySelector('.topbar-crumb')).toBeNull();
 
     const user = userEvent.setup();
@@ -88,17 +110,30 @@ describe('App routing', () => {
     expect(screen.getByRole('link', { name: 'Pods' })).toHaveAttribute('aria-current', 'page');
     expect(document.title).toMatch(/^Pods · all namespaces · test-cluster — K8Board$/);
 
-    // Back arrow in the top bar → previous view.
+    // Back arrow in the top bar → previous view (the Dashboard the connection landed on).
     await user.click(screen.getByRole('button', { name: 'Back' }));
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Cluster' })).toBeInTheDocument());
-    // The first entry was the bare URL (no hash) — both spellings mean the landing view.
-    expect(['', '#/cluster']).toContain(window.location.hash);
+    expect(window.location.hash).toBe('#/cluster');
     expect(screen.getByRole('button', { name: 'Forward' })).toBeEnabled();
   }, 15000);
 
-  it('old #/overview links open the Dashboard; its lists open on all namespaces; Workloads has no Overview item', async () => {
+  it('Disconnect (cluster switcher) goes back to Home', async () => {
+    renderApp();
+    const user = await connectFromHome();
+    await user.click(screen.getByRole('button', { name: /Switch cluster/ }));
+    await user.click(within(await screen.findByRole('menu', { name: 'Switch cluster' })).getByRole('menuitem', { name: 'Disconnect' }));
+    expect(await screen.findByRole('heading', { name: 'Welcome to K8Board' })).toBeInTheDocument();
+    expect(window.location.hash).toBe('#/home');
+    const { postJson } = await import('./lib/api');
+    expect(postJson).toHaveBeenCalledWith('/api/config/disconnect');
+  }, 15000);
+
+  it('a deep link opens Home first; old #/overview links go to the Dashboard; its lists open on all namespaces', async () => {
     window.location.hash = '#/overview?ns=default';
     renderApp();
+    expect(await screen.findByRole('heading', { name: 'Welcome to K8Board' }, { timeout: 5000 })).toBeInTheDocument();
+    await waitFor(() => expect(window.location.hash).toBe('#/home'));
+    await connectFromHome();
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Cluster' })).toBeInTheDocument());
     const nav = screen.getByRole('navigation', { name: 'Primary' });
     expect(within(nav).queryByRole('link', { name: 'Overview' })).toBeNull();
@@ -106,9 +141,10 @@ describe('App routing', () => {
     await waitFor(() => expect(window.location.hash).toBe('#/deployment')); // all namespaces = no ns filter
   });
 
-  it('switching cluster from the sidebar menu lands on the Cluster overview behind the branded loading screen', async () => {
-    window.location.hash = '#/pod?ns=default';
+  it('switching cluster from the switcher connects to it, with its steps over the Dashboard', async () => {
     renderApp();
+    await connectFromHome();
+    await go('#/pod?ns=default');
     await waitFor(() => expect(screen.getByTestId('rv')).toBeInTheDocument());
     const { postJson } = await import('./lib/api');
     const user = userEvent.setup();
@@ -120,16 +156,15 @@ describe('App routing', () => {
     await waitFor(() => expect(window.location.hash).toBe('#/cluster'));
     // Overlay inside <main> (sidebar + top bar stay), naming the target cluster.
     const main = screen.getByRole('main');
-    await waitFor(() => expect(within(main).getByText('Getting the data from other-cluster…')).toBeInTheDocument());
+    await waitFor(() => expect(within(main).getByRole('list', { name: 'Connection steps' })).toBeInTheDocument());
     expect(main).toHaveAttribute('aria-busy', 'true');
     expect(screen.getByRole('navigation', { name: 'Primary' })).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByText('Switched to other-cluster')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Connected to other-cluster')).toBeInTheDocument());
   }, 15000);
 
   it('"Search contexts…" and the kubepilot:open-contexts event open the searchable context picker', async () => {
     renderApp();
-    await waitFor(() => expect(screen.getByRole('navigation', { name: 'Primary' })).toBeInTheDocument());
-    const user = userEvent.setup();
+    const user = await connectFromHome();
     await user.click(screen.getByRole('button', { name: /Switch cluster/ }));
     await user.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Search contexts…' }));
     const dialog = await screen.findByRole('dialog', { name: 'Switch cluster' });
@@ -151,9 +186,10 @@ describe('App routing', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Switch cluster' })).toBeNull());
   }, 15000);
 
-  it('restores the view, namespace filter and selection from the hash', async () => {
-    window.location.hash = '#/pod/default/web-1?ns=default';
+  it('restores the view, namespace filter and selection from the hash (once connected)', async () => {
     renderApp();
+    await connectFromHome();
+    await go('#/pod/default/web-1?ns=default');
     await waitFor(() => expect(screen.getByTestId('rv')).toHaveAttribute('data-selected', 'web-1'));
     expect(screen.getByTestId('rv')).toHaveAttribute('data-count', '1');
     expect(document.title).toMatch(/^Pods · default · test-cluster — K8Board$/);
@@ -164,8 +200,9 @@ describe('App routing', () => {
   });
 
   it('routes sub-views and custom resources from params', async () => {
-    window.location.hash = '#/security/images';
     renderApp();
+    await connectFromHome();
+    await go('#/security/images');
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Security images' })).toBeInTheDocument());
     await act(async () => { window.location.hash = '#/customResources/cert-manager.io/v1/certificates/default/my-cert'; await new Promise((r) => setTimeout(r, 20)); });
     await waitFor(() => expect(screen.getByRole('heading', { name: 'CR certificates/my-cert' })).toBeInTheDocument());
@@ -175,8 +212,7 @@ describe('App routing', () => {
 
   it('opens the command palette with Ctrl+K and the shortcuts sheet with ?', async () => {
     renderApp();
-    await waitFor(() => expect(screen.getByRole('navigation', { name: 'Primary' })).toBeInTheDocument());
-    const user = userEvent.setup();
+    const user = await connectFromHome();
     await user.keyboard('{Control>}k{/Control}');
     expect(screen.getByRole('dialog', { name: 'Command palette' })).toBeInTheDocument();
     await user.keyboard('{Escape}');

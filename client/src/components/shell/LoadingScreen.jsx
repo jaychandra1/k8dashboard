@@ -15,8 +15,12 @@ export function loadingText(context) {
   return context ? `Getting the data from ${context}…` : 'Getting the data…';
 }
 
-export default function LoadingScreen({ context, label, hint, overlay = false, className = '' }) {
+// Connecting to a cluster: `steps` ([{ key, label }]) are listed with the
+// current one (`step`) marked, and `onCancel` adds a Cancel button.
+//   <LoadingScreen context="dev" label="Connecting to dev…" steps={CONNECT_STEPS} step="auth" onCancel={…} />
+export default function LoadingScreen({ context, label, hint, overlay = false, className = '', steps, step, onCancel }) {
   const text = label || loadingText(context);
+  const at = steps ? Math.max(0, steps.findIndex((s) => s.key === step)) : -1;
   return (
     <div
       className={`loading-screen ${className}`.trim()}
@@ -27,7 +31,23 @@ export default function LoadingScreen({ context, label, hint, overlay = false, c
       <img className="loading-screen-logo" src="/logo-detailed.png" alt="" width={120} height={120} decoding="async" />
       <p className="loading-screen-text">{text}</p>
       {hint && <p className="loading-screen-hint">{hint}</p>}
+      {steps && (
+        <ol className="loading-steps" aria-label="Connection steps">
+          {steps.map((s, i) => {
+            const state = i < at ? 'done' : i === at ? 'current' : 'pending';
+            return (
+              <li key={s.key} data-state={state} aria-current={state === 'current' ? 'step' : undefined}>
+                <span className="loading-step-mark" aria-hidden="true">{state === 'done' ? '✓' : ''}</span>
+                {s.label}
+              </li>
+            );
+          })}
+        </ol>
+      )}
       <div className="loading-screen-bar" aria-hidden="true"><span /></div>
+      {onCancel && (
+        <button type="button" className="ui-btn loading-cancel" data-variant="secondary" data-size="sm" onClick={onCancel}>Cancel</button>
+      )}
     </div>
   );
 }

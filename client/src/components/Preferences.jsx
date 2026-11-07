@@ -31,7 +31,7 @@ export function isHttpUrl(v) {
   try { const u = new URL(String(v || '').trim()); return u.protocol === 'http:' || u.protocol === 'https:'; } catch { return false; }
 }
 
-export default function Preferences({ configStatus, theme, onSetTheme, onChangeConfig, onAddAzure, onAddAws, onRemoveCluster, section: routeSection, onSectionChange, onClose }) {
+export default function Preferences({ configStatus, theme, onSetTheme, onChangeConfig, onAddAzure, onAddAws, onRemoveCluster, onSetAutoConnect, section: routeSection, onSectionChange, onClose }) {
   const section = SECTIONS.some((s) => s.key === routeSection) ? routeSection : 'general';
 
   // Esc closes the page (when no dialog/menu is open above it).
@@ -62,7 +62,7 @@ export default function Preferences({ configStatus, theme, onSetTheme, onChangeC
         {onClose && (
           <Button variant="secondary" size="sm" iconOnly icon="close" iconSize={18} ariaLabel="Close preferences (Esc)" className="prefs-close" onClick={onClose} />
         )}
-        {section === 'general' && <GeneralSection theme={theme} onSetTheme={onSetTheme} />}
+        {section === 'general' && <GeneralSection theme={theme} onSetTheme={onSetTheme} autoConnect={!!configStatus?.autoConnect} onSetAutoConnect={onSetAutoConnect} />}
         {section === 'kubernetes' && <KubernetesSection configStatus={configStatus} onChangeConfig={onChangeConfig} onRemoveCluster={onRemoveCluster} />}
         {section === 'integrations' && <IntegrationsSection onAddAzure={onAddAzure} onAddAws={onAddAws} />}
         {section === 'external-tools' && <ExternalToolsSection />}
@@ -75,7 +75,7 @@ export default function Preferences({ configStatus, theme, onSetTheme, onChangeC
 }
 
 /* ── General ─────────────────────────────────────────────────────── */
-function GeneralSection({ theme, onSetTheme }) {
+function GeneralSection({ theme, onSetTheme, autoConnect = false, onSetAutoConnect }) {
   const id = useId();
   const opts = [{ k: 'system', label: 'System', icon: 'monitor' }, { k: 'dark', label: 'Dark', icon: 'moon' }, { k: 'light', label: 'Light', icon: 'sun' }];
   return (
@@ -90,6 +90,14 @@ function GeneralSection({ theme, onSetTheme }) {
           ))}
         </div>
       </Field>
+      {onSetAutoConnect && (
+        <Field label="Startup" hint="K8Board opens on Home and contacts no cluster until you click Connect. Turn this on to connect to the last cluster you used as soon as it starts.">
+          <label className="prefs-check">
+            <input type="checkbox" checked={autoConnect} onChange={(e) => onSetAutoConnect(e.target.checked)} />
+            Connect to the last cluster at startup
+          </label>
+        </Field>
+      )}
     </div>
   );
 }

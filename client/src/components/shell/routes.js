@@ -1,6 +1,7 @@
 // Route grammar helpers for the hash router (see hooks/useHashRoute.js).
 //
-//   #/cluster                                                 default / landing view (DEFAULT_VIEW)
+//   #/home                                                    default / landing view (DEFAULT_VIEW): the clusters to connect to
+//   #/cluster                                                 the Dashboard (where a connection lands)
 //   #/overview                                                → the Dashboard (#/cluster), for old links
 //   #/<resourceKey>[/<namespace|->/<name>]?ns=a,b&q=text     resource list (+ drawer)
 //   #/nodes[/<nodeName>]

@@ -285,7 +285,7 @@ const agentView = (req, resource, kind) => {
 // imports, the assistant (its LLM key and spend), security scans, external
 // terminals, app settings and updates.
 const UI_ONLY_PREFIXES = [
-  '/api/mcp', '/api/config/load', '/api/config/reload', '/api/config/contexts', '/api/azure', '/api/aws', '/api/assistant',
+  '/api/mcp', '/api/config/load', '/api/config/reload', '/api/config/contexts', '/api/config/disconnect', '/api/azure', '/api/aws', '/api/assistant',
   '/api/security/scan', '/api/ai-agents/launch-external', '/api/app', '/api/settings',
 ];
 app.use(UI_ONLY_PREFIXES, (req, res, next) => (isMcpSource(req)
@@ -308,7 +308,8 @@ app.use((req, res, next) => {
   // Real config handlers stay in charge (they are demo-aware).
   if (p === '/api/config/status' || p === '/api/config/context' ||
       p === '/api/config/load' || p === '/api/config/reload' || p === '/api/config/capabilities' ||
-      p === '/api/settings/pins' || p.startsWith('/api/config/contexts/')) return next();
+      p === '/api/settings/pins' || p === '/api/settings/startup' || p === '/api/config/disconnect' ||
+      p.startsWith('/api/config/contexts/')) return next();
   // Auth always "passes" in demo.
   if (p === '/api/config/auth') return res.json({ ok: true, currentContext: demo.DEMO_CONTEXT });
   // Assistant: report enabled + stream canned answers (no LLM required).
@@ -495,12 +496,14 @@ const SETTINGS_FILE = findConfigFile('settings.json');
 function readSettings() {
   try { return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8')); } catch { return {}; }
 }
+// Written to a temporary file and renamed over the old one (writePrivateFile),
+// so a crash mid-write never leaves a half-written settings.json — the pins,
+// the MCP switches and Home's recent clusters (written on every connection).
 function writeSettings(patch) {
   const next = { ...readSettings(), ...patch };
   try {
-    const dest = configFile('settings.json');
     fs.mkdirSync(CONFIG_DIR, { recursive: true });
-    fs.writeFileSync(dest, JSON.stringify(next, null, 2), { mode: 0o600 });
+    writePrivateFile(configFile('settings.json'), JSON.stringify(next, null, 2));
   } catch (e) { /* best-effort */ }
   return next;
 }
@@ -582,6 +585,75 @@ const readPins = () => {
   const s = readSettings();
   return Array.isArray(s.pins) ? [...new Set(s.pins.filter(isContextName))].slice(0, MAX_PINS) : [];
 };
+// ---- Connection: the user's explicit Connect ---------------------------------
+// Startup connects to nothing: the UI opens on its Home page and signs in only
+// when the user picks a cluster (POST /api/config/context, then GET
+// /api/config/auth). A passing auth check marks that cluster connected and
+// remembers it (Home's "last connected" and recent clusters); Disconnect
+// forgets the connection. Background work for a cluster (session renewal) runs
+// only while it is connected. MCP clients still reach the selected cluster
+// when they ask (an explicit request, not startup activity).
+let connectedContext = null;
+const RECENT_MAX = 8;
+const recentContexts = () => {
+  const s = readSettings();
+  return Array.isArray(s.recentContexts)
+    ? s.recentContexts.filter((r) => r && isContextName(r.name) && Number.isFinite(r.at)).slice(0, RECENT_MAX)
+    : [];
+};
+function markConnected(context) {
+  connectedContext = context || null;
+  if (!context || (DEMO_ENABLED && demo.isDemo(context))) return;
+  const recent = [{ name: context, at: Date.now() }, ...recentContexts().filter((r) => r.name !== context)].slice(0, RECENT_MAX);
+  writeSettings({ recentContexts: recent, lastContext: context });
+}
+function forgetRecent(context) {
+  const recent = recentContexts();
+  const s = readSettings();
+  if (!recent.some((r) => r.name === context) && s.lastContext !== context) return;
+  const left = recent.filter((r) => r.name !== context);
+  writeSettings({ recentContexts: left, lastContext: s.lastContext === context ? (left[0]?.name || null) : s.lastContext });
+}
+const isConnected = () => !!connectedContext && connectedContext === currentContext;
+
+app.post('/api/config/disconnect', (req, res) => {
+  connectedContext = null;
+  execGate.stopAll(); // a sign-in still running (Cancel) stops here
+  execGate.clear();
+  forgetClusterCredentials();
+  cache.clear();
+  res.json({ ok: true, connected: false });
+});
+
+// "Connect to the last cluster at startup" (Preferences → General; off by default).
+app.put('/api/settings/startup', mcpWriteGate, (req, res) => {
+  const { autoConnect } = req.body || {};
+  if (typeof autoConnect !== 'boolean') return bad(res, 'autoConnect');
+  writeSettings({ autoConnect });
+  res.json({ autoConnect });
+});
+
+// What Home can say about a cluster's sign-in without any network call: AWS
+// IAM Identity Center profiles only, from the local token cache.
+function localSignInHints(kc, names) {
+  const out = new Map();
+  try {
+    const text = readAwsConfigText();
+    const tokens = new Map();
+    for (const name of names) {
+      const profile = eksEntryForKc(kc, name)?.profile;
+      const info = profile ? profileSsoInfo(text, profile) : null;
+      if (!info?.startUrl) continue;
+      const key = info.sessionName || info.startUrl;
+      if (!tokens.has(key)) tokens.set(key, sessionTokenState(key));
+      const t = tokens.get(key);
+      const state = t.signedIn ? 'signed-in' : t.refreshable ? 'renewable' : t.expiresAt ? 'expired' : 'signed-out';
+      out.set(name, { kind: 'aws', state, production: isProductionSession(info.sessionName) });
+    }
+  } catch { /* hints are optional */ }
+  return out;
+}
+
 app.get('/api/settings/pins', (req, res) => {
   res.json({ pins: readPins() });
 });
@@ -610,9 +682,11 @@ app.get('/api/config/status', (req, res) => {
   let contexts = [], contextsInfo = [], clusters = [];
   if (kubeConfig) {
     const clusterByName = new Map(kubeConfig.clusters.map((c) => [c.name, c]));
+    const hints = localSignInHints(kubeConfig, kubeConfig.contexts.map((c) => c.name));
     contextsInfo = kubeConfig.contexts.map((c) => {
       const cl = clusterByName.get(c.cluster);
-      return { name: c.name, cluster: c.cluster, provider: providerOf(cl?.server) };
+      const signIn = hints.get(c.name);
+      return { name: c.name, cluster: c.cluster, provider: providerOf(cl?.server), ...(signIn ? { signIn } : {}) };
     });
     contexts = kubeConfig.contexts.map((c) => c.name);
     clusters = kubeConfig.clusters.map((c) => c.name);
@@ -628,9 +702,20 @@ app.get('/api/config/status', (req, res) => {
   }
 
   const inDemo = demoActive();
+  // Home: recent clusters still in the kubeconfig, newest first.
+  const settings = readSettings();
+  const known = new Set(contexts);
+  const recent = recentContexts().filter((r) => known.has(r.name));
+  const home = {
+    connected: inDemo || isConnected(),
+    lastConnected: known.has(settings.lastContext) ? settings.lastContext : (recent[0]?.name || null),
+    recent,
+    autoConnect: settings.autoConnect === true,
+  };
   if (!kubeConfig && !inDemo) {
     const attemptedPath = getKubeConfigPath();
     return res.json({
+      ...home,
       loaded: false,
       demoAvailable: DEMO_ENABLED,
       contexts,
@@ -641,6 +726,7 @@ app.get('/api/config/status', (req, res) => {
   }
 
   res.json({
+    ...home,
     loaded: true,
     demoAvailable: DEMO_ENABLED,
     currentContext: inDemo ? demo.DEMO_CONTEXT : currentContext,
@@ -714,6 +800,7 @@ app.post('/api/config/context', mcpWriteGate, (req, res) => {
       return res.status(409).json({ error: `A real kubeconfig context is named "${contextName}"; the built-in demo cluster is unavailable while it exists.`, code: 'demo_name_collision' });
     }
     currentContext = demo.DEMO_CONTEXT;
+    connectedContext = null;
     cache.clear();
     return res.json({ success: true, currentContext });
   }
@@ -734,6 +821,8 @@ app.post('/api/config/context', mcpWriteGate, (req, res) => {
     // kubeConfig.makeApiClient(), so subsequent requests use the new context.
     kubeConfig.setCurrentContext(contextName);
     currentContext = kubeConfig.getCurrentContext();
+    // Selected, not yet connected: that happens when its auth check passes.
+    if (connectedContext !== currentContext) connectedContext = null;
 
     // Drop everything cached against the previous cluster so the UI doesn't show
     // stale data (namespaces, resources, storage, rbac, …) after the switch.
@@ -846,6 +935,7 @@ app.post('/api/config/contexts/remove', async (req, res) => {
 
     const pins = readPins();
     if (pins.includes(context)) writeSettings({ pins: pins.filter((p) => p !== context) });
+    forgetRecent(context);
 
     // The live config: reload, and keep (or move) the selected cluster.
     if (staying.length === 0) {
@@ -1165,7 +1255,8 @@ async function keepAwsSessionsFresh(profiles = currentEksProfiles(), { blockWhen
     }
   }
 }
-const awsKeeper = setInterval(() => { keepAwsSessionsFresh(undefined, { blockWhenEnded: true }).catch(() => {}); }, 5 * 60 * 1000);
+// Only while a cluster is connected: nothing runs for a cluster the user hasn't opened.
+const awsKeeper = setInterval(() => { if (isConnected()) keepAwsSessionsFresh(undefined, { blockWhenEnded: true }).catch(() => {}); }, 5 * 60 * 1000);
 awsKeeper.unref();
 
 // What the "AWS session expired" dialog needs to sign the current context's
@@ -1693,6 +1784,7 @@ const checkClusterAuth = async () => {
     const core = kubeConfig.makeApiClient(k8s.CoreV1Api);
     // Lightweight authenticated request (limit=1). 200 ⇒ authenticated + reachable.
     await core.listNamespace({ limit: 1 });
+    markConnected(currentContext);
     return { ok: true, authenticated: true, reachable: true, currentContext, server };
   } catch (error) {
     let exec = null;
@@ -1707,6 +1799,7 @@ const checkClusterAuth = async () => {
         classified = classifyClusterError(error, { exec, repaired: true });
       }
     }
+    if (classified.ok) markConnected(currentContext); // authenticated with limited RBAC
     if (classified.reason === 'sso-expired') {
       const aws = awsSignInInfo();
       if (aws) classified = { ...classified, aws };

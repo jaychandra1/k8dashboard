@@ -1,6 +1,6 @@
 {
   "name": "kubepilot",
-  "version": "1.8.1",
+  "version": "1.8.2",
   "description": "A native desktop UI for browsing and operating Kubernetes clusters",
   "author": {
     "name": "K8Board Program",
@@ -31,7 +31,7 @@
     "dist": "npm run build && electron-builder --publish never",
     "mcp": "node mcp-stdio.js",
     "dist:bundled-trivy": "npm run fetch:trivy && npm run build && electron-builder --publish never -c.extraResources.from=bin -c.extraResources.to=bin -c.extraResources.filter=trivy*",
-    "dist:store": "npm run build && electron-builder --win appx --publish never"
+    "dist:store": "npm run build && node scripts/store-identity.mjs --win appx --publish never"
   },
   "overrides": {
     "qs": "^6.17.1",
@@ -147,7 +147,7 @@
     "appx": {
       "identityName": "K8Board.Desktop",
       "publisher": "CN=K8Board",
-      "publisherDisplayName": "JDG Initiates",
+      "publisherDisplayName": "K8Board Program",
       "applicationId": "K8Board",
       "displayName": "K8Board",
       "backgroundColor": "#0b1220",
