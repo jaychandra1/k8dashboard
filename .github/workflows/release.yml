@@ -216,14 +216,15 @@ jobs:
         # Builds the client, then electron-builder for the host OS with
         # --publish never (Windows: the NSIS installer and the Microsoft Store
         # MSIX); the release and store jobs below publish. The Store identity
-        # comes from repository variables (never stored in the repository;
-        # scripts/store-identity.mjs); without them the MSIX keeps placeholders
-        # and the store job refuses it. No GitHub token is exposed here.
+        # (name, publisher) comes from repository variables (never stored in
+        # the repository; scripts/store-identity.mjs), the publisher display
+        # name from package.json; without the variables the MSIX keeps
+        # placeholders and the store job refuses it. No GitHub token is
+        # exposed here.
         shell: bash
         env:
           MS_STORE_IDENTITY_NAME: ${{ vars.MS_STORE_IDENTITY_NAME }}
           MS_STORE_PUBLISHER: ${{ vars.MS_STORE_PUBLISHER }}
-          MS_STORE_PUBLISHER_DISPLAY_NAME: ${{ vars.MS_STORE_PUBLISHER_DISPLAY_NAME }}
         run: |
           npm run build
           node scripts/store-identity.mjs --allow-placeholder --publish never
@@ -703,11 +704,10 @@ jobs:
         env:
           MS_STORE_IDENTITY_NAME: ${{ vars.MS_STORE_IDENTITY_NAME }}
           MS_STORE_PUBLISHER: ${{ vars.MS_STORE_PUBLISHER }}
-          MS_STORE_PUBLISHER_DISPLAY_NAME: ${{ vars.MS_STORE_PUBLISHER_DISPLAY_NAME }}
         run: |
-          foreach ($name in 'MS_STORE_IDENTITY_NAME', 'MS_STORE_PUBLISHER', 'MS_STORE_PUBLISHER_DISPLAY_NAME') {
+          foreach ($name in 'MS_STORE_IDENTITY_NAME', 'MS_STORE_PUBLISHER') {
             if (-not [Environment]::GetEnvironmentVariable($name)) {
-              Write-Output "::error::Repository variable $name is not set. Copy Package/Identity/Name, Package/Identity/Publisher and Package/Properties/PublisherDisplayName from Partner Center (Product management -> Product identity) into MS_STORE_IDENTITY_NAME, MS_STORE_PUBLISHER and MS_STORE_PUBLISHER_DISPLAY_NAME (Settings -> Secrets and variables -> Actions -> Variables)."
+              Write-Output "::error::Repository variable $name is not set. Copy Package/Identity/Name and Package/Identity/Publisher from Partner Center (Product management -> Product identity) into MS_STORE_IDENTITY_NAME and MS_STORE_PUBLISHER (Settings -> Secrets and variables -> Actions -> Variables)."
               exit 1
             }
           }
@@ -752,6 +752,12 @@ jobs:
           $identity = $manifest.Package.Identity
           if ($identity.Name -ne $env:MS_STORE_IDENTITY_NAME -or $identity.Publisher -ne $env:MS_STORE_PUBLISHER) {
             Write-Output "::error::The MSIX carries the identity $($identity.Name) / $($identity.Publisher), not the one in the repository variables: it was built before they were set. Run the release again."
+            exit 1
+          }
+          # Partner Center also rejects a publisher display name other than the account's.
+          $displayName = (Get-Content package.json -Raw | ConvertFrom-Json).build.appx.publisherDisplayName
+          if ($manifest.Package.Properties.PublisherDisplayName -ne $displayName) {
+            Write-Output "::error::The MSIX's publisher display name is '$($manifest.Package.Properties.PublisherDisplayName)', not '$displayName' (package.json build.appx.publisherDisplayName). Run the release again."
             exit 1
           }
           msstore publish $pkg.FullName -id $env:PRODUCT_ID

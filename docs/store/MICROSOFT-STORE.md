@@ -17,19 +17,19 @@ The release workflow builds both on every tagged release. The `.msix` is uploade
 
 1. **Developer account.** Sign up at <https://storedeveloper.microsoft.com> as an individual developer. Registration is free; Microsoft verifies your identity with an ID document and a selfie.
 2. **Reserve the name.** Partner Center → **Apps and games** → **New product** → **MSIX or PWA app** → reserve **K8Board** (or the name you want to show).
-3. **Give the build the package identity — not the repository.** Partner Center → the product → **Product management → Product identity** shows three values. They are never committed: `package.json` keeps placeholders, and builds read the real values from variables (`scripts/store-identity.mjs`).
+3. **Give the build the package identity — not the repository.** Partner Center → the product → **Product management → Product identity** shows three values. The first two are never committed: `package.json` keeps placeholders, and builds read the real values from variables (`scripts/store-identity.mjs`), refusing a placeholder.
 
-   | Partner Center field | Variable | Placeholder in `package.json` |
+   | Partner Center field | Where it comes from | In `package.json` |
    |---|---|---|
-   | Package/Identity/Name | `MS_STORE_IDENTITY_NAME` | `K8Board.Desktop` |
-   | Package/Identity/Publisher | `MS_STORE_PUBLISHER` | `CN=K8Board` |
-   | Package/Properties/PublisherDisplayName | `MS_STORE_PUBLISHER_DISPLAY_NAME` | `K8Board Program` |
+   | Package/Identity/Name | variable `MS_STORE_IDENTITY_NAME` | placeholder `K8Board.Desktop` |
+   | Package/Identity/Publisher | variable `MS_STORE_PUBLISHER` | placeholder `CN=K8Board` |
+   | Package/Properties/PublisherDisplayName | `package.json` | `JDG Initiates` (the account's publisher display name) |
 
-   **For release builds:** add them as repository variables (GitHub → Settings → Secrets and variables → Actions → **Variables**).
+   **For release builds:** add the two variables as repository variables (GitHub → Settings → Secrets and variables → Actions → **Variables**). `MS_STORE_PUBLISHER_DISPLAY_NAME` is no longer read; delete it if it's set.
 
    **For a local build:** set them as environment variables first.
 
-   The `store` job refuses to submit without them, and checks that the built MSIX carries them. Partner Center rejects a package whose identity doesn't match these values exactly. Note the **Store ID** shown on the same page (it looks like `9NXXXXXXXXXX`); you'll need it in step 4.
+   The `store` job refuses to submit without them, and checks that the built MSIX carries them and the display name. Partner Center rejects a package whose identity or display name doesn't match exactly. If your Partner Center publisher display name changes, update `build.appx.publisherDisplayName`. Note the **Store ID** shown on the same page (it looks like `9NXXXXXXXXXX`); you'll need it in step 4.
 
 ## 2. First submission (by hand — Microsoft requires it)
 
@@ -120,7 +120,7 @@ An unsigned `.msix` installs only on a machine in Developer Mode. These steps ch
 
 **Search terms:** Kubernetes, kubectl, EKS, AKS, Helm, Argo CD, DevOps
 
-**Copyright:** © 2026 K8Board contributors · MIT License
+**Copyright:** © 2026 JDG Initiates · MIT License
 
 **What's new in this version:** copy the release's section from `CHANGELOG.md`.
 

@@ -293,7 +293,11 @@ A development build (`npm run app`), an unpacked copy (`release/win-unpacked`), 
 
 **One sign-in, several clusters.** IAM Identity Center signs you in once per access portal (start URL), and that one sign-in reaches every account and role you're assigned. So clusters whose AWS profiles use the same portal share a sign-in: signing in for a dev cluster also gives access to a prod cluster in another account. Preferences → Cloud Integrations → *AWS sign-ins* lists which clusters each sign-in covers. The "session expired" dialog doesn't name other clusters; a production cluster shows a **Production** tag there.
 
-**Production clusters and signing out** (Preferences → Cloud Integrations → *AWS sign-ins*). Each sign-in is listed with its status and the clusters it covers (account IDs and the portal address are masked).
+**Production clusters and signing out** (Preferences → Cloud Integrations → *AWS sign-ins*). Each sign-in is listed with its status and the clusters it covers (account IDs and the portal address are masked). The status is one of:
+- *Signed in until …*
+- *Renews when you open one of its clusters*: the hour-long token has run out, but a renewal token is stored. K8Board doesn't renew it until you open one of its clusters, so whether AWS still accepts it is only known then.
+- *Expired — sign in when you open one of its clusters*: AWS refused the renewal (your IAM Identity Center session ended), or the renewal token's registration has run out.
+- *Signed out*: no token is stored.
 
 - **Production** gives a cluster a sign-in of its own: its AWS profile moves to a separate `[sso-session <name>-production]` with its own token. Signing in for other clusters then never reaches it, and it asks you to sign in the next time you open it. Other clusters on the same AWS profile (same account and role) move with it. Untick it to go back to the shared sign-in; the separate sign-in is then removed.
 - **Sign out** removes that sign-in's stored token from this computer, so its clusters ask you to sign in again. If you're on one of them, its sign-in dialog opens straight away. It doesn't end your browser's AWS access portal session or sign-ins on other machines.

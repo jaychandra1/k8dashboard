@@ -23,9 +23,13 @@ const hostOf = (url) => {
 };
 const listOf = (names) => (names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`);
 
+// `refreshable` is a local guess (a refresh token is stored). Once AWS has
+// refused to renew it (`renewalRefused`), the Identity Center session is over
+// and opening a cluster asks for a sign-in instead.
 export function signInStatus(g) {
   if (g.signedIn) return { tone: 'ok', text: `Signed in until ${hhmm(g.expiresAt)}` };
   if (g.refreshable) return { tone: 'muted', text: 'Renews when you open one of its clusters' };
+  if (g.expiresAt) return { tone: 'warn', text: 'Expired — sign in when you open one of its clusters' };
   return { tone: 'warn', text: 'Signed out' };
 }
 
@@ -40,7 +44,8 @@ function SignInCard({ g, onAsk }) {
           <span className="awsi-sub">{hostOf(g.startUrl)}{g.legacy ? ' · older profile format' : ''}</span>
         </div>
         <Badge tone={st.tone} size="sm">{st.text}</Badge>
-        <Button variant="secondary" size="sm" disabled={!g.signedIn && !g.refreshable} onClick={() => onAsk({ kind: 'signOut', group: g })}>
+        {/* Enabled while a token (even an expired one) is stored on this computer. */}
+        <Button variant="secondary" size="sm" disabled={!g.expiresAt} onClick={() => onAsk({ kind: 'signOut', group: g })}>
           Sign out
         </Button>
       </div>

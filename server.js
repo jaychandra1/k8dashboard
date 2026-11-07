@@ -1320,7 +1320,8 @@ function awsSignIns(text = readAwsConfigText()) {
       const tok = sessionTokenState(info.sessionName || info.startUrl);
       groups.set(id, {
         id, sessionName: info.sessionName, legacy: !info.sessionName, production: isProductionSession(info.sessionName),
-        startUrl: info.startUrl, signedIn: tok.signedIn, expiresAt: tok.expiresAt, refreshable: tok.refreshable, clusters: [],
+        startUrl: info.startUrl, signedIn: tok.signedIn, expiresAt: tok.expiresAt, refreshable: tok.refreshable,
+        renewalRefused: tok.renewalRefused, clusters: [],
       });
     }
     groups.get(id).clusters.push({ context: c.name, current: c.name === currentContext, profile, accountId: info.accountId || null, roleName: info.roleName || null });

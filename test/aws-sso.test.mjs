@@ -577,7 +577,19 @@ describe('storing a sign-in, renewing it, and the AWS SDK reading it', () => {
         expiresAt: new Date(Date.now() - 1000).toISOString(),
       })
     );
+    assert.equal(sessionTokenState('kubepilot-d-906600a9b0').refreshable, true, 'a stored refresh token looks renewable until tried');
     assert.equal((await refreshSsoToken('kubepilot-d-906600a9b0', { oidc })).status, 'expired');
+    // The refusal is remembered: the sign-in is shown as over, not "renews when opened".
+    assert.deepEqual(
+      [sessionTokenState('kubepilot-d-906600a9b0').refreshable, sessionTokenState('kubepilot-d-906600a9b0').renewalRefused],
+      [false, true]
+    );
+    // A new sign-in writes a new token, which is renewable again.
+    adoptSsoLogin(result, { profile: 'sso-241533118296' });
+    assert.deepEqual(
+      [sessionTokenState('kubepilot-d-906600a9b0').refreshable, sessionTokenState('kubepilot-d-906600a9b0').renewalRefused],
+      [true, false]
+    );
     assert.equal((await refreshSsoToken('nope', { oidc })).status, 'missing');
     fs.writeFileSync(
       cacheFile('legacy'),
@@ -586,6 +598,20 @@ describe('storing a sign-in, renewing it, and the AWS SDK reading it', () => {
       )
     );
     assert.equal((await refreshSsoToken('legacy', { oidc })).status, 'no-refresh');
+  });
+
+  test('a token whose client registration has run out is not renewable, without asking AWS', async () => {
+    adoptSsoLogin(result, { profile: 'sso-241533118296' });
+    const tok = readCache('kubepilot-d-906600a9b0');
+    fs.writeFileSync(cacheFile('kubepilot-d-906600a9b0'), JSON.stringify({
+      ...tok, expiresAt: new Date(Date.now() - 1000).toISOString(), registrationExpiresAt: new Date(Date.now() - 1000).toISOString(),
+    }));
+    assert.deepEqual(sessionTokenState('kubepilot-d-906600a9b0'), {
+      signedIn: false, expiresAt: readCache('kubepilot-d-906600a9b0').expiresAt, refreshable: false, renewalRefused: true,
+    });
+    const oidc = fakeOidc({ CreateTokenCommand: () => { throw new Error('not called'); } });
+    assert.equal((await refreshSsoToken('kubepilot-d-906600a9b0', { oidc })).status, 'expired');
+    assert.equal(oidc.calls.length, 0);
   });
 
   test('the AWS SDK reads our session and renews it itself (sso-session format compatibility)', async () => {

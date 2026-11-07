@@ -1,32 +1,39 @@
-// The Microsoft Store identity comes from the environment (repository
-// variables in CI), never from the repository: scripts/store-identity.mjs.
+// The Microsoft Store identity (name, publisher) comes from the environment
+// (repository variables in CI), never from the repository; the publisher
+// display name is in package.json: scripts/store-identity.mjs.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { storeIdentity, identityArgs, STORE_ENV } from '../scripts/store-identity.mjs';
+import { storeIdentity, identityArgs, appxConfig, STORE_ENV, RETIRED_DISPLAY_NAME_ENV } from '../scripts/store-identity.mjs';
 import { ROOT_DIR } from '../lib/paths.mjs';
 
-const FULL = { MS_STORE_IDENTITY_NAME: 'Example.App', MS_STORE_PUBLISHER: 'CN=00000000-0000-0000-0000-000000000000', MS_STORE_PUBLISHER_DISPLAY_NAME: 'Example Publisher' };
+const FULL = { MS_STORE_IDENTITY_NAME: 'Example.App', MS_STORE_PUBLISHER: 'CN=00000000-0000-0000-0000-000000000000' };
 
-test('all three values, none, or a clear error', () => {
+test('both values, none, or a clear error', () => {
   assert.equal(storeIdentity({}), null);
-  assert.deepEqual(storeIdentity(FULL), { identityName: 'Example.App', publisher: FULL.MS_STORE_PUBLISHER, publisherDisplayName: 'Example Publisher' });
+  assert.deepEqual(storeIdentity(FULL), { identityName: 'Example.App', publisher: FULL.MS_STORE_PUBLISHER });
   assert.throws(() => storeIdentity({ MS_STORE_IDENTITY_NAME: 'Example.App' }), /all of/);
   assert.throws(() => storeIdentity({ ...FULL, MS_STORE_PUBLISHER: '2A0B-not-a-cn' }), /CN=/);
   assert.throws(() => storeIdentity({ ...FULL, MS_STORE_IDENTITY_NAME: 'has spaces' }), /identity name/);
+  assert.equal(storeIdentity({ [RETIRED_DISPLAY_NAME_ENV]: 'Someone' }), null, 'the display name is not read from the environment');
+});
+
+test("package.json's placeholders are refused as values", () => {
+  const appx = appxConfig();
+  assert.throws(() => storeIdentity({ ...FULL, MS_STORE_IDENTITY_NAME: appx.identityName }), /placeholder from package\.json/);
+  assert.throws(() => storeIdentity({ ...FULL, MS_STORE_PUBLISHER: appx.publisher }), /placeholder from package\.json/);
 });
 
 test('passed to electron-builder as overrides of the package.json placeholders', () => {
   assert.deepEqual(identityArgs(storeIdentity(FULL)), [
     '-c.appx.identityName=Example.App',
     `-c.appx.publisher=${FULL.MS_STORE_PUBLISHER}`,
-    '-c.appx.publisherDisplayName=Example Publisher',
   ]);
   assert.deepEqual(identityArgs(null), []);
-  const appx = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'package.json'), 'utf8')).build.appx;
-  assert.deepEqual([appx.identityName, appx.publisher, appx.publisherDisplayName], ['K8Board.Desktop', 'CN=K8Board', 'K8Board Program'], 'only placeholders in the repository');
+  const appx = appxConfig(ROOT_DIR);
+  assert.deepEqual([appx.identityName, appx.publisher], ['K8Board.Desktop', 'CN=K8Board'], 'only placeholders for the identity in the repository');
+  assert.equal(appx.publisherDisplayName, 'JDG Initiates', "the Partner Center account's publisher display name");
 });
 
 test('a Store build without the identity refuses to run', () => {

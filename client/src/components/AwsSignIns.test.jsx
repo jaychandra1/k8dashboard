@@ -110,7 +110,24 @@ describe('AwsSignIns', () => {
   });
 
   it('status text', () => {
-    expect(signInStatus({ signedIn: false, refreshable: true }).text).toMatch(/Renews when you open/);
-    expect(signInStatus({ signedIn: false, refreshable: false })).toEqual({ tone: 'warn', text: 'Signed out' });
+    const past = new Date(Date.now() - 60_000).toISOString();
+    expect(signInStatus({ signedIn: false, expiresAt: past, refreshable: true }).text).toMatch(/Renews when you open/);
+    // AWS refused the renewal: the sign-in is over, whatever refresh token is still stored.
+    expect(signInStatus({ signedIn: false, expiresAt: past, refreshable: false, renewalRefused: true }))
+      .toEqual({ tone: 'warn', text: 'Expired — sign in when you open one of its clusters' });
+    expect(signInStatus({ signedIn: false, expiresAt: null, refreshable: false })).toEqual({ tone: 'warn', text: 'Signed out' });
+  });
+
+  it('an expired sign-in can still be signed out (its token is on this computer); none stored, nothing to sign out', async () => {
+    const past = new Date(Date.now() - 60_000).toISOString();
+    getJson.mockResolvedValue({ signIns: [{ ...SHARED, signedIn: false, expiresAt: past, refreshable: false, renewalRefused: true }], legacyProfiles: [] });
+    const { unmount } = render(<AwsSignIns />);
+    expect(await screen.findByText('Expired — sign in when you open one of its clusters', {}, SLOW)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeEnabled();
+    unmount();
+    getJson.mockResolvedValue({ signIns: [{ ...SHARED, signedIn: false, expiresAt: null, refreshable: false }], legacyProfiles: [] });
+    render(<AwsSignIns />);
+    expect(await screen.findByText('Signed out', {}, SLOW)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeDisabled();
   });
 });

@@ -3,7 +3,7 @@
 Everything Partner Center asks for, in the order it asks, ready to paste. Written for **K8Board 1.7.9** (MSIX, x64), English (United States) listing. Requirements checked against Microsoft Learn's Partner Center pages for MSIX apps (November 2026).
 
 **Fill in yourself** (marked ✏️ below):
-- Partner Center's package identity, copied into `package.json` before you build the MSIX.
+- Partner Center's package identity, set as variables before you build the MSIX.
 - Markets.
 - The support contact, if you don't want the address below.
 - Your phone number and address, if Partner Center asks for them.
@@ -11,12 +11,11 @@ Everything Partner Center asks for, in the order it asks, ready to paste. Writte
 
 ## 0. Before you start: the package
 
-1. ✏️ **Package identity — set as variables, never committed.** Go to Partner Center → your app → **Product management → Product identity**. Add the three values as GitHub repository variables (Settings → Secrets and variables → Actions → **Variables**). For a local build, set them as environment variables instead.
+1. ✏️ **Package identity — set as variables, never committed.** Go to Partner Center → your app → **Product management → Product identity**. Add two of its values as GitHub repository variables (Settings → Secrets and variables → Actions → **Variables**). For a local build, set them as environment variables instead.
    - `Package/Identity/Name` → `MS_STORE_IDENTITY_NAME`
    - `Package/Identity/Publisher` → `MS_STORE_PUBLISHER`
-   - `Package/Properties/PublisherDisplayName` → `MS_STORE_PUBLISHER_DISPLAY_NAME`
 
-   `package.json` keeps placeholders. The build passes the variables to electron-builder (`scripts/store-identity.mjs`). Partner Center rejects a package whose identity doesn't match exactly.
+   `package.json` keeps placeholders for these two, and the build passes the variables to electron-builder (`scripts/store-identity.mjs`). The third value, `Package/Properties/PublisherDisplayName`, is the account's public publisher name, **JDG Initiates**; it's in `package.json` (`build.appx.publisherDisplayName`). Partner Center rejects a package whose identity or display name doesn't match exactly.
 2. **Build the MSIX after setting them.** Get it either way:
    - Tag a release, then download the **`store-k8board-windows`** artifact from the **Build & Release** run's summary page. It's a zip containing `K8Board-windows-store.msix`, kept for 30 days.
    - Or run `npm run dist:store` on Windows; it writes `release/K8Board-windows-store.msix`.

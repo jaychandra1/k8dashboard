@@ -3,7 +3,7 @@
   "version": "1.8.3",
   "description": "A native desktop UI for browsing and operating Kubernetes clusters",
   "author": {
-    "name": "K8Board Program",
+    "name": "JDG Initiates",
     "email": "kubepilot.dashboard@gmail.com"
   },
   "license": "MIT",
@@ -126,8 +126,8 @@
       "icon": "build/icon.png",
       "synopsis": "A desktop UI for browsing and operating Kubernetes clusters",
       "description": "K8Board is a native desktop app for browsing and operating any Kubernetes cluster from your local kubeconfig — live dashboards, logs, an in-pod shell, topology, Helm, Argo CD, a Security Center and one-click EKS/AKS onboarding.",
-      "maintainer": "K8Board Program <kubepilot.dashboard@gmail.com>",
-      "vendor": "K8Board Program",
+      "maintainer": "JDG Initiates <kubepilot.dashboard@gmail.com>",
+      "vendor": "JDG Initiates",
       "syncDesktopName": true,
       "artifactName": "${productName}-linux.${ext}",
       "target": [
@@ -147,7 +147,7 @@
     "appx": {
       "identityName": "K8Board.Desktop",
       "publisher": "CN=K8Board",
-      "publisherDisplayName": "K8Board Program",
+      "publisherDisplayName": "JDG Initiates",
       "applicationId": "K8Board",
       "displayName": "K8Board",
       "backgroundColor": "#0b1220",
