@@ -98,15 +98,26 @@ describe('createExecGate', () => {
 });
 
 describe('createExecGate: a helper that never answers', () => {
+  // Like client-node's ExecAuth: the run ends (rejects) when its helper process
+  // closes — here, only when it is killed. Nothing is left pending afterwards,
+  // so no test depends on a timer keeping the process alive.
   const hangingKubeConfig = () => {
     const children = [];
     const execAuth = {
       execFn: () => {
-        const child = { killed: false, kill() { this.killed = true; this.onClose?.(); }, once(ev, fn) { if (ev === 'close') this.onClose = fn; } };
+        const child = {
+          killed: false,
+          closers: [],
+          kill() { this.killed = true; this.closers.forEach((fn) => fn()); },
+          once(ev, fn) { if (ev === 'close') this.closers.push(fn); },
+        };
         children.push(child);
         return child;
       },
-      getCredential(user) { this.execFn('helper', [user.name]); return new Promise(() => {}); },
+      getCredential(user) {
+        const child = this.execFn('helper', [user.name]);
+        return new Promise((_, reject) => { child.once('close', () => reject(new Error(''))); });
+      },
     };
     return { kc: { execAuth }, children };
   };
@@ -133,7 +144,8 @@ describe('createExecGate: a helper that never answers', () => {
     await new Promise((r) => setImmediate(r));
     gate.stopAll();
     assert.equal(children[0].killed, true);
-    gate.clear(); // the run itself is left to ExecAuth's own close handling
-    void run.catch(() => {});
+    // The stopped helper's run ends at once (no 60-second timer left behind).
+    await assert.rejects(run, (e) => e.clusterAuth);
+    gate.clear();
   });
 });
