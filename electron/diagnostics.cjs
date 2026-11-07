@@ -115,13 +115,16 @@ function createLogFile(dir, { name = LOG_NAME, maxBytes = MAX_BYTES, keep = KEEP
       for (const f of [file, `${file}.1`]) {
         if (left <= 0) break;
         try {
-          const st = fs.statSync(f);
-          const len = Math.min(st.size, left);
-          const buf = Buffer.alloc(len);
+          // Size from the open file itself, so a rotation in between can't mismatch it.
           const fd = fs.openSync(f, 'r');
-          try { fs.readSync(fd, buf, 0, len, st.size - len); } finally { fs.closeSync(fd); }
-          parts.unshift(buf.toString('utf8'));
-          left -= len;
+          try {
+            const { size } = fs.fstatSync(fd);
+            const len = Math.min(size, left);
+            const buf = Buffer.alloc(len);
+            fs.readSync(fd, buf, 0, len, size - len);
+            parts.unshift(buf.toString('utf8'));
+            left -= len;
+          } finally { fs.closeSync(fd); }
         } catch { /* missing */ }
       }
       const text = parts.join('');

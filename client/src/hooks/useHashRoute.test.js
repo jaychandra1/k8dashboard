@@ -10,6 +10,13 @@ describe('parseHash / buildHash', () => {
     expect(parseHash('#/argocd')).toEqual({ view: 'argocd', params: [], query: {} });
     expect(parseHash('#/x?flag')).toEqual({ view: 'x', params: [], query: { flag: '' } });
   });
+  it('a query key from the URL never reaches a prototype', () => {
+    const { query } = parseHash('#/x?__proto__=polluted&constructor=c&tab=a&tab=b');
+    expect(Object.getPrototypeOf(query)).toBe(Object.prototype);
+    expect(Object.prototype.polluted).toBeUndefined();
+    expect(Object.hasOwn(query, '__proto__')).toBe(true);
+    expect(query.tab).toBe('b');
+  });
   it('builds and round-trips', () => {
     expect(buildHash('pod', ['ns', 'na/me'], { tab: 'logs', empty: '' })).toBe('#/pod/ns/na%2Fme?tab=logs');
     expect(buildHash()).toBe('#/home');

@@ -32,10 +32,6 @@ const out = path.resolve(
 );
 const write = !args.includes('--no-write');
 
-if (fs.existsSync(out)) {
-  console.error(`✗ ${out} already exists — refusing to overwrite a signing key.`);
-  process.exit(1);
-}
 // Real (long-name, symlink-free) path of `p`, which need not exist yet.
 const realPath = (p) => {
   const rest = [];
@@ -56,7 +52,15 @@ if (!rel.startsWith('..') && !path.isAbsolute(rel)) {
 const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
 const pub = publicKey.export({ type: 'spki', format: 'der' }).toString('base64');
 fs.mkdirSync(path.dirname(out), { recursive: true, mode: 0o700 });
-fs.writeFileSync(out, privateKey.export({ type: 'pkcs8', format: 'pem' }), { mode: 0o600, flag: 'wx' });
+// 'wx' creates the file or fails if it exists: an existing key is never
+// overwritten, with no gap between checking and writing.
+try {
+  fs.writeFileSync(out, privateKey.export({ type: 'pkcs8', format: 'pem' }), { mode: 0o600, flag: 'wx' });
+} catch (e) {
+  if (e.code !== 'EEXIST') throw e;
+  console.error(`✗ ${out} already exists — refusing to overwrite a signing key.`);
+  process.exit(1);
+}
 
 if (write) {
   const src = fs.readFileSync(keysFile, 'utf8');

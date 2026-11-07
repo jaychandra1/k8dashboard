@@ -34,7 +34,7 @@ const CACHE_DIR = path.join(os.homedir(), '.config', 'kubepilot', 'bin');
 const CACHED_TRIVY = path.join(CACHE_DIR, process.platform === 'win32' ? 'trivy.exe' : 'trivy');
 // Pinned release for auto-download. TRIVY_VERSION=x.y.z pins another one;
 // TRIVY_VERSION=latest opts in to asking GitHub for the newest release.
-export const TRIVY_VERSION = '0.74.0';
+export const TRIVY_VERSION = '0.76.2';
 const GITHUB_RELEASES = 'https://github.com/aquasecurity/trivy/releases/download';
 
 // ---- child processes -------------------------------------------------------
@@ -71,14 +71,17 @@ export function persistScan(context, result) {
 // JSON is parsed once per on-disk version, not once per poll.
 export async function loadScan(context) {
   const file = scanFile(context);
+  let fh;
   try {
-    const st = await fsp.stat(file);
+    // stat and read the same open file, so the cache key always matches the data.
+    fh = await fsp.open(file, 'r');
+    const st = await fh.stat();
     const hit = scanCache.get(file);
     if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.data;
-    const data = JSON.parse(await fsp.readFile(file, 'utf-8'));
+    const data = JSON.parse(await fh.readFile('utf-8'));
     scanCache.set(file, { mtimeMs: st.mtimeMs, size: st.size, data });
     return data;
-  } catch { return null; }
+  } catch { return null; } finally { await fh?.close().catch(() => {}); }
 }
 
 // Candidate locations for a shipped binary: TRIVY_BIN, the repo/dev ./bin

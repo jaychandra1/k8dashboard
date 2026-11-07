@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { evaluate, listing, securityFindings } from '../scripts/sarif-gate.mjs';
+import { evaluate, listing, securityFindings, suppressedByComment } from '../scripts/sarif-gate.mjs';
 
 const SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'scripts', 'sarif-gate.mjs');
 
@@ -60,6 +60,35 @@ describe('sarif-gate', () => {
     assert.deepEqual(evaluate([{ runs: [] }, {}]), { blocking: [], warnings: [] });
   });
 
+  test('a `// codeql[<rule-id>]` comment line just above the finding suppresses it', () => {
+    const src = [
+      'const a = 1;',
+      '// Reviewed: the URL is the one the user configured.',
+      '// codeql[js/command-line-injection]',
+      'run(a);', // line 4
+      '// codeql[js/other-rule, js/clear-text-logging]',
+      'log(a);', // line 6
+      'x(); // codeql[js/command-line-injection]',
+      'run(a);', // line 8: a trailing comment on code doesn't count
+      '// codeql[js/command-line-injection]',
+      '',
+      'run(a);', // line 11: not directly below
+    ];
+    assert.equal(suppressedByComment(src, 4, 'js/command-line-injection'), true);
+    assert.equal(suppressedByComment(src, 4, 'js/clear-text-logging'), false, 'only the rule it names');
+    assert.equal(suppressedByComment(src, 6, 'js/clear-text-logging'), true, 'one of a list');
+    assert.equal(suppressedByComment(src, 8, 'js/command-line-injection'), false);
+    assert.equal(suppressedByComment(src, 11, 'js/command-line-injection'), false);
+    assert.equal(suppressedByComment(null, 4, 'js/command-line-injection'), false, 'unreadable file');
+
+    const log = sarif([result('js/command-line-injection', 0), result('js/clear-text-logging', 1)]); // server.js:10 and :11
+    const lines = Array.from({ length: 12 }, () => 'code();');
+    lines[8] = '  // codeql[js/command-line-injection]';
+    const { blocking } = evaluate([log], 7, { readSource: (uri) => (uri === 'server.js' ? lines : null) });
+    assert.deepEqual(blocking.map((f) => f.ruleId), ['js/clear-text-logging']);
+    assert.equal(evaluate([log]).blocking.length, 2, 'without a source reader, comments are not consulted');
+  });
+
   test('the listing has every finding with its location, blocking ones first', () => {
     const { blocking, warnings } = evaluate([sarif([
       result('js/missing-rate-limiting', 2), result('js/clear-text-logging', 1), result('js/command-line-injection', 0),
@@ -75,17 +104,17 @@ describe('sarif-gate', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kp-sarif-'));
     try {
       fs.writeFileSync(path.join(dir, 'clean.sarif'), JSON.stringify(sarif([result('js/missing-rate-limiting', 2)])));
-      const clean = spawnSync(process.execPath, [SCRIPT, dir], { encoding: 'utf8' });
+      const clean = spawnSync(process.execPath, [SCRIPT, dir], { encoding: 'utf8', cwd: dir });
       assert.equal(clean.status, 0, clean.stdout + clean.stderr);
       assert.match(clean.stdout, /::warning file=server.js,line=12::js\/missing-rate-limiting/);
 
       fs.writeFileSync(path.join(dir, 'bad.sarif'), JSON.stringify(sarif([result('js/command-line-injection', 0)])));
-      const bad = spawnSync(process.execPath, [SCRIPT, dir], { encoding: 'utf8' });
+      const bad = spawnSync(process.execPath, [SCRIPT, dir], { encoding: 'utf8', cwd: dir });
       assert.equal(bad.status, 1);
       assert.match(bad.stdout, /::error file=server.js,line=10::js\/command-line-injection \(security-severity 9.8\)/);
       assert.match(bad.stdout, /^BLOCK 9\.8 js\/command-line-injection server\.js:10 /m, 'the log lists every finding with its location');
 
-      const empty = spawnSync(process.execPath, [SCRIPT, fs.mkdtempSync(path.join(dir, 'e-'))], { encoding: 'utf8' });
+      const empty = spawnSync(process.execPath, [SCRIPT, fs.mkdtempSync(path.join(dir, 'e-'))], { encoding: 'utf8', cwd: dir });
       assert.equal(empty.status, 2, 'no SARIF at all is an error, not a pass');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });

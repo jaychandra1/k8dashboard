@@ -161,7 +161,7 @@ describe('kubectl absence', () => {
     assert.equal(mapped.status, 501);
     assert.equal(mapped.code, 'kubectl_required');
     assert.ok(!/ENOENT/.test(mapped.error), 'the raw spawn error must not leak');
-    assert.match(mapped.error, /kubernetes\.io\/docs\/tasks\/tools/);
+    assert.equal(mapped.error, KUBECTL_REQUIRED_MESSAGE, 'the install hint instead');
   });
 });
 

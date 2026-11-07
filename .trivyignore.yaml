@@ -1,0 +1,32 @@
+# Trivy findings accepted on purpose. CI fails on any fixable HIGH or CRITICAL
+# vulnerability in the Docker image (.github/workflows/ci.yml) unless it is
+# listed here.
+#
+# Each entry is scoped to the one binary it is found in (`paths`), says why it
+# is accepted (`statement`), and expires (`expired_at`): after that date CI
+# fails on it again, so it gets looked at. Prefer a fix (bump the base image
+# digest or the tool's pinned version in the Dockerfile) over an entry.
+
+vulnerabilities:
+  # kubectl v1.37.2 is the latest Kubernetes release. It was built with Go
+  # 1.26.10 (the standard-library fixes are in), but still vendors
+  # golang.org/x/net v0.57.0 and golang.org/x/text v0.40.0. All three are
+  # denial-of-service issues in kubectl, a client K8Board runs only for the
+  # pod terminal and port-forward, against the user's own cluster.
+  # Remove these when a kubectl release ships x/net >= 0.62.0 and
+  # x/text >= 0.41.0 (bump KUBECTL_VERSION in the Dockerfile and run.sh).
+  - id: CVE-2026-78661
+    paths:
+      - usr/local/bin/kubectl
+    statement: "golang.org/x/net/html DoS in kubectl; no kubectl release with x/net >= 0.62.0 yet"
+    expired_at: 2027-01-31
+  - id: CVE-2026-78669
+    paths:
+      - usr/local/bin/kubectl
+    statement: "golang.org/x/net http2 DoS in kubectl; no kubectl release with x/net >= 0.60.0 yet"
+    expired_at: 2027-01-31
+  - id: CVE-2026-56851
+    paths:
+      - usr/local/bin/kubectl
+    statement: "golang.org/x/text DoS in kubectl; no kubectl release with x/text >= 0.41.0 yet"
+    expired_at: 2027-01-31

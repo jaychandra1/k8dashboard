@@ -66,8 +66,10 @@ Out of scope:
 - Electron: sandboxed renderer, `contextIsolation`, no `nodeIntegration`, navigation pinned to the
   backend origin, all permission requests denied, fuses disabling `RunAsNode` / `NODE_OPTIONS` /
   `--inspect`, allow-listed environment for the backend process, fresh token per launch.
-- Docker: pinned base-image digest, checksum-verified `kubectl` / `kubelogin` / `trivy`, non-root user,
-  `npm ci --ignore-scripts`, image scanned with Trivy in CI.
+- Docker: pinned base-image digest, checksum-verified `kubectl` / `trivy`, `kubelogin` built from
+  checksum-verified source with patched modules, non-root user, `npm ci --ignore-scripts`. CI fails on
+  a fixable HIGH/CRITICAL vulnerability in the image unless `.trivyignore.yaml` accepts it, scoped and
+  with an expiry date.
 - Releases: SHA256SUMS signed with K8Board's Ed25519 release key (`SHA256SUMS.txt.sig`, bound to the
   version) and a CycloneDX SBOM. The in-app updater installs nothing that isn't signed with a key built into
   the app. The Microsoft Store edition is signed by Microsoft and updated by the Store.

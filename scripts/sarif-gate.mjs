@@ -7,11 +7,16 @@
 // A finding blocks when its rule's `security-severity` is at least the
 // threshold (7.0 = High; 9.0 = Critical). Lower-severity security findings
 // are printed as warnings; quality findings (no security-severity) are
-// ignored. Findings suppressed in the source (`// codeql[...]`, SARIF
-// `suppressions`) never block. Prints GitHub annotations and exits 1 when
-// anything blocks.
+// ignored. Prints GitHub annotations and exits 1 when anything blocks.
+//
+// A reviewed false positive is suppressed in the source: a comment line
+// `// codeql[<rule-id>]` (with the reason above it) directly above the flagged
+// line, as CodeQL itself reads them. The gate reads those comments from the
+// checkout (the current directory), so it doesn't depend on the CodeQL run
+// including its suppression query; SARIF `suppressions` are honoured too.
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { isMainModule } from '../lib/paths.mjs';
 
 export const DEFAULT_MIN_SEVERITY = 7.0;
@@ -59,9 +64,47 @@ export function securityFindings(sarif) {
   return out;
 }
 
-/** { blocking, warnings } for the given SARIF logs. */
-export function evaluate(logs, minSeverity = DEFAULT_MIN_SEVERITY) {
-  const all = logs.flatMap(securityFindings).filter((f) => !f.suppressed);
+const SUPPRESSION = /\bcodeql\s*\[([^\]]*)\]/gi;
+const COMMENT_LINE = /^\s*(\/\/|\/\*|\*)/;
+
+/**
+ * Whether the line above `line` (1-based) of `lines` is a comment naming
+ * `ruleId` in `codeql[...]` (several ids may be listed, comma-separated).
+ */
+export function suppressedByComment(lines, line, ruleId) {
+  const above = lines?.[line - 2];
+  if (typeof above !== 'string' || !COMMENT_LINE.test(above)) return false;
+  const want = String(ruleId).toLowerCase();
+  for (const m of above.matchAll(SUPPRESSION)) {
+    if (m[1].split(',').some((id) => id.trim().toLowerCase() === want)) return true;
+  }
+  return false;
+}
+
+/** Reads a finding's source file under `root` (lines cached per file); null if unreadable. */
+export function sourceReader(root = process.cwd()) {
+  const cache = new Map();
+  return (uri) => {
+    if (!uri) return null;
+    if (!cache.has(uri)) {
+      let lines = null;
+      try {
+        const file = uri.startsWith('file:') ? fileURLToPath(uri) : path.resolve(root, decodeURIComponent(uri));
+        lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
+      } catch { /* not in this checkout */ }
+      cache.set(uri, lines);
+    }
+    return cache.get(uri);
+  };
+}
+
+/**
+ * { blocking, warnings } for the given SARIF logs. With `readSource`
+ * (uri → lines), `// codeql[<rule-id>]` comments suppress findings too.
+ */
+export function evaluate(logs, minSeverity = DEFAULT_MIN_SEVERITY, { readSource } = {}) {
+  const inSource = (f) => !!readSource && suppressedByComment(readSource(f.file), f.line, f.ruleId);
+  const all = logs.flatMap(securityFindings).filter((f) => !f.suppressed && !inSource(f));
   return {
     blocking: all.filter((f) => f.severity >= minSeverity),
     warnings: all.filter((f) => f.severity < minSeverity),
@@ -102,7 +145,8 @@ if (isMainModule(import.meta.url)) {
     console.error(`::error::no SARIF files in ${targets.join(', ')}`);
     process.exit(2);
   }
-  const { blocking, warnings } = evaluate(files.map((f) => JSON.parse(fs.readFileSync(f, 'utf8'))), minSeverity);
+  const logs = files.map((f) => JSON.parse(fs.readFileSync(f, 'utf8')));
+  const { blocking, warnings } = evaluate(logs, minSeverity, { readSource: sourceReader() });
   for (const f of warnings) console.log(annotate('warning', f));
   for (const f of blocking) console.log(annotate('error', f));
   // GitHub shows only the first 10 annotations of each kind per step, so the

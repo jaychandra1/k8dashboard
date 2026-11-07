@@ -21,7 +21,7 @@ import { createHash } from 'crypto';
 import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
 
-export const TRIVY_VERSION = '0.74.0';
+export const TRIVY_VERSION = '0.76.2';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = path.join(ROOT, 'bin');

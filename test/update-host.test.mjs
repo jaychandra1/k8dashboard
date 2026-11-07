@@ -86,7 +86,8 @@ describe('update host (main process)', () => {
 
   test('refuses an installer outside the update directory or with a changed SHA-256', async () => {
     const { host, spawnImpl, file, digest } = await windowsHost();
-    const outside = path.join(os.tmpdir(), `kp-outside-${process.pid}.exe`);
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kp-outside-'));
+    const outside = path.join(outsideDir, 'installer.exe');
     fs.writeFileSync(outside, 'installer');
     try {
       const r1 = await ask(host, {
@@ -98,7 +99,7 @@ describe('update host (main process)', () => {
       const r2 = await ask(host, {
         type: 'install',
         payload: {
-          file: path.join(path.dirname(file), '..', '..', path.basename(outside)),
+          file: path.join(path.dirname(file), '..', '..', path.basename(outsideDir), path.basename(outside)),
           sha256: digest,
           version: '1.4.0',
           kind: 'nsis',
@@ -107,7 +108,7 @@ describe('update host (main process)', () => {
       });
       assert.equal(r2.ok, false);
     } finally {
-      fs.rmSync(outside, { force: true });
+      fs.rmSync(outsideDir, { recursive: true, force: true });
     }
     const r3 = await ask(host, {
       type: 'install',

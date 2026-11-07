@@ -2,13 +2,23 @@
 
 # ------------------------------------------------------------------
 # Pinned inputs. Bump deliberately (Dependabot tracks the base image;
-# scripts/fetch-trivy.mjs shares TRIVY_VERSION with this file).
+# scripts/fetch-trivy.mjs and trivy-scan.js share TRIVY_VERSION with this
+# file; run.sh shares KUBECTL_VERSION).
 # ------------------------------------------------------------------
 # node:22-alpine — multi-arch index digest resolved 2026-09-21.
 ARG NODE_IMAGE=node:22-alpine@sha256:b6f26b36c8ff49624cfdac716b8ea1138d606df02586a77d364bb5536a634f85
-ARG KUBECTL_VERSION=v1.37.0
+# golang:1.26.10-alpine — multi-arch index digest resolved 2026-11-07. Only
+# the kubelogin build stage uses it; nothing from it reaches the runtime image
+# except the compiled binary.
+ARG GO_IMAGE=golang:1.26.10-alpine@sha256:87c65a688975c0b1d4585d204874c45ca78354670e3a5f11368c5a492303d696
+ARG KUBECTL_VERSION=v1.37.2
 ARG KUBELOGIN_VERSION=v1.36.4
-ARG TRIVY_VERSION=0.74.0
+# Modules raised above what kubelogin ${KUBELOGIN_VERSION} pins, to their
+# fixed versions (go-jose: CVE-2026-116587; x/net: CVE-2026-78661,
+# CVE-2026-78669). Drop this, and go back to the release binary, once a
+# kubelogin release ships them.
+ARG KUBELOGIN_MODULE_FIXES="github.com/go-jose/go-jose/v4@v4.1.6 golang.org/x/net@v0.62.0"
+ARG TRIVY_VERSION=0.76.2
 
 # ============================================================
 # Stage 1 — build the React/Vite frontend
@@ -45,9 +55,8 @@ RUN npm ci --omit=dev --ignore-scripts \
 FROM ${NODE_IMAGE} AS tools
 ARG TARGETARCH
 ARG KUBECTL_VERSION
-ARG KUBELOGIN_VERSION
 ARG TRIVY_VERSION
-RUN apk add --no-cache curl ca-certificates unzip
+RUN apk add --no-cache curl ca-certificates
 WORKDIR /tools
 # kubectl — dl.k8s.io publishes a .sha256 next to every binary.
 RUN set -eu; \
@@ -55,15 +64,6 @@ RUN set -eu; \
   curl -fsSL --retry 3 "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH}/kubectl.sha256" -o kubectl.sha256; \
   echo "$(cat kubectl.sha256)  kubectl" | sha256sum -c -; \
   chmod 0755 kubectl
-# kubelogin (installed as kubectl-oidc_login so `kubectl oidc-login` exec
-# plugins work) — each release zip ships a matching .sha256 file.
-RUN set -eu; \
-  base="https://github.com/int128/kubelogin/releases/download/${KUBELOGIN_VERSION}"; \
-  curl -fsSL --retry 3 "${base}/kubelogin_linux_${TARGETARCH}.zip" -o kubelogin.zip; \
-  curl -fsSL --retry 3 "${base}/kubelogin_linux_${TARGETARCH}.zip.sha256" -o kubelogin.zip.sha256; \
-  echo "$(awk '{print $1}' kubelogin.zip.sha256)  kubelogin.zip" | sha256sum -c -; \
-  unzip -q kubelogin.zip kubelogin; \
-  mv kubelogin kubectl-oidc_login; chmod 0755 kubectl-oidc_login; rm kubelogin.zip kubelogin.zip.sha256
 # trivy — from the pinned GitHub release tarball, verified against the
 # release's checksums file. No `curl | sh`.
 RUN set -eu; \
@@ -74,6 +74,32 @@ RUN set -eu; \
   curl -fsSL --retry 3 "${base}/trivy_${TRIVY_VERSION}_checksums.txt" -o checksums.txt; \
   grep " ${asset}\$" checksums.txt | sha256sum -c -; \
   tar -xzf "${asset}" trivy; chmod 0755 trivy; rm "${asset}" checksums.txt
+
+# ============================================================
+# Stage 3b — kubelogin, built from its tagged source
+# ============================================================
+# Installed as kubectl-oidc_login so `kubectl oidc-login` exec plugins work.
+# The release binary was built with an older Go and older modules that have
+# fixed HIGH vulnerabilities, so it is compiled here from the same tag with a
+# patched Go (GO_IMAGE) and KUBELOGIN_MODULE_FIXES applied. The source and
+# every module come from the Go module proxy and are verified against the Go
+# checksum database (sum.golang.org); GOTOOLCHAIN=local never fetches another
+# Go. Pure Go, so it cross-compiles on the build machine (no QEMU).
+FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS kubelogin-build
+ARG TARGETARCH
+ARG KUBELOGIN_VERSION
+ARG KUBELOGIN_MODULE_FIXES
+ENV CGO_ENABLED=0 GOTOOLCHAIN=local
+WORKDIR /src
+RUN set -eu; \
+  go mod download "github.com/int128/kubelogin@${KUBELOGIN_VERSION}"; \
+  cp -R "$(go env GOMODCACHE)/github.com/int128/kubelogin@${KUBELOGIN_VERSION}/." /src; \
+  chmod -R u+w /src; \
+  go get ${KUBELOGIN_MODULE_FIXES}; \
+  go mod tidy; \
+  GOOS=linux GOARCH="${TARGETARCH}" go build -trimpath \
+    -ldflags "-s -w -X main.version=${KUBELOGIN_VERSION}" -o /out/kubectl-oidc_login .; \
+  go version -m /out/kubectl-oidc_login | grep -E 'go1|go-jose|golang.org/x/net' || true
 
 # ============================================================
 # Stage 4 — runtime image
@@ -93,7 +119,8 @@ RUN apk upgrade --no-cache \
   && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx \
             /usr/local/lib/node_modules/corepack /usr/local/bin/corepack
 
-COPY --from=tools /tools/kubectl /tools/kubectl-oidc_login /tools/trivy /usr/local/bin/
+COPY --from=tools /tools/kubectl /tools/trivy /usr/local/bin/
+COPY --from=kubelogin-build /out/kubectl-oidc_login /usr/local/bin/
 
 # Backend deps + source, and the built frontend. Every module server.js
 # imports must be here (see the import list at the top of server.js).

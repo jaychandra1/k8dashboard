@@ -11,11 +11,22 @@
 //     (`data-app-version="…"` or `<span class="version-badge">v…</span>`)
 // The UI reads it from client/package.json (via Vite) and the server exposes
 // it at /api/version, so this one file drives the version everywhere.
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+// A file's text, or null when it doesn't exist. Reading straight away (rather
+// than existsSync first) leaves no gap for the file to change in between.
+const readIfPresent = (file) => {
+  try {
+    return readFileSync(file, 'utf8');
+  } catch (e) {
+    if (e.code === 'ENOENT') return null;
+    throw e;
+  }
+};
 const versionFile = path.join(repo, 'VERSION');
 const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 
@@ -56,8 +67,9 @@ for (const rel of ['package.json', 'client/package.json']) {
 // dependency tree is left exactly as-is, so this never changes installs.
 for (const rel of ['package-lock.json', 'client/package-lock.json']) {
   const file = path.join(repo, rel);
-  if (!existsSync(file)) continue;
-  const lock = JSON.parse(readFileSync(file, 'utf8'));
+  const text = readIfPresent(file);
+  if (text === null) continue;
+  const lock = JSON.parse(text);
   let touched = false;
   if (lock.version !== version) {
     lock.version = version;
@@ -84,8 +96,8 @@ const textTargets = [
 ];
 for (const { rel, re, label } of textTargets) {
   const file = path.join(repo, rel);
-  if (!existsSync(file)) continue;
-  const src = readFileSync(file, 'utf8');
+  const src = readIfPresent(file);
+  if (src === null) continue;
   const m = src.match(re);
   if (!m) continue;
   const prefix = label === 'version badge' ? 'v' : '';

@@ -242,7 +242,7 @@ Imported contexts are merged into your kubeconfig. The existing file is **backed
 | `MCP_ALLOW_WRITE` | Initial default for MCP write tools | `0` |
 | `MCP_API_BASE`, `MCP_API_TOKEN` | Used by the stdio bridge | `http://127.0.0.1:3001`, token file |
 | `LOG_LEVEL` | `debug` `info` `warn` `error` | `info` |
-| `TRIVY_VERSION` | Pin or `latest` for on-demand Trivy download | `0.74.0` |
+| `TRIVY_VERSION` | Pin or `latest` for on-demand Trivy download | `0.76.2` |
 
 App data lives in `~/.config/kubepilot` (token, assistant config, scan cache). On Windows the desktop app encrypts the secrets it keeps there, the Azure sign-in (`azure-auth.json`) and the AI provider API key (`config.json`), with a per-user key protected by Windows DPAPI (`secret.key`); copied to another machine or account they cannot be opened, and you simply sign in again. AWS credentials stay in the standard `~/.aws` files, which the AWS CLI and SDK read directly. Logs are JSON lines on stdout; the request log never contains query strings, headers or tokens.
 
@@ -428,11 +428,11 @@ docker run --rm -p 127.0.0.1:8080:3001 -e K8BOARD_TOKEN=local-dev-token-1234 \
   -v "$HOME/.kube:/home/node/.kube:ro" k8board:dev
 ```
 
-The image is multi-stage: the client is built, production dependencies are installed with `--ignore-scripts`, and `kubectl`, `kubelogin` and `trivy` are downloaded at pinned versions and verified against their published SHA256 checksums. The container runs as the unprivileged `node` user and exposes a `HEALTHCHECK` on `/healthz`.
+The image is multi-stage: the client is built, production dependencies are installed with `--ignore-scripts`, and `kubectl` and `trivy` are downloaded at pinned versions and verified against their published SHA256 checksums. `kubelogin` is compiled from its tagged source with a patched Go and fixed modules (its latest release binary has fixed vulnerabilities); the source and modules are verified against the Go checksum database. CI fails on any fixable HIGH or CRITICAL vulnerability in the image unless `.trivyignore.yaml` lists it, scoped to one binary, with a reason and an expiry date. The container runs as the unprivileged `node` user and exposes a `HEALTHCHECK` on `/healthz`.
 
 ### 3.4 Bumping pinned tools and dependencies
 
-- **kubectl / kubelogin / trivy** — edit the `ARG`s at the top of the `Dockerfile`; keep `TRIVY_VERSION` equal to the constant in `scripts/fetch-trivy.mjs` and `KUBECTL_VERSION` equal to the one in `run.sh`. The checksum verification will fail the build if a download does not match.
+- **kubectl / kubelogin / trivy** — edit the `ARG`s at the top of the `Dockerfile`; keep `TRIVY_VERSION` equal to the constant in `scripts/fetch-trivy.mjs` and in `trivy-scan.js`, and `KUBECTL_VERSION` equal to the one in `run.sh`. The checksum verification will fail the build if a download does not match. When a kubelogin release ships the modules in `KUBELOGIN_MODULE_FIXES`, drop that list (or return to the release binary). When you bump a tool, remove its entries from `.trivyignore.yaml` that the new version fixes.
 - **Base image** — the `node:22-alpine` digest is pinned; Dependabot opens a PR when a new digest is published.
 - **npm packages and GitHub Actions** — Dependabot opens weekly PRs (root, `client/`, workflows). Actions are pinned to commit SHAs; merge the Dependabot PR rather than editing the SHA by hand.
 - After any bump: `npm ci --ignore-scripts && npm rebuild node-pty && npm test && npm run test:client && npm run lint`.

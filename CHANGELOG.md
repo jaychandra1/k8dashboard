@@ -7,6 +7,18 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Security
+- **Every High and Critical CodeQL finding is fixed or reviewed** (48 when the gate first ran):
+  - **Loading a kubeconfig by path:** the file must still be inside your home folder (or a `KUBECONFIG_DIRS` entry). That check now sits where the path arrives, in a form CodeQL can verify; nothing it allows or refuses changed. This cleared 36 findings across the kubeconfig backup, repair, import and AWS sign-in writes.
+  - **Cloud detection:** a cluster's cloud (AWS, Azure, GCP, local) is read from its API server's host name only. A cloud domain in a path, query or user name used to count.
+  - **No check-then-use gaps:** the diagnostics log, the Trivy results cache, the version-sync script and the release-key generator read or create files in one step. The key generator still refuses to overwrite an existing key.
+  - **Links:** query keys in the app's URL (`#/view?key=value`) are never written as object properties, so a key like `__proto__` can't reach a prototype.
+  - **Reviewed, not changed:** the AI assistant calls the LLM endpoint you configure (checked when saved: no cloud-metadata or link-local hosts, `https` off your local network). A Windows `.cmd` tool runs through `cmd.exe` only with arguments free of its metacharacters.
+  - **Tests:** a weak 1024-bit RSA test key, unanchored host regexes and a temp file in the shared temp folder were replaced.
+- **The Docker image's tools have no fixable HIGH vulnerabilities:**
+  - `kubectl` v1.37.0 → v1.37.2 (built with Go 1.26.10).
+  - `trivy` 0.74.0 → 0.76.2, also the version the desktop app downloads for image scans.
+  - `kubelogin` v1.36.4 is compiled from its tagged source with Go 1.26.10, go-jose 4.1.6 and x/net 0.62.0. No release ships them yet, and its release binary had seven fixed vulnerabilities.
+  - Three `x/net`/`x/text` denial-of-service issues in `kubectl` have no release with the fix yet. They are accepted for `kubectl` only, until 2027-01-31.
 - **AWS sign-ins reach only what you expect.** With dev and prod clusters on one IAM Identity Center portal, signing in for dev used to renew prod as well. Now:
   - **Only the cluster in use is kept signed in in the background.** Other clusters' sessions renew when you open them.
   - **Production clusters can have their own sign-in.** Preferences → Cloud Integrations → *AWS sign-ins* lists each sign-in, the clusters it covers, and a **Production** switch per cluster. A production cluster's AWS profile moves to a separate `…-production` session with its own token, so a dev sign-in can't reach it.
@@ -92,8 +104,8 @@ All notable changes to this project are documented here. The format follows
   - **Request IDs:** every API answer has an `X-Request-Id`, which appears in the log line for that request. A failed request also logs its cause.
 - **Release builds need a green CI run** (audit BLD-01). Before, a release ran only the tests, could be cut from any tagged commit, and published with a long-lived personal access token; the scanners only reported.
   - **Release gate:** a release is built only from a commit on `main` whose CI run passed: lint, tests, `npm audit`, CodeQL, Trivy and the new secret scan. It waits for a CI run that's still going.
-  - **CodeQL:** High and Critical findings now fail CI (`scripts/sarif-gate.mjs`). This no longer depends on GitHub code scanning being enabled.
-  - **Trivy:** fixable HIGH and CRITICAL image vulnerabilities fail CI. Accepted exceptions go in `.trivyignore` with a reason.
+  - **CodeQL:** High and Critical findings now fail CI (`scripts/sarif-gate.mjs`). This no longer depends on GitHub code scanning being enabled. The log lists every finding with its file and line (GitHub shows only the first 10 annotations), and a reviewed false positive is marked with a `// codeql[<rule-id>]` comment line, with its reason, directly above it.
+  - **Trivy:** fixable HIGH and CRITICAL image vulnerabilities fail CI. Accepted exceptions go in `.trivyignore.yaml`, each scoped to one binary, with a reason and an expiry date.
   - **gitleaks:** a new CI job scans new commits for secrets. Test fixtures are allowed in `.gitleaks.toml`.
   - **Image signing:** the GHCR images are signed with cosign (keyless, Sigstore) and verified in the same job.
   - **Publishing token:** uses a short-lived GitHub App token once `RELEASE_APP_CLIENT_ID` and `RELEASE_APP_PRIVATE_KEY` are set. Until then the `RELEASE_TOKEN` personal access token is used, with a warning.

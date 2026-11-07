@@ -231,7 +231,7 @@ A quick test cluster on Windows: Docker Desktop > Settings > Kubernetes > Enable
 Features that need something extra:
 - Pod terminal and port-forward: kubectl on PATH.
 - AI assistant: an OpenAI-compatible endpoint the user configures in Preferences > AI Assistant.
-- Security Center image scanning: on first use, and only when the user starts a scan, K8Board downloads the open-source Trivy scanner (pinned version 0.74.0) from its official GitHub release and verifies its SHA-256 checksum before use.
+- Security Center image scanning: on first use, and only when the user starts a scan, K8Board downloads the open-source Trivy scanner (pinned version 0.76.2) from its official GitHub release and verifies its SHA-256 checksum before use.
 
 Updates: in the Store edition, Help > Check for Updates never downloads or installs anything; when a newer version exists it offers to open the Microsoft Store.
 

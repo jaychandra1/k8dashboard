@@ -94,7 +94,8 @@ Manual runs (Actions → Build & Release → Run workflow) are only accepted fro
 ### Bumping pinned tools
 
 - `kubectl`, `kubelogin`, `trivy`: `ARG`s at the top of the `Dockerfile`; keep `TRIVY_VERSION` equal to
-  the constant in `scripts/fetch-trivy.mjs` and `KUBECTL_VERSION` equal to the one in `run.sh`.
+  the constant in `scripts/fetch-trivy.mjs` and `trivy-scan.js`, and `KUBECTL_VERSION` equal to the one in `run.sh`.
+  kubelogin is built from source with `KUBELOGIN_MODULE_FIXES`; drop that once a release ships them.
 - Base image digest: Dependabot's `docker` ecosystem opens PRs; or resolve one with
   `docker manifest inspect node:22-alpine`.
 

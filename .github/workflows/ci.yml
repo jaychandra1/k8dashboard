@@ -154,7 +154,8 @@ jobs:
 
       # The gate: High and Critical security findings (security-severity >= 7.0)
       # fail the job; lower ones are printed as warnings. A reviewed false
-      # positive is suppressed in the source with a `// codeql[<rule-id>]` comment.
+      # positive is suppressed in the source: a `// codeql[<rule-id>]` comment
+      # line, with the reason, directly above the flagged line.
       - name: Fail on High/Critical security findings
         run: node scripts/sarif-gate.mjs codeql-results --min-severity 7.0
 
@@ -243,8 +244,8 @@ jobs:
           sarif_file: trivy-image.sarif
 
       # The gate: a HIGH or CRITICAL vulnerability that has a fix fails CI.
-      # One that can't be fixed yet goes in .trivyignore with the reason and a
-      # review date, never silently.
+      # One that can't be fixed yet goes in .trivyignore.yaml, scoped to the
+      # binary it's in, with the reason and an expiry date, never silently.
       - name: Fail on fixable HIGH/CRITICAL vulnerabilities
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
         with:
@@ -253,7 +254,7 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: '1'
           ignore-unfixed: true
-          trivyignores: .trivyignore
+          trivyignores: .trivyignore.yaml
           skip-setup-trivy: true
 
   # ---------------------------------------------------------------------------

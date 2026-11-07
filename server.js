@@ -766,10 +766,9 @@ const isPathInside = (dir, file) => {
   const r = process.platform === 'win32' ? rel.toLowerCase() : rel;
   return r !== '' && !r.startsWith('..') && !path.isAbsolute(r);
 };
-const isAllowedKubeconfigPath = (file) => {
-  const roots = [os.homedir(), ...String(process.env.KUBECONFIG_DIRS || '').split(path.delimiter).map((s) => s.trim()).filter(Boolean)];
-  return roots.some((root) => isPathInside(root, file));
-};
+const kubeconfigRoots = () =>
+  [os.homedir(), ...String(process.env.KUBECONFIG_DIRS || '').split(path.delimiter).map((s) => s.trim()).filter(Boolean)]
+    .map((dir) => path.resolve(dir));
 
 app.post('/api/config/load', (req, res) => {
   const { filePath } = req.body || {};
@@ -777,7 +776,13 @@ app.post('/api/config/load', (req, res) => {
     return bad(res, 'filePath', 'filePath must be an absolute path');
   }
   const resolved = path.resolve(filePath);
-  if (!isAllowedKubeconfigPath(resolved)) {
+  // Only a file inside an allowed directory. This path becomes the kubeconfig
+  // K8Board reads, backs up and writes, so the containment test stays here,
+  // written out, where static analysis (CodeQL js/path-injection) sees it.
+  const roots = kubeconfigRoots();
+  const root = roots.find((dir) => isPathInside(dir, resolved)) || roots[0];
+  const inRoot = path.relative(root, resolved);
+  if (inRoot === '' || inRoot.startsWith('..') || path.isAbsolute(inRoot)) {
     return res.status(403).json({ error: 'Kubeconfig must live under your home directory (or a KUBECONFIG_DIRS entry)', code: 'forbidden', field: 'filePath' });
   }
   let st;

@@ -37,7 +37,7 @@ BACKEND_PORT="${PORT:-3001}"
 DEV_UI_PORT=3000
 
 # --- pinned tool versions (keep KUBECTL_VERSION equal to the Dockerfile ARG) ---
-KUBECTL_VERSION="v1.37.0"
+KUBECTL_VERSION="v1.37.2"
 MIN_NODE_MAJOR=22
 
 # --- colors (disabled when not a TTY) ---

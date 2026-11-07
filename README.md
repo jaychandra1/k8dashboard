@@ -101,7 +101,7 @@ npm run dist        # fetches trivy (pinned, checksum-verified), builds the UI, 
 
 ### Docker
 
-The image (`linux/amd64` + `linux/arm64`) bundles Node, `kubectl`, `kubelogin` and `trivy` — all pinned and checksum-verified at build time — and serves the UI + API on port `3001` as the unprivileged `node` user.
+The image (`linux/amd64` + `linux/arm64`) bundles Node, `kubectl`, `kubelogin` and `trivy` — all pinned and checksum-verified at build time (`kubelogin` is compiled from verified source with patched modules) — and serves the UI + API on port `3001` as the unprivileged `node` user.
 
 ```bash
 docker run --rm -p 127.0.0.1:8080:3001 \

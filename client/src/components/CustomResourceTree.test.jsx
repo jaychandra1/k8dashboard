@@ -30,7 +30,7 @@ describe('CustomResourceTree', () => {
     expect(root).toHaveAttribute('aria-level', '1');
     fireEvent.keyDown(root, { key: 'Enter' });
     expect(root).toHaveAttribute('aria-expanded', 'true');
-    const group = await screen.findByRole('treeitem', { name: /cert-manager\.io/ });
+    const group = await screen.findByRole('treeitem', { name: 'cert-manager.io, 1 kinds' });
     expect(group).toHaveAttribute('aria-level', '2');
     expect(group).toHaveAttribute('tabindex', '-1');
   });
@@ -41,7 +41,7 @@ describe('CustomResourceTree', () => {
     const root = screen.getByRole('treeitem', { name: /Custom Resources/ });
     root.focus();
     fireEvent.keyDown(root, { key: 'ArrowRight' }); // expands
-    const group = await screen.findByRole('treeitem', { name: /cert-manager\.io/ });
+    const group = await screen.findByRole('treeitem', { name: 'cert-manager.io, 1 kinds' });
     fireEvent.keyDown(root, { key: 'ArrowDown' });
     await tick();
     expect(group).toHaveFocus();

@@ -28,16 +28,19 @@ export function parseHash(hash) {
   const pathPart = qi >= 0 ? h.slice(0, qi) : h;
   const queryPart = qi >= 0 ? h.slice(qi + 1) : '';
   const segs = pathPart.split('/').filter(Boolean).map(dec);
-  const query = {};
+  // Keys come from the URL, so they are never written as properties: a key
+  // like '__proto__' stays an ordinary own property. Later duplicates win.
+  const pairs = [];
   if (queryPart) {
     for (const pair of queryPart.split('&')) {
       if (!pair) continue;
       const eq = pair.indexOf('=');
       const k = dec(eq >= 0 ? pair.slice(0, eq) : pair);
       const v = eq >= 0 ? dec(pair.slice(eq + 1)) : '';
-      if (k) query[k] = v;
+      if (k) pairs.push([k, v]);
     }
   }
+  const query = Object.fromEntries(pairs);
   // The workloads overview became part of the Dashboard: old links land there.
   if (VIEW_ALIASES[segs[0]]) return { view: VIEW_ALIASES[segs[0]], params: [], query };
   return { view: segs[0] || DEFAULT_VIEW, params: segs.slice(1), query };

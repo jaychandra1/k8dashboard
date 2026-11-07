@@ -268,6 +268,10 @@ ${ctx?.selected ? `- Selected resource: ${ctx.selected.type || ''} ${ctx.selecte
   // tool calls, and returns { content, toolCalls, finish }.
   const streamTurn = async (cfg, messages, onToken, signal) => {
     signal?.throwIfAborted();
+    // Reviewed: the URL is the LLM endpoint the user configured, which is the
+    // feature. It was checked by assertSafeLlmUrl when saved (no metadata or
+    // link-local hosts, no embedded credentials, https unless on a local network).
+    // codeql[js/request-forgery]
     const resp = await fetch(completionsUrl(cfg.baseUrl), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.apiKey}` },
@@ -549,6 +553,8 @@ ${ctx?.selected ? `- Selected resource: ${ctx.selected.type || ''} ${ctx.selecte
     try {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 15000);
+      // Reviewed: the user's own LLM endpoint, just checked by assertSafeLlmUrl.
+      // codeql[js/request-forgery]
       const resp = await fetch(completionsUrl(baseUrl), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
