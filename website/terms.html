@@ -220,13 +220,11 @@
   @media (prefers-contrast: more) { :root { --border: #86868b; --text-dim: #4a4a4f; } header { background: var(--bg); backdrop-filter: none; } }
 </style>
 <script>
-<script>
   // Set theme before first paint to avoid a flash.
   try {
     var t = localStorage.getItem('theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
     document.documentElement.dataset.theme = t;
   } catch (e) { document.documentElement.dataset.theme = 'dark'; }
-</script>
 </script>
 </head>
 <body>
@@ -288,7 +286,7 @@
   <p>We may update these Terms from time to time. Material changes will be reflected here with a new "Last updated" date. Continued use of the app after changes take effect constitutes acceptance of the revised Terms.</p>
 
   <h2>8. Contact</h2>
-  <p>Questions about these Terms? Open an issue at <a href="https://github.com/jaychandra1/K8Board" target="_blank" rel="noopener">github.com/jaychandra1/K8Board</a> or email <strong>kubepilot.dashboard@gmail.com</strong>.</p>
+  <p>Questions about these Terms? Email <a href="mailto:kubepilot.dashboard@gmail.com">kubepilot.dashboard@gmail.com</a>.</p>
 </main>
 
 <footer>
@@ -303,7 +301,6 @@
       <a href="docs.html">Docs</a>
       <a href="privacy.html">Privacy</a>
       <a href="terms.html">Terms</a>
-      <a href="https://github.com/jaychandra1/K8Board" target="_blank" rel="noopener">GitHub</a>
     </div>
     <div class="copy">Built for developers and platform teams. Not affiliated with the Kubernetes project or the CNCF.</div>
     <div class="made">

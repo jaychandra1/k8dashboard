@@ -1,45 +1,45 @@
-# Kubernetes Manager — Marketing Website
+# K8Board website (k8dashboard.in)
 
-A single-page, self-contained landing site to showcase the product publicly and
-offer the macOS app and Docker image as downloads.
+A static site: plain HTML with inline CSS and JS, no build step and no backend.
 
 ```
 website/
-├── index.html                                  # the whole site (inline CSS + JS)
-└── assets/
-    ├── icon.svg                                # app logo (from build/icon.svg)
-    └── screenshot-dashboard.png                # dashboard screenshot
+├── index.html     # landing page and download section
+├── get.html       # forwards to K8Board's Microsoft Store page (the only place the Store link lives)
+├── docs.html      # user docs
+├── privacy.html   # privacy policy (the Store listing links to /privacy)
+├── terms.html     # terms of service
+└── assets/        # icon, social preview image, light/dark screenshots
 ```
 
 ## Preview locally
 
 ```bash
 npx serve website        # then open the printed URL
-# or
-python3 -m http.server 4321 -d website
 ```
 
-## What's on the page
+## Downloads go to the Microsoft Store only
 
-- **Hero** with the two primary CTAs: *Download for macOS* and *Run with Docker*.
-- **Feature grid** covering the dashboard, workloads, shell, topology, logs,
-  port-forwarding, CRDs/Helm, detail drawer and themes.
-- **AI assistant** band (read-only Claude assistant).
-- **Download section**:
-  - macOS → **GitHub releases**
-    (`https://github.com/jaychandra1/K8Board/releases/latest`).
-  - Docker commands using the image **`ghcr.io/jaychandra1/k8board`**
-    (copy-to-clipboard buttons).
+Every download button on the site links to `get.html`, which forwards to the
+Store. Windows is the only platform offered; the macOS and Linux cards say
+"Coming soon" and have no download link.
 
-## Updating
+**Before publishing**, open `get.html` and replace `REPLACE-WITH-STORE-ID` in
+both links with K8Board's Store ID (Partner Center → K8Board → Product
+management → Product identity; it looks like `9NXXXXXXXXXX`).
 
-- **macOS release** — the download buttons point to the repo's
-  `/releases/latest`. Publish the `.dmg` as a GitHub Release asset; no site
-  change is needed. Update the version badge in `index.html` if you want it shown.
-- **Docker image** — the pull/run commands reference
-  `ghcr.io/jaychandra1/k8board:latest`. Change the tag in `index.html` if needed.
+## What the site must not show
+
+No GitHub addresses: no repository, release, issue or source links. Contact
+is by email (`kubepilot.dashboard@gmail.com`). The Docker section of
+`docs.html` keeps the published image name. `test/website-links.test.mjs`
+checks all of this.
+
+The privacy policy still names GitHub as a service the app contacts (the
+update check, and the Trivy download for image scans), without a link: the
+policy has to list every connection the app makes.
 
 ## Hosting
 
-It's fully static, so any static host works (GitHub Pages, Netlify, Cloudflare
-Pages, S3 + CloudFront, nginx).
+Any static host works. The privacy policy must stay reachable at
+`https://k8dashboard.in/privacy`, the URL in the Store listing.

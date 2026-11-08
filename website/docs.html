@@ -320,7 +320,6 @@
     </nav>
     <div class="side-ext">
       <a href="index.html">← Back to home</a>
-      <a href="https://github.com/jaychandra1/K8Board" target="_blank" rel="noopener">GitHub ↗</a>
       <a href="privacy.html">Privacy</a>
       <a href="terms.html">Terms</a>
     </div>
@@ -331,7 +330,7 @@
     <article id="overview">
       <h2>Overview</h2>
       <div class="tagline">A native desktop &amp; web UI for Kubernetes — no CLI required.</div>
-      <p><strong>K8Board</strong> is a fast Kubernetes management app: a native desktop build for <strong>macOS, Windows and Linux</strong>, plus a Docker image you can run anywhere. It reads your kubeconfig and gives you a live dashboard, resource browsing and editing, topology, logs, an in-pod terminal, ArgoCD, and one-click cloud onboarding — all without leaving the app.</p>
+      <p><strong>K8Board</strong> is a fast Kubernetes management app: a native desktop app for <strong>Windows</strong> from the Microsoft Store (macOS and Linux coming soon), plus a Docker image you can run anywhere. It reads your kubeconfig and gives you a live dashboard, resource browsing and editing, topology, logs, an in-pod terminal, ArgoCD, and one-click cloud onboarding — all without leaving the app.</p>
       <h3>Highlights</h3>
       <ul>
         <li><strong>One-click cloud clusters</strong> — import AWS EKS and Azure AKS straight from your account, with <strong>no <code>aws</code>/<code>az</code> CLI required</strong>, at import <em>or</em> runtime.</li>
@@ -351,32 +350,24 @@
     <!-- ============ Install ============ -->
     <article id="install">
       <h2>Install</h2>
-      <div class="tagline">Desktop app, Docker, or run from source.</div>
+      <div class="tagline">Desktop app or Docker.</div>
       <h3>Desktop app (recommended)</h3>
-      <p>Download the build for your OS from the <a href="index.html#download">downloads section</a> or the <a href="https://github.com/jaychandra1/K8Board/releases" target="_blank" rel="noopener">GitHub releases</a> page — macOS (Apple Silicon), Windows and Linux. It bundles everything it needs; open it and it reads your <code>~/.kube/config</code>.</p>
+      <p>Get K8Board for Windows 10 and 11 from the <a href="get.html">Microsoft Store</a>. The Store installs it and keeps it up to date. macOS and Linux builds are coming soon. It bundles everything it needs; open it and it reads your <code>~/.kube/config</code>.</p>
       <h3>Docker</h3>
       <p>Run the published image and mount your kubeconfig. Publishing to <code>127.0.0.1</code> keeps the API off your network (see <a href="#security">Security</a>):</p>
       <pre><code>docker run --rm -p 127.0.0.1:8080:3001 \
   -v "$HOME/.kube:/home/node/.kube:ro" \
   ghcr.io/jaychandra1/k8board:latest</code></pre>
       <p>Every API request needs a <strong>bearer token</strong>. The container generates one at first boot and keeps it out of its log; print the sign-in link with <code>docker exec &lt;container&gt; node scripts/login-url.mjs --base http://localhost:8080</code> (your published port, not 3001) and open it. Or pick the token yourself with <code>-e K8BOARD_TOKEN=&lt;secret&gt;</code>. Images are published for <code>linux/amd64</code> and <code>linux/arm64</code> with tags <code>latest</code>, <code>1.2</code> and <code>v1.2.0</code>.</p>
-      <h3>From source</h3>
-      <pre><code>git clone https://github.com/jaychandra1/K8Board
-cd K8Board
-npm install &amp;&amp; (cd client &amp;&amp; npm install)
-npm run build
-npm start          # http://localhost:3001</code></pre>
-      <p>Prerequisites: <strong>Node 22+</strong> and <code>kubectl</code> on your <code>PATH</code> (for the in-pod shell and port-forwarding). <code>helm</code> is <strong>not</strong> required — Helm releases are read from the Kubernetes API. The server prints a login URL with your access token at start; open that URL.</p>
+      <p>Prerequisites: <code>kubectl</code> on your <code>PATH</code> (for the in-pod shell and port-forwarding). <code>helm</code> is <strong>not</strong> required — Helm releases are read from the Kubernetes API.</p>
     </article>
 
     <!-- ============ Running ============ -->
     <article id="run">
       <h2>Running K8Board</h2>
-      <div class="tagline">Desktop, single-port web server, or Docker.</div>
+      <div class="tagline">Desktop app or Docker.</div>
       <ul>
         <li><strong>Desktop app</strong> — launch it like any app; it runs the backend internally and serves the UI. Best for local clusters that listen on <code>127.0.0.1</code>.</li>
-        <li><strong>Web (single port)</strong> — <code>npm start</code> serves the built UI + API on <strong>http://localhost:3001</strong>.</li>
-        <li><strong>Dev (hot reload)</strong> — <code>npm run dev</code> runs the API on 3001 and Vite on <strong>3000</strong> (which proxies <code>/api</code> and <code>/ws</code>).</li>
         <li><strong>Docker</strong> — see <a href="#install">Install</a>; the image bundles Node, <code>kubectl</code> and <code>kubelogin</code>.</li>
       </ul>
       <p>K8Board reads the kubeconfig at <code>KUBECONFIG</code> or <code>~/.kube/config</code>, and you switch the active cluster from the context picker, the ⌘K palette, or a pinned rail. By default the backend binds <strong>loopback only</strong> — see <a href="#security">Security</a>.</p>
@@ -589,7 +580,7 @@ npm start          # http://localhost:3001</code></pre>
       <div class="tagline">Any kubeconfig context works — Docker Desktop, kind, minikube, on-prem.</div>
       <p>K8Board uses your existing kubeconfig, so <strong>any context already in <code>~/.kube/config</code> just shows up</strong> — no import step. Switch between them from the context picker or the ⌘K palette. Clusters that authenticate with a client certificate or a static token need no extra tooling; ones that use an exec credential plugin (OIDC/<code>kubelogin</code>, cloud CLIs) need that helper on your <code>PATH</code>.</p>
       <h3>Local clusters in Docker</h3>
-      <p>Local clusters (Docker Desktop, kind, minikube) listen on <code>127.0.0.1</code>, which <em>inside a container</em> points at the container itself — so the config loads but the connection fails. Either use the <strong>native desktop app</strong> / <code>npm start</code> (simplest), or reach the host from the container:</p>
+      <p>Local clusters (Docker Desktop, kind, minikube) listen on <code>127.0.0.1</code>, which <em>inside a container</em> points at the container itself — so the config loads but the connection fails. Either use the <strong>native desktop app</strong> (simplest), or reach the host from the container:</p>
       <pre><code>docker run --rm -p 127.0.0.1:8080:3001 \
   --add-host=host.docker.internal:host-gateway \
   -v "$HOME/.kube:/home/node/.kube:ro" \
@@ -811,13 +802,13 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
         <li><strong>Local cluster loads but won't connect (in Docker)</strong> — the API server is on <code>127.0.0.1</code>; reach the host or use the desktop app. See <a href="#local">Local &amp; other</a>.</li>
         <li><strong>kubectl version-skew warning</strong> — that's your local <code>kubectl</code> vs the cluster, not K8Board. Install a kubectl within one minor of the cluster to silence it.</li>
       </ul>
-      <p>Still stuck? Open an issue on <a href="https://github.com/jaychandra1/K8Board/issues" target="_blank" rel="noopener">GitHub</a>.</p>
+      <p>Still stuck? Email <a href="mailto:kubepilot.dashboard@gmail.com">kubepilot.dashboard@gmail.com</a>.</p>
     </article>
 
     <!-- ============ Release notes ============ -->
     <article id="release-notes">
       <h2>Release notes</h2>
-      <div class="tagline">What's new in each version. Installers for every release are on the <a href="https://github.com/jaychandra1/K8Board/releases" target="_blank" rel="noopener">Releases</a> page.</div>
+      <div class="tagline">What's new in each version.</div>
 
       <h3>v1.2.0 <span class="rel-date">Sep 23, 2026</span> — First public release</h3>
       <p>K8Board is a native desktop UI for Kubernetes — live dashboards, logs, an in-pod shell, topology, Helm, Argo CD, a Security Center and one-click cloud onboarding.</p>
@@ -827,7 +818,6 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
         <li><strong>MCP server</strong> — connect Claude, Cursor and other agents to the cluster you're viewing.</li>
         <li><strong>Cloud onboarding</strong> — import EKS, AKS and GKE clusters without a CLI.</li>
       </ul>
-      <p><a href="https://github.com/jaychandra1/K8Board/releases/tag/v1.2.0" target="_blank" rel="noopener">Release on GitHub ↗</a></p>
     </article>
   </div>
 </div>
@@ -844,7 +834,6 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
       <a href="docs.html">Docs</a>
       <a href="privacy.html">Privacy</a>
       <a href="terms.html">Terms</a>
-      <a href="https://github.com/jaychandra1/K8Board" target="_blank" rel="noopener">GitHub</a>
     </div>
     <div class="copy">Built for developers and platform teams. Not affiliated with the Kubernetes project or the CNCF.</div>
     <div class="made">

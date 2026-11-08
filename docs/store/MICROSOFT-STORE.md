@@ -124,4 +124,4 @@ An unsigned `.msix` installs only on a machine in Developer Mode. These steps ch
 
 **What's new in this version:** copy the release's section from `CHANGELOG.md`.
 
-After the listing is live, add the Store badge to `README.md` and the website download section: `https://apps.microsoft.com/detail/<Store ID>`.
+**Website.** Every download button on k8dashboard.in goes to the Store through `website/get.html`, the only page that holds the Store link. Before publishing the website, replace `REPLACE-WITH-STORE-ID` in both of its links with the Store ID from step 1.3; the link becomes `https://apps.microsoft.com/detail/<Store ID>`. After the listing is live, you can also add the Store badge to `README.md`.

@@ -37,12 +37,23 @@ const CACHED_TRIVY = path.join(CACHE_DIR, process.platform === 'win32' ? 'trivy.
 export const TRIVY_VERSION = '0.76.2';
 const GITHUB_RELEASES = 'https://github.com/aquasecurity/trivy/releases/download';
 
+// Trivy otherwise sends anonymous usage data to Aqua Security and asks Aqua's
+// server for update notices on every run. K8Board promises no telemetry (the
+// privacy policy, the Store listing), so both are always off. Set through the
+// environment rather than --disable-telemetry/--skip-version-check: a trivy
+// from PATH that predates those flags ignores unknown variables, but would
+// refuse unknown flags. These override anything the user's environment says.
+export const TRIVY_NO_TELEMETRY_ENV = Object.freeze({ TRIVY_DISABLE_TELEMETRY: 'true', TRIVY_SKIP_VERSION_CHECK: 'true' });
+
+/** The environment every trivy (and tar) child gets: childEnv() plus telemetry off. */
+export const trivyEnv = (env = process.env) => childEnv(env, TRIVY_NO_TELEMETRY_ENV);
+
 // ---- child processes -------------------------------------------------------
 // Every trivy/tar child is tracked so cancelAll() can reap them on shutdown.
 const children = new Set();
 function run(bin, args, opts = {}) {
   return new Promise((resolve, reject) => {
-    const child = execFile(bin, args, { windowsHide: true, ...opts, env: childEnv(opts.env || process.env) }, (err, stdout, stderr) => {
+    const child = execFile(bin, args, { windowsHide: true, ...opts, env: trivyEnv(opts.env || process.env) }, (err, stdout, stderr) => {
       children.delete(child);
       if (err) { err.stderr = stderr; reject(err); } else resolve({ stdout, stderr });
     });

@@ -154,6 +154,7 @@
   main strong { color: var(--text); font-weight: 600; }
   main ul { color: var(--text-dim); margin: 0 0 14px 22px; }
   main li { margin-bottom: 8px; line-height: 1.55; }
+  main li > ul { margin: 8px 0 0 22px; }
   main code { font-family: var(--mono); font-size: 0.86em; color: var(--accent); background: var(--bg-2); padding: 2px 6px; border-radius: 5px; word-break: break-word; }
   main a { color: var(--accent); }
   main ol { color: var(--text-dim); margin: 0 0 14px 22px; }
@@ -235,13 +236,11 @@
   @media (prefers-contrast: more) { :root { --border: #86868b; --text-dim: #4a4a4f; } header { background: var(--bg); backdrop-filter: none; } }
 </style>
 <script>
-<script>
   // Set theme before first paint to avoid a flash.
   try {
     var t = localStorage.getItem('theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
     document.documentElement.dataset.theme = t;
   } catch (e) { document.documentElement.dataset.theme = 'dark'; }
-</script>
 </script>
 </head>
 <body>
@@ -275,11 +274,11 @@
 
 <main>
   <h1>Privacy Policy</h1>
-  <div class="updated">Last updated: October 21, 2026 · Effective: October 21, 2026</div>
+  <div class="updated">Last updated: November 8, 2026 · Effective: October 21, 2026</div>
 
   <p class="lead"><strong>The short version:</strong> K8Board is a desktop application that runs entirely on your own computer. We operate no servers and have no backend. We do <strong>not</strong> collect, receive, store, sell, rent, or share your personal data or your Google user data. Everything the app touches stays on your device or travels directly between your device and the services you choose to connect.</p>
 
-  <p>This Privacy Policy explains how the K8Board desktop application (the "app") and the K8Board website at <a href="https://k8dashboard.in" target="_blank" rel="noopener">k8dashboard.in</a> (the "website") handle information. In this policy, "K8Board", "we", "us", and "our" refer to the maintainers of the K8Board open-source project. "You" refers to the person who installs and uses the app or visits the website. K8Board is a free, open-source tool for browsing and operating Kubernetes clusters. By using the app or website, you agree to the practices described here.</p>
+  <p>This Privacy Policy explains how the K8Board desktop application (the "app") and the K8Board website at <a href="https://k8dashboard.in" target="_blank" rel="noopener">k8dashboard.in</a> (the "website") handle information. In this policy, "K8Board", "we", "us", and "our" refer to JDG Initiates, the publisher of K8Board. "You" refers to the person who installs and uses the app or visits the website. K8Board is a free, open-source tool for browsing and operating Kubernetes clusters. By using the app or website, you agree to the practices described here.</p>
 
   <div class="toc">
     <div class="toc-title">Contents</div>
@@ -312,8 +311,13 @@
     <li>The app runs <strong>entirely on your local machine</strong>. There is no K8Board server, cloud service, or database that receives your information.</li>
     <li>The app sends <strong>no telemetry, analytics, crash reports, usage statistics, or diagnostic data</strong> to us or to any third party.</li>
     <li>The app requires <strong>no account, registration, sign-up, or login with us</strong>.</li>
-    <li>The only connection the app makes that you didn't direct at your own clusters or providers is to <strong>GitHub</strong>, and only when you choose <em>Help → Check for Updates</em> or <em>Show Release Notes</em>: it reads the public list of K8Board releases, so GitHub sees your IP address and the app version. The Microsoft Store edition is updated by the Microsoft Store, under Microsoft's privacy statement.</li>
-    <li>All processing — reading configuration, talking to clusters, rendering resources, generating auth tokens — happens locally on your device.</li>
+    <li>Apart from the clusters and providers you connect, the app contacts only these services:
+      <ul>
+        <li><strong>GitHub</strong>, only when you choose <em>Help → Check for Updates</em> or <em>Show Release Notes</em>. The app reads the public list of K8Board releases, so GitHub sees your IP address and the app version. The Microsoft Store edition is updated by the Microsoft Store, under Microsoft's privacy statement.</li>
+        <li><strong>Image-scanning sources</strong>, only when you start an image scan in the Security Center. If the open-source Trivy scanner isn't already on your computer, the app downloads a fixed version from Trivy's official GitHub release and verifies its SHA-256 checksum before using it. Trivy then downloads its public vulnerability database (from <code>mirror.gcr.io</code>, or <code>ghcr.io</code> as a fallback) and pulls each image it scans directly from the registry that hosts it. These services see your IP address and the files requested. Scan results stay on your computer, and Trivy's own usage data and update checks are turned off.</li>
+      </ul>
+    </li>
+    <li>All processing happens locally on your device. That includes reading configuration, talking to clusters, rendering resources, generating sign-in tokens, and scanning images.</li>
   </ul>
   <p>Because of this design, we do not "collect" personal data in the conventional sense. The sections below describe the data the app <em>accesses locally on your behalf</em> and the direct connections it makes to services you configure.</p>
 
@@ -334,6 +338,11 @@
           <td><strong>Cloud credentials &amp; tokens</strong> — AWS and Azure access/refresh tokens or keys you provide when connecting clusters</td>
           <td>To discover your clusters and write kubeconfig entries so you can connect without a CLI.</td>
           <td>Stored locally (e.g. <code>~/.aws</code>, <code>~/.kube</code>, <code>~/.config/kubepilot/</code>) and used only to call that provider's APIs directly from your machine.</td>
+        </tr>
+        <tr>
+          <td><strong>Image scan results</strong> — the vulnerability and secret findings for the images your clusters run</td>
+          <td>To show them in the Security Center and keep them between sessions.</td>
+          <td>Stored locally in <code>~/.config/kubepilot/security-scans/</code>. The Trivy scanner is kept in <code>~/.config/kubepilot/bin/</code>.</td>
         </tr>
         <tr>
           <td><strong>App settings &amp; preferences</strong> — theme, chosen integrations, MCP read/write toggle, AI configuration</td>
@@ -389,7 +398,7 @@
   </ul>
 
   <h2 id="p11">11. Your rights &amp; choices</h2>
-  <p>Because all data stays on your device and we collect nothing, you already have direct and complete control over it. You can access, modify, export, or delete any of it using your own file system and the in-app sign-out controls, without needing to make a request to us. If you have connected Google, you can additionally revoke access as described in Section 4. Depending on where you live, you may have rights under laws such as the GDPR or CCPA; since we do not process your personal data, most such requests are satisfied by your own local controls, but you may still contact us with questions (Section 16).</p>
+  <p>Because all data stays on your device and we collect nothing, you already have direct and complete control over it. You can access, modify, export, or delete any of it using your own file system and the in-app sign-out controls, without needing to make a request to us. Depending on where you live, you may have rights under laws such as the GDPR or CCPA; since we do not process your personal data, most such requests are satisfied by your own local controls, but you may still contact us with questions (Section 16).</p>
 
   <h2 id="p12">12. The website</h2>
   <p>The K8Board website is a static informational site. It does not require an account and does not set advertising or cross-site tracking cookies. It loads <strong>no third-party scripts, fonts or images</strong> (a Content-Security-Policy on every page enforces this). It contains a plain link to <strong>Buy Me a Coffee</strong>; if you choose to follow it, Buy Me a Coffee processes that visit under its own privacy policy. Standard, short-lived server request logs kept by our hosting provider for reliability and security are not used by us to build profiles of visitors or for advertising.</p>
@@ -404,7 +413,7 @@
   <p>We may update this Privacy Policy from time to time to reflect changes to the app or to legal requirements. When we do, we will revise the "Last updated" date at the top of this page, and material changes will be described here. Your continued use of the app or website after an update constitutes acceptance of the revised policy.</p>
 
   <h2 id="p16">16. Contact us</h2>
-  <p>If you have any questions, concerns, or requests regarding this Privacy Policy or your data, you can reach us by opening an issue at <a href="https://github.com/jaychandra1/K8Board" target="_blank" rel="noopener">github.com/jaychandra1/K8Board</a> or by emailing <strong>kubepilot.dashboard@gmail.com</strong>. We aim to respond within a reasonable timeframe.</p>
+  <p>If you have any questions, concerns, or requests regarding this Privacy Policy or your data, you can reach us by emailing <a href="mailto:kubepilot.dashboard@gmail.com">kubepilot.dashboard@gmail.com</a>. We aim to respond within a reasonable timeframe.</p>
 </main>
 
 <footer>
@@ -419,7 +428,6 @@
       <a href="docs.html">Docs</a>
       <a href="privacy.html">Privacy</a>
       <a href="terms.html">Terms</a>
-      <a href="https://github.com/jaychandra1/K8Board" target="_blank" rel="noopener">GitHub</a>
     </div>
     <div class="copy">Built for developers and platform teams. Not affiliated with the Kubernetes project or the CNCF.</div>
     <div class="made">

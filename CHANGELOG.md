@@ -7,6 +7,8 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Security
+- **Image scans send nothing to Aqua Security.** Trivy otherwise sends anonymous usage data to Aqua and asks Aqua's server for update notices on every run, which broke K8Board's no-telemetry promise. Every Trivy run K8Board starts now has both off (`TRIVY_DISABLE_TELEMETRY`, `TRIVY_SKIP_VERSION_CHECK`, overriding the user's environment). They are set as variables rather than flags, so an older Trivy on `PATH` that doesn't know the flags still runs (`test/trivy-telemetry.test.mjs`).
+- **The [privacy policy](https://k8dashboard.in/privacy) lists what image scans connect to:** the one-time Trivy download from GitHub, Trivy's vulnerability database (`mirror.gcr.io`, or `ghcr.io` as a fallback) and the registries of the images scanned. It also says where scan results are stored (`~/.config/kubepilot/security-scans/`), names JDG Initiates as the publisher, and drops a sentence about revoking Google access (K8Board has no Google sign-in). The Store certification notes and the user guide say the same.
 - **Every High and Critical CodeQL finding is fixed or reviewed** (48 when the gate first ran):
   - **Loading a kubeconfig by path:** the file must still be inside your home folder (or a `KUBECONFIG_DIRS` entry). That check now sits where the path arrives, in a form CodeQL can verify; nothing it allows or refuses changed. This cleared 36 findings across the kubeconfig backup, repair, import and AWS sign-in writes.
   - **Cloud detection:** a cluster's cloud (AWS, Azure, GCP, local) is read from its API server's host name only. A cloud domain in a path, query or user name used to count.
@@ -174,6 +176,12 @@ All notable changes to this project are documented here. The format follows
   Bars turn amber at 75% requested and red at 90%. The card also says when pods are waiting for a node with room. Requests are added up the way `kubectl describe node` does: the bigger of the app containers and the largest init container, plus native sidecars and pod overhead. Finished and unscheduled pods don't count. The summary API gains `cpuRequestedMilli`, `memRequestedBytes`, `cpuLimitsMilli`, `memLimitsBytes`, `podsScheduled`, `podsAllocatable`, `podsUnscheduled` and `usage` (`lib/capacity.mjs`, shared with demo mode).
 
 ### Fixed
+- **Website: downloads go to the Microsoft Store only, and no GitHub addresses are shown.**
+  - Every download button goes to `website/get.html`, which forwards to K8Board's Microsoft Store page. It's the only page with the Store link; replace `REPLACE-WITH-STORE-ID` there before publishing the site.
+  - The Windows card comes first and says *Get it from Microsoft Store*. macOS and Linux show *Coming soon*, with no download.
+  - Removed every GitHub link: the hero and footer buttons, release and checksum links, *Release on GitHub*, and the build-from-source section of the docs. The privacy policy, terms and docs give the support email instead of GitHub issues. The Docker section keeps the published image name.
+  - `test/website-links.test.mjs` fails if a page shows a GitHub address, links an installer directly, or links the Store anywhere but `get.html`.
+- **Website: the privacy and terms pages ignored your theme.** Their theme script was wrapped in two `<script>` tags, so it never ran: the pages always opened light, and the first click on the theme button did nothing.
 - **A slow or unreachable cluster or cloud API could leave a view loading indefinitely** (audit REL-02). About two-thirds of the Kubernetes calls, and every AWS and Azure call, had no time limit.
   - **Kubernetes API calls:** now fail after 30 seconds unless the call sets its own limit. Watches, followed logs, shells and port-forwards are unaffected.
   - **AWS:** SDK requests fail after 30 seconds, or 10 seconds to connect.

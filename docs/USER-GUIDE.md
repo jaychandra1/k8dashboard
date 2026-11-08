@@ -15,7 +15,7 @@ Current version: `1.2.0` (see the `VERSION` file). Node.js **22 or newer** is re
 | Browse a real cluster | A working kubeconfig (`~/.kube/config` or `KUBECONFIG`). Nothing else: every read and action (apply, delete, scale, restart, Argo CD sync) goes through the Kubernetes API. |
 | Import an EKS or AKS cluster | An AWS or Azure account with access to the cluster — **Add cluster** signs you in and writes the kubeconfig; no `aws`/`az` CLI needed. |
 | Pod shell / port-forward | `kubectl` on `PATH` — the only two features that need it. `GET /api/config/capabilities` reports whether it was found. |
-| Security Center image scans | Nothing extra: the Docker image includes Trivy; the desktop app and source builds download it on first use (pinned version, checksum-verified) into `~/.config/kubepilot/bin`. |
+| Security Center image scans | Nothing extra: the Docker image includes Trivy; the desktop app and source builds download it on first use (pinned version, checksum-verified) into `~/.config/kubepilot/bin`. K8Board runs Trivy with its anonymous usage data and update checks off (`TRIVY_DISABLE_TELEMETRY`, `TRIVY_SKIP_VERSION_CHECK`). |
 | AI assistant | Any OpenAI-compatible endpoint (OpenAI, Azure OpenAI, Ollama, LM Studio, vLLM, LiteLLM…). |
 
 ### 1.2 Three ways to run it
