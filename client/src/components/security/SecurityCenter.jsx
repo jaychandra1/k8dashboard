@@ -133,7 +133,11 @@ export default function SecurityCenter({ view, onViewChange, refreshSignal = 0, 
   return (
     <div className="sec-view">
       <div className="sec-head">
-        <div className="sec-title"><Icon name="shieldCheck" size={20} /> <h1>Security</h1></div>
+        {/* Title with its count under it, as on the resource pages. */}
+        <div>
+          <div className="sec-title"><Icon name="shieldCheck" size={18} /> <h1>Security</h1></div>
+          <span className="resource-count sec-count" role="status">{count} {count === 1 ? 'item' : 'items'}</span>
+        </div>
         <div className="sec-controls">
           <label htmlFor={`${id}-ns`} className="sr-only">Namespace</label>
           <select id={`${id}-ns`} className="sec-nssel" value={ns} onChange={(e) => setNs(e.target.value)}>
@@ -141,7 +145,6 @@ export default function SecurityCenter({ view, onViewChange, refreshSignal = 0, 
             {nsList.map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
           <SearchBox value={q} onChange={setQ} ariaLabel={`Search ${tab}`} placeholder={`Search ${tab}…`} className="sec-search-box" />
-          <span className="sec-count" role="status">{count} items</span>
         </div>
       </div>
 

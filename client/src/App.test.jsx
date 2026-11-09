@@ -210,6 +210,25 @@ describe('App routing', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Nodes node-a' })).toBeInTheDocument());
   });
 
+  it('the sidebar gear opens Preferences, and a second click closes it back to the page you were on', async () => {
+    renderApp();
+    const user = await connectFromHome();
+    await user.click(screen.getByRole('link', { name: 'Pods' }));
+    await waitFor(() => expect(screen.getByTestId('rv')).toHaveAttribute('data-type', 'pod'));
+    const gear = () => within(screen.getByRole('navigation', { name: 'Primary' })).getByRole('button', { name: 'Preferences' });
+    expect(gear()).toHaveAttribute('aria-pressed', 'false');
+
+    await user.click(gear());
+    await waitFor(() => expect(window.location.hash).toBe('#/preferences/general'));
+    expect(gear()).toHaveAttribute('aria-pressed', 'true');
+    expect(gear()).toHaveAttribute('title', 'Close preferences');
+
+    await user.click(gear());
+    await waitFor(() => expect(window.location.hash).toBe('#/pod'));
+    await waitFor(() => expect(screen.getByTestId('rv')).toHaveAttribute('data-type', 'pod'));
+    expect(gear()).toHaveAttribute('aria-pressed', 'false');
+  }, 15000);
+
   it('opens the command palette with Ctrl+K and the shortcuts sheet with ?', async () => {
     renderApp();
     const user = await connectFromHome();

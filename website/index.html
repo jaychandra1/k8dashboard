@@ -30,6 +30,8 @@
 <meta name="twitter:image:alt" content="K8Board: a beautiful native desktop UI for your Kubernetes clusters" />
 <link rel="icon" href="assets/icon.png" type="image/png" />
 <style>
+  /* Proxima Nova where it's installed; else Figtree (SIL OFL 1.1, assets/fonts/OFL.txt), as in the app. */
+  @font-face { font-family: "Figtree"; font-style: normal; font-weight: 300 900; font-display: swap; src: url("assets/fonts/figtree-latin-wght-normal.woff2") format("woff2"); }
   /* ============ Apple-style design system ============ */
   :root {
     color-scheme: light;
@@ -62,7 +64,7 @@
     --cyan: #32ade6;
     --radius: 18px;
     --maxw: 1024px;
-    --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font: "Proxima Nova", "Figtree", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     --mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
     --ease-out: cubic-bezier(0.25, 0.46, 0.45, 0.94);
     --ease-spring: cubic-bezier(0.34, 1.3, 0.64, 1);

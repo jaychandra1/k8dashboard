@@ -22,17 +22,30 @@ const setup = (props = {}) => {
 };
 
 describe('Home', () => {
-  it('welcomes, offers the last connected cluster first, and lists every cluster (pinned, recent, then by name)', async () => {
+  it('welcomes back, lists every cluster (pinned, recent, then by name) and tags the last connected one in the list', async () => {
     const { user, onConnect } = setup();
-    expect(screen.getByRole('heading', { name: 'Welcome to K8Board' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Welcome back' })).toBeInTheDocument();
+    expect(screen.getByText('Choose a cluster to connect. Nothing is contacted until you do.')).toBeInTheDocument();
     expect(screen.getByRole('main')).toHaveAttribute('id', 'main');
-    const last = screen.getByRole('region', { name: 'Last connected' });
-    expect(last).toHaveTextContent('dev-env-cluster');
-    expect(last).toHaveTextContent('AWS EKS · last used 2h ago');
-    const rows = within(screen.getByRole('list', { name: 'Clusters in your kubeconfig' })).getAllByRole('listitem');
+    // No separate "Last connected" block: the list says it.
+    expect(screen.queryByRole('region', { name: 'Last connected' })).toBeNull();
+    const list = screen.getByRole('list', { name: 'Clusters in your kubeconfig' });
+    const rows = within(list).getAllByRole('listitem');
     expect(rows.map((r) => r.querySelector('.home-row-name').textContent)).toEqual(['tr-prod-cashierbackend', 'dev-env-cluster', 'kind-local', 'pixdora-tech']);
+    const last = rows[1];
+    expect(last).toHaveTextContent('Recently connected');
+    expect(last).toHaveTextContent('AWS EKS · last used 2h ago');
+    expect(rows.filter((r) => /Recently connected/.test(r.textContent))).toHaveLength(1);
     await user.click(within(last).getByRole('button', { name: 'Connect to dev-env-cluster' }));
     expect(onConnect).toHaveBeenCalledWith('dev-env-cluster');
+  });
+
+  it('first run: "Welcome to K8Board", with the logo and name in the header', () => {
+    setup({ lastConnected: null, recent: [] });
+    expect(screen.getByRole('heading', { name: 'Welcome to K8Board' })).toBeInTheDocument();
+    expect(screen.getByRole('banner')).toHaveTextContent('K8Board');
+    expect(screen.getByRole('banner').querySelector('img.home-logo-img')).not.toBeNull();
+    expect(screen.queryByText('Recently connected')).toBeNull();
   });
 
   it('badges from local information: production, signed out, session expired', () => {
@@ -78,9 +91,10 @@ describe('Home', () => {
 
   it('while connected: the connected cluster opens, the others connect, Disconnect leaves', async () => {
     const { user, onOpenDashboard, onDisconnect } = setup({ connected: 'dev-env-cluster' });
-    expect(screen.queryByRole('region', { name: 'Last connected' })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Clusters' })).toBeInTheDocument();
     const list = screen.getByRole('list', { name: 'Clusters in your kubeconfig' });
     expect(within(list).getByText('dev-env-cluster').closest('li')).toHaveTextContent('Connected');
+    expect(screen.queryByText('Recently connected')).toBeNull(); // the connected one says Connected
     await user.click(within(list).getByRole('button', { name: 'Open dev-env-cluster' }));
     expect(onOpenDashboard).toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: 'Disconnect' }));

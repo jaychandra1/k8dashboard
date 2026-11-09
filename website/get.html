@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; base-uri 'none'; form-action 'none'" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'" />
 <meta name="referrer" content="strict-origin-when-cross-origin" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <meta name="robots" content="noindex" />
@@ -18,10 +18,12 @@
 <meta name="description" content="Get K8Board for Windows from the Microsoft Store." />
 <link rel="icon" href="assets/icon.png" type="image/png" />
 <style>
+  /* Proxima Nova where it's installed; else Figtree (SIL OFL 1.1, assets/fonts/OFL.txt), as in the app. */
+  @font-face { font-family: "Figtree"; font-style: normal; font-weight: 300 900; font-display: swap; src: url("assets/fonts/figtree-latin-wght-normal.woff2") format("woff2"); }
   :root {
     color-scheme: light dark;
     --bg: #ffffff; --text: #1d1d1f; --text-dim: #6e6e73; --accent: #0066cc; --accent-hover: #0077ed;
-    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font: "Proxima Nova", "Figtree", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   }
   @media (prefers-color-scheme: dark) {
     :root { --bg: #000000; --text: #f5f5f7; --text-dim: #a1a1a6; --accent: #2997ff; --accent-hover: #47a5ff; }

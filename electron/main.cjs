@@ -667,6 +667,7 @@ function isAppPage(event) {
 //          | { type: 'open-contexts' }
 //          | { type: 'add-cluster', provider: 'aws' | 'azure' }
 //          | { type: 'show-release-notes' } | { type: 'check-updates' }      (Help menu)
+//          | { type: 'show-about' }                                         (Help → About K8Board)
 //          | { type: 'update-result', status: 'installed' | 'failed', version, from }
 // Nothing here blocks startup; failures are logged at debug and ignored.
 function backendJson(method, apiPath, body) {
@@ -938,7 +939,8 @@ function buildMenu() {
           {
             label: app.name,
             submenu: [
-              { role: 'about' },
+              // K8Board's own About dialog (components/AboutDialog), not Electron's panel.
+              { label: `About ${app.name}`, click: () => notifyRendererWhenReady({ type: 'show-about' }) },
               { type: 'separator' },
               { role: 'hide' },
               { role: 'hideOthers' },
@@ -978,6 +980,11 @@ function buildMenu() {
         { type: 'separator' },
         { label: 'Export Diagnostics…', click: () => { exportDiagnostics(); } },
         { label: 'Open Logs Folder', enabled: !!logFile, click: () => { if (logFile) shell.openPath(logFile.dir); } },
+        // On macOS About lives in the app menu (above).
+        ...(isMac ? [] : [
+          { type: 'separator' },
+          { label: 'About K8Board', click: () => notifyRendererWhenReady({ type: 'show-about' }) },
+        ]),
       ],
     },
   ];

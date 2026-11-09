@@ -39,7 +39,11 @@ describe('AuthErrorModal classify — backend helper reasons', () => {
     expect(pub.title).toBe('Cluster unreachable');
     expect(pub.provider).toBe('aws');
     expect(pub.fix.note).toMatch(/resolves to its public endpoint.*Tailscale or a VPN.*split DNS.*allowed public-access IP ranges/);
-    expect(at({ endpoint: 'private', failure: 'timeout' }).fix.note).toMatch(/private endpoint.*Connect to Tailscale or the VPN/);
+    for (const failure of ['timeout', 'refused', 'unreachable', 'reset']) {
+      const priv = at({ endpoint: 'private', failure });
+      expect(priv).toMatchObject({ title: 'Cluster access restricted', fix: null, plain: true, provider: 'aws' });
+      expect(priv.summary).toBe('This cluster is private. Please connect to the required network (VPN/Tailscale) to access it.');
+    }
     expect(at({ endpoint: 'unknown', failure: 'dns' }).fix.note).toMatch(/only reachable over Tailscale or a VPN/);
     expect(at({ endpoint: 'local', failure: 'refused' }).fix.note).toMatch(/Start the local cluster/);
     expect(at(undefined).fix.note).toMatch(/Check your network or VPN/);
@@ -120,11 +124,28 @@ describe('AuthErrorModal rendering', () => {
     expect(text).not.toContain('eks.amazonaws.com');
   });
 
-  it('unreachable private endpoint: "Private endpoint" on the card and a connect-your-VPN hint', () => {
-    render(<AuthErrorModal auth={{ reason: 'unreachable', message: "The cluster's private endpoint didn't answer (connection timed out).", network: { endpoint: 'private', failure: 'timeout' }, server: 'https://x.gr7.eu-west-1.eks.amazonaws.com', currentContext: 'dev-env-cluster' }} onRetry={() => {}} contextsInfo={INFO} currentContext="dev-env-cluster" />);
+  it('unreachable private cluster: a short "connect to the network" notice, no timeouts, endpoints or technical details', () => {
+    const auth = {
+      reason: 'unreachable',
+      message: "The cluster's private endpoint didn't answer (connection timed out).",
+      detail: 'fetch failed (UND_ERR_CONNECT_TIMEOUT)',
+      network: { endpoint: 'private', failure: 'timeout' },
+      server: 'https://x.gr7.eu-west-1.eks.amazonaws.com',
+      currentContext: 'dev-env-cluster',
+    };
+    const onRetry = vi.fn();
+    const { container } = render(<AuthErrorModal auth={auth} onRetry={onRetry} onBack={() => {}} contextsInfo={INFO} currentContext="dev-env-cluster" />);
+    expect(screen.getByRole('dialog', { name: 'Cluster access restricted' })).toBeInTheDocument();
+    expect(screen.getByText('This cluster is private. Please connect to the required network (VPN/Tailscale) to access it.')).toBeInTheDocument();
     const card = screen.getByRole('region', { name: 'dev-env-cluster connection' });
-    expect(card).toHaveTextContent('AWS EKS · Private endpoint');
-    expect(card).toHaveTextContent(/Connect to Tailscale or the VPN that routes to that network/);
+    expect(card).toHaveTextContent('AWS EKS · Private cluster');
+    const text = container.ownerDocument.body.textContent;
+    for (const technical of ['endpoint', 'timed out', 'Technical details', 'UND_ERR', 'unreachable']) {
+      expect(text).not.toContain(technical);
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Back to clusters' })).toBeInTheDocument();
   });
 
   it('signs in right here: browser step, then reconnects automatically', async () => {

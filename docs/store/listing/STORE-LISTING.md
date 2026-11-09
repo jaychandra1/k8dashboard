@@ -159,7 +159,7 @@ Leave this **blank** for the first submission (Microsoft's instruction). For lat
 
 ### Screenshots (Desktop; PNG 1920 × 1080; 8 of up to 10)
 
-Upload the **dark** set from `screenshots/dark/`, in this order. A light set with the same names is in `screenshots/light/` if you prefer it. Use one set throughout. Each caption is ≤ 200 characters.
+The images are in the **`Microsoft store/`** folder at the root of the repository. Upload the **dark** set from `Microsoft store/screenshots/dark/`, in this order. A light set with the same names is in `Microsoft store/screenshots/light/` if you prefer it. Use one set throughout. Each caption is ≤ 200 characters.
 
 | Order | File | Caption | Chars |
 |---|---|---|---|
@@ -178,8 +178,8 @@ All screenshots show K8Board's real UI connected to its sample cluster (`demo-cl
 
 | Partner Center slot | File | Notes |
 |---|---|---|
-| **1:1 App tile icon (300 × 300)**, strongly recommended | `images/store-tile-icon-300x300.png` | The Store uses this instead of the package logo. Tick **Only use images I upload** if Partner Center offers it. |
-| **16:9 Super hero art (1920 × 1080)**, recommended | `images/super-hero-art-1920x1080.png` | Microsoft's rules: no text, no app UI, key art centred and clear of the bottom third. It is used at the top of the listing and for promotions. |
+| **1:1 App tile icon (300 × 300)**, strongly recommended | `Microsoft store/images/store-tile-icon-300x300.png` | The Store uses this instead of the package logo. Tick **Only use images I upload** if Partner Center offers it. |
+| **16:9 Super hero art (1920 × 1080)**, recommended | `Microsoft store/images/super-hero-art-1920x1080.png` | Microsoft's rules: no text, no app UI, key art centred and clear of the bottom third. It is used at the top of the listing and for promotions. |
 | 2:3 Poster art / 1:1 Box art | (none) | Microsoft says these apply to games, not apps |
 | Trailers | (none) | Optional. Each needs an MP4 or MOV video at 1920 × 1080, a 1920 × 1080 PNG thumbnail, and the super hero art. |
 
@@ -251,30 +251,30 @@ K8Board is a Win32 desktop application (Electron) packaged as MSIX, so it needs 
 
 Approval normally carries over to later updates unless the package declares new capabilities.
 
-## Files in this folder
+## Files in `Microsoft store/`
 
 | File | Size | Use |
 |---|---|---|
 | `images/store-tile-icon-300x300.png` | 300 × 300, 138 KB | 1:1 app tile icon |
 | `images/super-hero-art-1920x1080.png` | 1920 × 1080, 2109 KB | 16:9 super hero art |
-| `screenshots/dark/01-cluster-dashboard.png` | 1920 × 1080, 123 KB | Desktop screenshot (dark) |
-| `screenshots/dark/02-pods-and-details.png` | 1920 × 1080, 251 KB | Desktop screenshot (dark) |
-| `screenshots/dark/03-logs.png` | 1920 × 1080, 268 KB | Desktop screenshot (dark) |
-| `screenshots/dark/04-topology.png` | 1920 × 1080, 236 KB | Desktop screenshot (dark) |
-| `screenshots/dark/05-security-overview.png` | 1920 × 1080, 140 KB | Desktop screenshot (dark) |
-| `screenshots/dark/06-image-vulnerabilities.png` | 1920 × 1080, 137 KB | Desktop screenshot (dark) |
-| `screenshots/dark/07-argo-cd.png` | 1920 × 1080, 125 KB | Desktop screenshot (dark) |
-| `screenshots/dark/08-cloud-integrations.png` | 1920 × 1080, 105 KB | Desktop screenshot (dark) |
-| `screenshots/light/01-cluster-dashboard.png` | 1920 × 1080, 111 KB | Desktop screenshot (light, alternative) |
-| `screenshots/light/02-pods-and-details.png` | 1920 × 1080, 245 KB | Desktop screenshot (light, alternative) |
-| `screenshots/light/03-logs.png` | 1920 × 1080, 259 KB | Desktop screenshot (light, alternative) |
-| `screenshots/light/04-topology.png` | 1920 × 1080, 225 KB | Desktop screenshot (light, alternative) |
-| `screenshots/light/05-security-overview.png` | 1920 × 1080, 125 KB | Desktop screenshot (light, alternative) |
-| `screenshots/light/06-image-vulnerabilities.png` | 1920 × 1080, 123 KB | Desktop screenshot (light, alternative) |
-| `screenshots/light/07-argo-cd.png` | 1920 × 1080, 109 KB | Desktop screenshot (light, alternative) |
-| `screenshots/light/08-cloud-integrations.png` | 1920 × 1080, 90 KB | Desktop screenshot (light, alternative) |
+| `screenshots/dark/01-cluster-dashboard.png` | 1920 × 1080, 166 KB | Desktop screenshot (dark) |
+| `screenshots/dark/02-pods-and-details.png` | 1920 × 1080, 312 KB | Desktop screenshot (dark) |
+| `screenshots/dark/03-logs.png` | 1920 × 1080, 309 KB | Desktop screenshot (dark) |
+| `screenshots/dark/04-topology.png` | 1920 × 1080, 240 KB | Desktop screenshot (dark) |
+| `screenshots/dark/05-security-overview.png` | 1920 × 1080, 162 KB | Desktop screenshot (dark) |
+| `screenshots/dark/06-image-vulnerabilities.png` | 1920 × 1080, 159 KB | Desktop screenshot (dark) |
+| `screenshots/dark/07-argo-cd.png` | 1920 × 1080, 153 KB | Desktop screenshot (dark) |
+| `screenshots/dark/08-cloud-integrations.png` | 1920 × 1080, 124 KB | Desktop screenshot (dark) |
+| `screenshots/light/01-cluster-dashboard.png` | 1920 × 1080, 163 KB | Desktop screenshot (light, alternative) |
+| `screenshots/light/02-pods-and-details.png` | 1920 × 1080, 316 KB | Desktop screenshot (light, alternative) |
+| `screenshots/light/03-logs.png` | 1920 × 1080, 313 KB | Desktop screenshot (light, alternative) |
+| `screenshots/light/04-topology.png` | 1920 × 1080, 244 KB | Desktop screenshot (light, alternative) |
+| `screenshots/light/05-security-overview.png` | 1920 × 1080, 154 KB | Desktop screenshot (light, alternative) |
+| `screenshots/light/06-image-vulnerabilities.png` | 1920 × 1080, 151 KB | Desktop screenshot (light, alternative) |
+| `screenshots/light/07-argo-cd.png` | 1920 × 1080, 138 KB | Desktop screenshot (light, alternative) |
+| `screenshots/light/08-cloud-integrations.png` | 1920 × 1080, 113 KB | Desktop screenshot (light, alternative) |
 
-All images are PNG and well under the 50 MB limit. The screenshots were taken from K8Board 1.7.8's own UI at 1920 × 1080. The sidebar shows that version number; the Store doesn't require it to match the package, but you can retake them for a later release. The logos were rendered from `build/source/k8board-icon.svg`, the master the app icons come from.
+All images are PNG and well under the 50 MB limit. The screenshots were taken from K8Board 1.8.4's own UI at 1920 × 1080, on the sample cluster; retake them for a later release with `npm run build`, then `npx electron scripts/capture-screenshots.cjs --store`. The sidebar shows the version number; the Store doesn't require it to match the package. The logos were rendered from `build/source/k8board-icon.svg`, the master the app icons come from.
 
 ## Things that can fail certification, and the answer
 

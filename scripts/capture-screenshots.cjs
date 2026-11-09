@@ -10,6 +10,12 @@
 // 1473×880 window at 2×) and docs/screenshot-dashboard.png (the dark dashboard,
 // used by the README). The backend runs on SHOTS_PORT (default 3089) with a
 // throwaway HOME and no kubeconfig; nothing on the machine is read or changed.
+//
+//   npx electron scripts/capture-screenshots.cjs --store
+//
+// The Microsoft Store set instead: 1920×1080 PNGs of the listing's eight
+// scenes, written to "Microsoft store/screenshots/<dark|light>/NN-<scene>.png"
+// (docs/store/listing/STORE-LISTING.md has their captions).
 'use strict';
 
 const { app, BrowserWindow } = require('electron');
@@ -24,10 +30,12 @@ const ROOT = path.resolve(__dirname, '..');
 const PORT = Number(process.env.SHOTS_PORT || 3089);
 const TOKEN = crypto.randomBytes(24).toString('base64url');
 const BASE = `http://127.0.0.1:${PORT}`;
-const WIDTH = 1473;
-const HEIGHT = 880;
-const SCALE = 2;
+const STORE = process.argv.includes('--store');
+const WIDTH = STORE ? 1920 : 1473;
+const HEIGHT = STORE ? 1080 : 880;
+const SCALE = STORE ? 1 : 2;
 const OUT_DIR = path.join(ROOT, 'website', 'assets');
+const STORE_DIR = path.join(ROOT, 'Microsoft store', 'screenshots');
 const README_SHOT = path.join(ROOT, 'docs', 'screenshot-dashboard.png');
 const THEMES = ['dark', 'light'];
 
@@ -139,8 +147,18 @@ async function settle(ms = 900) {
 let loads = 0;
 async function open(hash, ready, label) {
   loads += 1;
-  await win.loadURL(`${BASE}/?shot=${loads}#token=${TOKEN}`);
+  const url = `${BASE}/?shot=${loads}#token=${TOKEN}`;
+  // A long run occasionally gets one failed page load (ERR_FAILED); try again once.
+  await win.loadURL(url).catch(async (err) => {
+    log(`  load failed (${err.code || err.message}), retrying`);
+    await sleep(3000);
+    await win.loadURL(url);
+  });
   await emulateViewport();
+  // The app opens on Home; connect to the demo cluster from there.
+  const CONNECT = "document.querySelector('[aria-label=\"Connect to demo-cluster\"]')";
+  await waitFor(`document.querySelector('.nav-sidebar') || ${CONNECT}`, 'Home or the app shell');
+  await js(`(${CONNECT})?.click()`);
   await waitFor("document.querySelector('.nav-sidebar')", 'app shell');
   await js(`location.hash = ${JSON.stringify(hash)}`);
   await waitFor(ready, label);
@@ -166,10 +184,16 @@ async function emulateViewport() {
 const pngSize = (buf) => ({ width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) });
 
 async function capture(name, theme) {
+  // Notices such as "Connected to demo-cluster" would cover the top bar.
+  if (await js("(() => { const b = [...document.querySelectorAll('.toast-close')]; b.forEach((x) => x.click()); return b.length; })()"))
+    await sleep(400);
   const { data } = await cdp('Page.captureScreenshot', { format: 'png', fromSurface: true });
   const png = Buffer.from(data, 'base64');
   const { width, height } = pngSize(png);
-  const file = path.join(OUT_DIR, `screenshot-${name}-${theme}.png`);
+  const file = STORE
+    ? path.join(STORE_DIR, theme, `${STORE_FILES[name]}.png`)
+    : path.join(OUT_DIR, `screenshot-${name}-${theme}.png`);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, png);
   log(`${path.relative(ROOT, file)}  ${width}x${height}`);
   if (width !== WIDTH * SCALE || height !== HEIGHT * SCALE)
@@ -259,12 +283,60 @@ const VIEWS = {
   },
 };
 
+// The Store's scenes, in listing order (file names match STORE-LISTING.md).
+const STORE_FILES = {
+  dashboard: '01-cluster-dashboard',
+  pods: '02-pods-and-details',
+  logs: '03-logs',
+  topology: '04-topology',
+  security: '05-security-overview',
+  images: '06-image-vulnerabilities',
+  argocd: '07-argo-cd',
+  cloud: '08-cloud-integrations',
+};
+const STORE_VIEWS = {
+  dashboard: VIEWS.dashboard,
+  // The crash-looping checkout pod, its details open beside the list.
+  async pods() {
+    await open(
+      '#/pod/shop/checkout-7c8f9d6b5-ck002',
+      "document.querySelector('.resource-drawer') && document.querySelectorAll('tbody tr').length > 5",
+      'pods with details'
+    );
+  },
+  // A healthy frontend pod streaming its logs.
+  async logs() {
+    await open(
+      '#/pod/shop/frontend-7f9c6d5b4-fe001',
+      "document.querySelector('.resource-drawer') && document.querySelector('[aria-label=\"Logs for frontend-7f9c6d5b4-fe001\"]')",
+      'pod with a logs button'
+    );
+    await js("document.querySelector('.resource-drawer [aria-label=\"Logs for frontend-7f9c6d5b4-fe001\"]').click()");
+    await waitFor("(document.querySelector('.logs-body, [role=\"log\"]')?.textContent || '').length > 200", 'logs');
+    await settle(1200);
+  },
+  topology: VIEWS.topology,
+  security: VIEWS.security,
+  async images() {
+    await open(
+      '#/security/images',
+      "document.querySelectorAll('.sec-imgname').length >= 3",
+      'image vulnerabilities'
+    );
+  },
+  argocd: VIEWS.argocd,
+  async cloud() {
+    await open('#/preferences/integrations', "document.querySelector('.prefs-page')", 'Cloud Integrations');
+  },
+};
+
 async function main() {
+  const views = STORE ? STORE_VIEWS : VIEWS;
   const wanted = process.argv.slice(2).filter((a) => !a.startsWith('-') && !a.endsWith('.cjs') && a !== '.');
-  const names = wanted.length ? wanted : Object.keys(VIEWS);
-  const unknown = names.filter((n) => !VIEWS[n]);
+  const names = wanted.length ? wanted : Object.keys(views);
+  const unknown = names.filter((n) => !views[n]);
   if (unknown.length)
-    throw new Error(`unknown view(s): ${unknown.join(', ')} (have: ${Object.keys(VIEWS).join(', ')})`);
+    throw new Error(`unknown view(s): ${unknown.join(', ')} (have: ${Object.keys(views).join(', ')})`);
 
   log(`starting the demo backend on ${BASE}`);
   const { child, home } = await startBackend();
@@ -292,9 +364,9 @@ async function main() {
       await js(`localStorage.setItem('theme', '${theme}')`);
       await setAiTool(AI_AGENT);
       for (const name of names) {
-        await VIEWS[name]();
+        await views[name]();
         const file = await capture(name, theme);
-        if (name === 'dashboard' && theme === 'dark') {
+        if (!STORE && name === 'dashboard' && theme === 'dark') {
           fs.copyFileSync(file, README_SHOT);
           log(`${path.relative(ROOT, README_SHOT)}  (copy of the dark dashboard)`);
         }

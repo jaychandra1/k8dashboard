@@ -9,7 +9,7 @@ import { NAV_GROUPS, typesInGroup } from '../lib/kinds';
 // or run a quick action — keyboard-first. ARIA combobox + listbox inside a
 // modal dialog (focus trap, Escape from anywhere, backdrop click).
 
-export default function CommandPalette({ open, onClose, onNavigate, contexts = [], currentContext, onSwitchContext, onOpenContexts, onOpenPreferences, onRefresh, onSetTheme, argocdInstalled = false }) {
+export default function CommandPalette({ open, onClose, onNavigate, contexts = [], currentContext, onSwitchContext, onOpenContexts, onOpenPreferences, onOpenAbout, onRefresh, onSetTheme, argocdInstalled = false }) {
   const id = useId();
   const [query, setQuery] = useState('');
   const [sel, setSel] = useState(0);
@@ -38,8 +38,9 @@ export default function CommandPalette({ open, onClose, onNavigate, contexts = [
       { id: 'act:theme-light', group: 'Actions', label: 'Theme: Light', icon: 'sun', run: () => onSetTheme?.('light') },
       { id: 'act:theme-system', group: 'Actions', label: 'Theme: System', icon: 'settings', run: () => onSetTheme?.('system') },
     );
+    if (onOpenAbout) cmds.push({ id: 'act:about', group: 'Actions', label: 'About K8Board', icon: 'details', run: () => onOpenAbout() });
     return cmds;
-  }, [contexts, currentContext, argocdInstalled, onNavigate, onSwitchContext, onOpenContexts, onOpenPreferences, onRefresh, onSetTheme]);
+  }, [contexts, currentContext, argocdInstalled, onNavigate, onSwitchContext, onOpenContexts, onOpenPreferences, onOpenAbout, onRefresh, onSetTheme]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

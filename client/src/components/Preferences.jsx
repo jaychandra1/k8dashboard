@@ -23,7 +23,7 @@ export const SECTIONS = [
   { key: 'external-tools', label: 'External Tools', icon: 'sparkles' },
   { key: 'assistant', label: 'AI Assistant', icon: 'send' },
   { key: 'mcp', label: 'MCP Server', icon: 'terminal' },
-  { key: 'about', label: 'About', icon: 'details' },
+  // About is under Help → About K8Board (components/AboutDialog).
 ];
 
 /** A valid absolute http(s) URL (for the LLM base URL). */
@@ -68,7 +68,6 @@ export default function Preferences({ configStatus, theme, onSetTheme, onChangeC
         {section === 'external-tools' && <ExternalToolsSection />}
         {section === 'assistant' && <AssistantSection />}
         {section === 'mcp' && <McpSection />}
-        {section === 'about' && <AboutSection />}
       </div>
     </div>
   );
@@ -489,17 +488,6 @@ function McpSection() {
           </Field>
         </>
       )}
-    </div>
-  );
-}
-
-function AboutSection() {
-  const version = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '';
-  return (
-    <div className="prefs-section">
-      <h1 className="prefs-h2">About</h1>
-      <Field label={<Brand />}>{version ? <span className="prefs-muted">Version {version}</span> : null}</Field>
-      <p className="prefs-lead">A native Kubernetes management app — cluster overview, resources, topology, ArgoCD, one-click AKS/EKS, terminals and bring-your-own AI agents.</p>
     </div>
   );
 }

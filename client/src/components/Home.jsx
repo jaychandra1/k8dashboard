@@ -11,8 +11,9 @@ import { formatAge } from '../lib/format';
 
 // Home: where K8Board opens. It lists the clusters of the kubeconfig — read
 // from the file only: nothing connects, signs in or calls a cluster API until
-// the user clicks Connect — with the last connected one first, pinned ones
-// next, and ways to add a cluster. The badges come from local files too
+// the user clicks Connect — pinned ones first, then by last use, the last
+// connected one tagged "Recently connected", and ways to add a cluster. The
+// badges come from local files too
 // (GET /api/config/status: AWS sign-in state from the token cache, production
 // sign-ins). Also shown, inside the app, while connected (#/home).
 //
@@ -105,7 +106,10 @@ export default function Home({
   return (
     <div className="home">
       <header className="home-head">
-        <Brand className="home-brand" />
+        <span className="home-logo">
+          <img className="home-logo-img" src="/logo-mark.png" alt="" width="26" height="26" decoding="async" />
+          <Brand className="home-brand" />
+        </span>
         <div className="home-head-actions">
           {addItems.length > 0 && (
             <span ref={addRef}>
@@ -123,11 +127,11 @@ export default function Home({
 
       <main id="main" className="home-body" tabIndex={-1}>
         <div className="home-intro">
-          <h1>{connected ? 'Clusters' : 'Welcome to K8Board'}</h1>
+          <h1>{connected ? 'Clusters' : recent.length ? 'Welcome back' : 'Welcome to K8Board'}</h1>
           <p>
             {connected
-              ? <>Connected to <strong>{connected}</strong>. Connect to another cluster, or go back to it.</>
-              : 'Pick a cluster to connect to. K8Board reads your kubeconfig; it contacts no cluster until you click Connect.'}
+              ? <>Connected to <strong>{connected}</strong>.</>
+              : 'Choose a cluster to connect. Nothing is contacted until you do.'}
           </p>
           {connected && (
             <div className="home-intro-actions">
@@ -137,28 +141,11 @@ export default function Home({
           )}
         </div>
 
-        {last && !connected && (
-          <section className="home-last" aria-label="Last connected">
-            <span className="home-eyebrow">Last connected</span>
-            <div className="home-last-body">
-              <span className={`home-row-icon ctx-provider ctx-provider-${providerKey(last)}`} aria-hidden="true"><Icon name={provider(last).icon} size={22} /></span>
-              <div className="home-row-main">
-                <span className="home-last-name" title={last}>{last}</span>
-                <span className="home-row-meta">{[provider(last).label, lastUsedText(usedAt.get(last))].filter(Boolean).join(' · ')}</span>
-                {clusterBadges(infoOf.get(last)).length > 0 && (
-                  <span className="home-row-badges">{clusterBadges(infoOf.get(last)).map((b) => <Badge key={b.text} tone={b.tone} size="sm">{b.text}</Badge>)}</span>
-                )}
-              </div>
-              <ConnectButton name={last} primary size="md" connecting={connecting} busy={connecting?.context === last} onConnect={onConnect} />
-            </div>
-          </section>
-        )}
-
         {contexts.length === 0 ? (
           <section className="home-empty" aria-label="No clusters">
             <Icon name="cluster" size={30} />
             <h2>No clusters yet</h2>
-            <p>Add a cluster from your cloud account, or open a kubeconfig file. Nothing connects until you choose a cluster.</p>
+            <p>Add one from AWS or Azure, or open a kubeconfig file.</p>
             <div className="home-tiles">
               {addItems.map((it) => (
                 <button key={it.key} type="button" className="home-tile" onClick={it.onSelect}>
@@ -183,8 +170,9 @@ export default function Home({
                   const isConnected = connected === name;
                   const removable = onRemove && (!canRemove || canRemove(name));
                   const badges = clusterBadges(infoOf.get(name));
+                  const isLast = name === last && !isConnected;
                   return (
-                    <li key={name} className="home-row" data-connected={isConnected || undefined}>
+                    <li key={name} className="home-row" data-connected={isConnected || undefined} data-last={isLast || undefined}>
                       <span className={`home-row-icon ctx-provider ctx-provider-${providerKey(name)}`} aria-hidden="true"><Icon name={provider(name).icon} size={18} /></span>
                       <div className="home-row-main">
                         <span className="home-row-name" title={name}>{name}</span>
@@ -192,6 +180,7 @@ export default function Home({
                       </div>
                       <span className="home-row-badges">
                         {isConnected && <Badge tone="ok" size="sm">Connected</Badge>}
+                        {isLast && <Badge tone="info" size="sm" dot={false} className="home-recent">Recently connected</Badge>}
                         {badges.map((b) => <Badge key={b.text} tone={b.tone} size="sm">{b.text}</Badge>)}
                       </span>
                       <span className="home-row-actions">

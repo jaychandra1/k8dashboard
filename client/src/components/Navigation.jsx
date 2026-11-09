@@ -154,7 +154,8 @@ const Navigation = forwardRef(function Navigation({
             className="nav-prefs theme-toggle"
             onClick={onOpenPreferences}
             aria-label="Preferences"
-            title="Preferences"
+            aria-pressed={view === 'preferences'}
+            title={view === 'preferences' ? 'Close preferences' : 'Preferences'}
           >
             <Icon name="settings" size={16} />
           </button>

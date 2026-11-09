@@ -33,6 +33,7 @@ import useResourceFanOut from './components/shell/useResourceFanOut';
 import useNavDrawer from './components/shell/useNavDrawer';
 import ShortcutsSheet from './components/shell/ShortcutsSheet';
 import UpdateDialogs from './components/UpdateDialogs';
+import AboutDialog, { openAbout } from './components/AboutDialog';
 import ViewOutlet from './components/shell/ViewOutlet';
 import LoadingScreen from './components/shell/LoadingScreen';
 import ContextPickerModal, { OPEN_CONTEXTS_EVENT } from './components/ContextPickerModal';
@@ -263,6 +264,11 @@ function App() {
   const goEvents = useCallback(() => goView('events'), [goView]);
   const goAiSettings = useCallback(() => openPreferences('external-tools'), [openPreferences]);
   const goPrefs = useCallback(() => openPreferences('general'), [openPreferences]);
+  // The sidebar gear toggles: a second click closes Preferences.
+  const togglePrefs = useCallback(
+    () => (routeRef.current.view === 'preferences' ? closePreferences() : openPreferences('general')),
+    [closePreferences, openPreferences]
+  );
 
   // Cross-navigation used by tables, drawers and the topology/nodes views.
   const nav = useMemo(() => ({
@@ -337,7 +343,7 @@ function App() {
   // with detail = { type: 'context-changed', context? } | { type: 'open-contexts' }
   //             | { type: 'add-cluster', provider: 'aws' | 'azure' }.
   // The Help menu's events (show-release-notes, check-updates, update-result)
-  // are handled by <UpdateDialogs>.
+  // are handled by <UpdateDialogs>; show-about by <AboutDialog>.
   const hostRef = useRef(null);
   hostRef.current = { afterSwitch, openContexts, openAws, openAzure };
   useEffect(() => {
@@ -504,7 +510,7 @@ function App() {
             crSelection={crSelection}
             onSelectCustomResource={onSelectCustomResource}
             argocdInstalled={argocdInstalled}
-            onOpenPreferences={goPrefs}
+            onOpenPreferences={togglePrefs}
           />
           <div className="nav-backdrop" onClick={drawer.close} aria-hidden="true" />
 
@@ -618,6 +624,7 @@ function App() {
           onSwitchContext={switchContext}
           onOpenContexts={openContexts}
           onOpenPreferences={goPrefs}
+          onOpenAbout={openAbout}
           onRefresh={handleRefresh}
           onSetTheme={setTheme}
           argocdInstalled={argocdInstalled}
@@ -644,6 +651,7 @@ function App() {
       <ShortcutsSheet open={shortcutsOpen} onClose={closeShortcuts} />
       {/* Help → Show Release Notes / Check for Updates (desktop Help menu) */}
       {tokenOk && <UpdateDialogs />}
+      {tokenOk && <AboutDialog />}
     </div>
   );
 }

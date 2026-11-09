@@ -1,4 +1,8 @@
 import './theme-init.js';
+// The UI typeface: Proxima Nova where it's installed, else Figtree (OFL),
+// bundled so it works offline. Only the upright variable font: one ~20 kB
+// file covers every weight (accented letters load on demand).
+import '@fontsource-variable/figtree/wght.css';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App.jsx';

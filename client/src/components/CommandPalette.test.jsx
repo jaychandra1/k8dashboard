@@ -24,6 +24,17 @@ describe('CommandPalette', () => {
     expect(screen.getByRole('option', { name: /Pods/ })).toBeInTheDocument();
   });
 
+  it('"About K8Board" opens the About dialog', async () => {
+    const user = userEvent.setup();
+    const onOpenAbout = vi.fn();
+    render(<CommandPalette open onClose={() => {}} onNavigate={() => {}} contexts={[]} onSwitchContext={() => {}} onOpenAbout={onOpenAbout} />);
+    await tick();
+    await user.keyboard('about');
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual([expect.stringContaining('About K8Board')]);
+    await user.keyboard('{Enter}');
+    expect(onOpenAbout).toHaveBeenCalledTimes(1);
+  });
+
   it('filters, moves with arrows and runs the selection on Enter', async () => {
     const user = userEvent.setup();
     const onNavigate = vi.fn();

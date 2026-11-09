@@ -10,7 +10,11 @@ website/
 ├── privacy.html   # privacy policy (the Store listing links to /privacy)
 ├── terms.html     # terms of service
 └── assets/        # icon, social preview image, light/dark screenshots
+    └── fonts/     # Figtree (SIL OFL 1.1, OFL.txt), the app's typeface where Proxima Nova isn't installed
 ```
+
+The screenshots come from the app's demo cluster: `npm run build`, then
+`npx electron scripts/capture-screenshots.cjs` (see the script's header).
 
 ## Preview locally
 

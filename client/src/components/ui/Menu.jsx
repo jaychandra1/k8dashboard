@@ -21,7 +21,11 @@ import Icon from '../Icons';
  */
 const SUB_W = 200;
 
-function MenuList({ items, onClose, onSelectDone, x, y, level = 0, anchorRect, flipHint, labelledBy, ariaLabel, autoFocus = true, minWidth }) {
+// onHoverIn / onHoverOut tell the parent list the pointer entered or left this
+// submenu. A submenu is the parent's DOM sibling, not its child, so moving into
+// it fires the parent's mouseleave; without onHoverIn the parent's close timer
+// would close the submenu under the pointer.
+function MenuList({ items, onClose, onSelectDone, x, y, level = 0, anchorRect, flipHint, labelledBy, ariaLabel, autoFocus = true, minWidth, onHoverIn, onHoverOut }) {
   const ref = useRef(null);
   const [pos, setPos] = useState({ left: x, top: y });
   const [flip, setFlip] = useState(!!flipHint);
@@ -104,7 +108,11 @@ function MenuList({ items, onClose, onSelectDone, x, y, level = 0, anchorRect, f
 
   const subAnchor = openSub ? ref.current?.querySelector(`[data-idx="${items.indexOf(openSub)}"]`)?.getBoundingClientRect() : null;
   const hoverOpen = (item) => { clearTimeout(closeTimer.current); if (item.children?.length && !item.disabled) setOpenSub(item); else setOpenSub(null); };
-  const hoverLeave = () => { closeTimer.current = setTimeout(() => setOpenSub(null), 220); };
+  const hoverLeave = () => { clearTimeout(closeTimer.current); closeTimer.current = setTimeout(() => setOpenSub(null), 220); };
+  // The pointer is over this list (or one of its submenus): keep this list and
+  // every list above it open.
+  const keepOpen = () => { clearTimeout(closeTimer.current); onHoverIn?.(); };
+  useEffect(() => () => clearTimeout(closeTimer.current), []);
 
   return (
     <>
@@ -118,8 +126,8 @@ function MenuList({ items, onClose, onSelectDone, x, y, level = 0, anchorRect, f
         data-level={level}
         style={{ left: pos.left, top: pos.top, '--ui-menu-min-w': minWidth ? `${minWidth}px` : undefined }}
         onKeyDown={onKeyDown}
-        onMouseLeave={hoverLeave}
-        onMouseEnter={() => clearTimeout(closeTimer.current)}
+        onMouseLeave={() => { hoverLeave(); onHoverOut?.(); }}
+        onMouseEnter={keepOpen}
       >
         {items.map((item, i) => {
           if (item.divider) return <div key={`d${i}`} className="context-menu-divider ui-menu-divider" role="separator" />;
@@ -167,6 +175,8 @@ function MenuList({ items, onClose, onSelectDone, x, y, level = 0, anchorRect, f
           flipHint={flip}
           ariaLabel={openSub.label}
           onSelectDone={onSelectDone}
+          onHoverIn={keepOpen}
+          onHoverOut={() => { hoverLeave(); onHoverOut?.(); }}
           onClose={(why) => { setOpenSub(null); if (why === 'escape' || why === 'tab') onClose?.(why); else ref.current?.focus(); }}
         />
       )}

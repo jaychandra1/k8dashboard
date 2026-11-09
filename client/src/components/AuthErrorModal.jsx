@@ -28,17 +28,22 @@ const TITLES = {
 const extractAzLogin = (raw) => (raw.match(/az login\b[^\n]*?--scope\s+"[^"]*"/i) || raw.match(/az login\b[^\n."]*/i) || [])[0]?.trim() || null;
 const extractAwsSso = (raw) => (raw.match(/aws sso login(?:\s+--profile\s+\S+)?/i) || [])[0]?.trim() || null;
 
-// "Public endpoint" / "Private endpoint" for the cluster card.
-export const ENDPOINT_LABEL = { public: 'Public endpoint', private: 'Private endpoint', local: 'Local' };
+// "Public endpoint" / "Private cluster" for the cluster card.
+export const ENDPOINT_LABEL = { public: 'Public endpoint', private: 'Private cluster', local: 'Local' };
+
+// A private cluster that doesn't answer: the user isn't on its network. Say
+// that and what to do — no timeouts, endpoints or diagnostics.
+export const PRIVATE_CLUSTER_NOTICE = {
+  title: 'Cluster access restricted',
+  summary: 'This cluster is private. Please connect to the required network (VPN/Tailscale) to access it.',
+};
 
 // What to try, given which endpoint this machine reached and how it failed.
 export function unreachableHint({ endpoint, failure } = {}) {
   if (failure === 'dns') {
     return 'Check your internet connection. If this cluster is only reachable over Tailscale or a VPN, connect it first — the cluster’s name may only resolve there.';
   }
-  if (endpoint === 'private') {
-    return 'This cluster uses a private endpoint, reachable only from its own network. Connect to Tailscale or the VPN that routes to that network, then retry.';
-  }
+  // (A private cluster gets PRIVATE_CLUSTER_NOTICE instead of a hint.)
   if (endpoint === 'public' && failure !== 'refused') {
     return 'On this computer the cluster’s name resolves to its public endpoint. If you normally reach it through Tailscale or a VPN, connect it and make sure its DNS resolves the cluster to the private endpoint (split DNS). Otherwise this network may not be on the cluster’s allowed public-access IP ranges.';
   }
@@ -96,6 +101,9 @@ function classifyRaw(auth) {
   // The backend has classified the network failure and which endpoint (private
   // or public) this machine reached — no address is ever included.
   if (reason === 'unreachable') {
+    if (auth?.network?.endpoint === 'private' && auth.network.failure !== 'dns') {
+      return { ...PRIVATE_CLUSTER_NOTICE, fix: null, plain: true };
+    }
     return {
       title: 'Cluster unreachable',
       summary: raw || "The cluster's API server can't be reached.",
@@ -155,7 +163,7 @@ export default function AuthErrorModal({ open = true, auth, onRetry, retrying, c
   // tenant ids and tokens are masked (lib/redact). Copy-to-run commands keep
   // their real values so they still work.
   const raw = redactSensitive(auth?.detail || auth?.message || '');
-  const { title, summary: rawSummary, fix, unmatched, provider: errProvider } = classify(auth);
+  const { title, summary: rawSummary, fix, unmatched, plain, provider: errProvider } = classify(auth);
   const summary = redactSensitive(rawSummary);
   const [copied, setCopied] = useState(null); // 'cmd' | 'raw'
 
@@ -177,8 +185,9 @@ export default function AuthErrorModal({ open = true, auth, onRetry, retrying, c
   ].filter(Boolean).join(' · ');
   const ended = aws ? fmtEnded(aws.expiredAt) : null;
 
-  // Only surface the raw error separately when it isn't already the summary.
-  const showRaw = !!raw && (!unmatched || raw.length > 160);
+  // Only surface the raw error separately when it isn't already the summary,
+  // and never under a plain notice (it would only repeat the diagnostics).
+  const showRaw = !plain && !!raw && (!unmatched || raw.length > 160);
 
   const copy = (text, which) => {
     try { navigator.clipboard?.writeText(text); setCopied(which); setTimeout(() => setCopied(null), 1500); } catch { /* ignore */ }
