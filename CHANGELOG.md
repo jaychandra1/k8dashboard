@@ -7,6 +7,12 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Security
+- **Fixes for four findings from the code scan (CodeQL), all in code added this cycle:**
+  - **A crafted line in `~/.aws/config` could stall K8Board.** Its section headers and `key = value` lines were read with regular expressions that backtrack: one line of 5,000 tabs took over a minute. Lines are now read by position, in time proportional to their length (200,000 tabs: under a second), with a test.
+  - **The profile an AWS sign-in is stored for comes from `~/.aws/config`, not from the request.** The request only selects among your own SSO profiles; its text is never used as the target.
+  - **The Google account never goes on gcloud's command line.** It is passed in gcloud's environment (`CLOUDSDK_CORE_ACCOUNT`), so nothing a kubeconfig entry carries is parsed by a shell, and an invalid account name is refused before gcloud starts.
+  - **No SHA-1 in K8Board's own code or tests.** Tests name AWS's token cache files with the AWS SDK's function; a fallback session label uses SHA-256.
+- **The Azure token helper checks the tenant** (an id, a domain, or `organizations`) before it becomes part of the Microsoft address the refresh token is sent to.
 - **Image scans send nothing to Aqua Security.** Trivy otherwise sends anonymous usage data to Aqua and asks Aqua's server for update notices on every run, which broke K8Board's no-telemetry promise. Every Trivy run K8Board starts now has both off (`TRIVY_DISABLE_TELEMETRY`, `TRIVY_SKIP_VERSION_CHECK`, overriding the user's environment). They are set as variables rather than flags, so an older Trivy on `PATH` that doesn't know the flags still runs (`test/trivy-telemetry.test.mjs`).
 - **The [privacy policy](https://k8board.vercel.app/privacy.html) lists what image scans connect to:** the one-time Trivy download from GitHub, Trivy's vulnerability database (`mirror.gcr.io`, or `ghcr.io` as a fallback) and the registries of the images scanned. It also says where scan results are stored (`~/.config/kubepilot/security-scans/`), names JDG Initiates as the publisher, and drops a sentence about revoking Google access (K8Board has no Google sign-in). The Store certification notes and the user guide say the same.
 - **Every High and Critical CodeQL finding is fixed or reviewed** (48 when the gate first ran):

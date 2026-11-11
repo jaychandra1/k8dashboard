@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import yaml from '../lib/yaml.mjs';
-import { gcloudStatus, gcloudAccessToken, isAccount, GcloudError } from '../lib/gcloud.mjs';
+import { gcloudStatus, gcloudAccessToken, runGcloud, isAccount, GcloudError } from '../lib/gcloud.mjs';
 import { discoverGkeClusters, listProjects, gkeClusterStatus, gkeEntryFor, writeGkeCluster, gkeKey, isGkeRef } from '../gcp-gke.js';
 import { run as tokenHelper } from '../gke-token.js';
 import { deriveHelperInvocation } from '../lib/kubeconfig-repair.mjs';
@@ -35,13 +35,14 @@ describe('gcloud as the Google sign-in', () => {
   test('access token: from config-helper with its expiry, for the chosen account', async () => {
     const calls = [];
     const now = 1_000_000;
-    const run = async (args) => { calls.push(args); return helperJson('ya29.token', now + 3000_000); };
+    const run = async (args, opts) => { calls.push([args, opts]); return helperJson('ya29.token', now + 3000_000); };
     assert.deepEqual(await gcloudAccessToken({ account: 'ops@example.com', run, now: () => now }), { token: 'ya29.token', expiresAt: now + 3000_000 });
-    assert.deepEqual(calls, [['config', 'config-helper', '--format=json', '--account=ops@example.com']]);
+    // The account never goes on the command line: gcloud gets it in its environment.
+    assert.deepEqual(calls, [[['config', 'config-helper', '--format=json'], { account: 'ops@example.com' }]]);
     // No account given: gcloud's active one.
     calls.length = 0;
     await gcloudAccessToken({ run, now: () => now });
-    assert.deepEqual(calls, [['config', 'config-helper', '--format=json']]);
+    assert.deepEqual(calls, [[['config', 'config-helper', '--format=json'], { account: null }]]);
   });
 
   test('access token: a nearly expired one is renewed; an unknown answer falls back to print-access-token', async () => {
@@ -65,6 +66,28 @@ describe('gcloud as the Google sign-in', () => {
     await assert.rejects(gcloudAccessToken({ account: 'x; rm -rf /', run: async () => { ran = true; return ok(''); } }), /not a Google account/);
     assert.equal(ran, false);
     assert.deepEqual(['dev@example.com', 'sa-1@proj.iam.gserviceaccount.com', 'a b@c.com', '--flag', ''].map(isAccount), [true, true, false, false, false]);
+  });
+
+  test('gcloud runs with fixed arguments; the account is in its environment, and a bad one is refused', async () => {
+    const spawned = [];
+    const { EventEmitter } = await import('node:events');
+    const spawn = (bin, args, opts) => {
+      spawned.push({ bin, args, account: opts.env.CLOUDSDK_CORE_ACCOUNT });
+      const child = new EventEmitter();
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.kill = () => {};
+      setImmediate(() => { child.stdout.emit('data', Buffer.from('ok')); child.emit('close', 0, null); });
+      return child;
+    };
+    assert.deepEqual(await runGcloud(['auth', 'list'], { spawn, account: 'dev@example.com' }), { code: 0, signal: null, stdout: 'ok', stderr: '' });
+    await runGcloud(['auth', 'list'], { spawn });
+    assert.deepEqual(spawned, [
+      { bin: 'gcloud', args: ['auth', 'list'], account: 'dev@example.com' },
+      { bin: 'gcloud', args: ['auth', 'list'], account: process.env.CLOUDSDK_CORE_ACCOUNT },
+    ]);
+    await assert.rejects(runGcloud(['auth', 'list'], { spawn, account: 'a" & calc & "' }), /not a Google account/);
+    assert.equal(spawned.length, 2, 'gcloud is not started for a bad account');
   });
 
   test('the token helper prints an ExecCredential that expires a minute before the token does', async () => {

@@ -62,7 +62,7 @@ import { failureHints, operatorLogErrors, remediationFor, reportTarget, revision
 import { operatorDetail, uniqueDetails } from './lib/vuln-details.mjs';
 import {
   createSsoLogin, adoptSsoLogin, refreshSsoToken, profileSsoInfo, sessionsForProfiles, sessionTokenState, awsConfigPath,
-  isManagedSession, normalizeStartUrl, ownsSignIn, parseAwsConfig, removeUnusedSession, saveAwsConfig,
+  isManagedSession, normalizeStartUrl, ownsSignIn, parseAwsConfig, removeUnusedSession, saveAwsConfig, ssoProfileNamed,
   splitByAccount, signOutSession, removeProfile, writePrivateFile,
 } from './lib/aws-sso.mjs';
 import { parseKubeconfigDoc, definesContext, removeContextFromDoc, dumpKubeconfigDoc } from './lib/kubeconfig-remove.mjs';
@@ -1441,7 +1441,9 @@ app.post('/api/aws/sso-login', async (req, res) => {
     // The "session expired" dialog signs in for one profile: the sign-in is
     // stored for that profile's account. The add-cluster wizard's is stored
     // once an account is chosen (POST /api/aws/import).
-    ssoTargetProfile = typeof profile === 'string' && profileSsoInfo(readAwsConfigText(), profile) ? profile : null;
+    // Only an SSO profile that exists in ~/.aws/config, under the name the
+    // file gives it: the request chooses among the user's own profiles.
+    ssoTargetProfile = typeof profile === 'string' ? ssoProfileNamed(readAwsConfigText(), profile) : null;
     awsSession = { sso: null, ssoClusters: new Map() };
     const snap = await ssoLogin.start({ startUrl, ssoRegion: ssoRegion || undefined, method: method === 'device' ? 'device' : undefined });
     log.info('aws sso sign-in started', { method: snap.method, status: snap.status, region: snap.ssoRegion || 'unknown', forProfile: !!ssoTargetProfile });

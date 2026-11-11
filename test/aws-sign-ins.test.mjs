@@ -8,11 +8,11 @@
 //   POST /api/aws/sessions/split     { id }
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { startServer } from './helpers/server.mjs';
+import { getSSOTokenFilepath } from '@smithy/shared-ini-file-loader';
 import { parseAwsConfig } from '../lib/aws-sso.mjs';
 
 const START = 'https://d-906600a9b0.awsapps.com/start';
@@ -59,7 +59,8 @@ describe('AWS sign-ins: one per account', () => {
   let srv, dir, home;
   const awsConfig = () => parseAwsConfig(fs.readFileSync(path.join(home, '.aws', 'config'), 'utf8'));
   const sessionOf = (profile) => awsConfig().sections.get(`profile:${profile}`).values.sso_session;
-  const cacheFile = (key) => path.join(home, '.aws', 'sso', 'cache', `${crypto.createHash('sha1').update(key).digest('hex')}.json`);
+  // The file name AWS gives a session's token cache (the SDK's own function), under this test's home.
+  const cacheFile = (key) => path.join(home, '.aws', 'sso', 'cache', path.basename(getSSOTokenFilepath(key)));
   const signIn = (key) => fs.writeFileSync(cacheFile(key), JSON.stringify({
     startUrl: START, region: 'us-east-1', accessToken: 'a', expiresAt: new Date(Date.now() + 3600_000).toISOString().replace(/\.\d{3}Z$/, 'Z'),
     clientId: 'c', clientSecret: 's', refreshToken: 'r',

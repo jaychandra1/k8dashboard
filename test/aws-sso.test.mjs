@@ -22,6 +22,7 @@ import {
   ownsSignIn,
   isManagedSession,
   splitByAccount,
+  ssoProfileNamed,
   SSO_PROBE_REGIONS,
   upsertSsoProfile,
   profileSsoInfo,
@@ -37,6 +38,7 @@ import {
   REGISTERED_REDIRECT_URI,
   resultPage,
 } from '../lib/aws-sso.mjs';
+import { getSSOTokenFilepath } from '@smithy/shared-ini-file-loader';
 
 const START = 'https://d-906600a9b0.awsapps.com/start';
 // One sign-in per account: the session of account 241533118296 on that portal.
@@ -74,7 +76,7 @@ after(() => {
   fs.rmSync(home, { recursive: true, force: true });
 });
 const cacheFile = (id) =>
-  path.join(home, '.aws', 'sso', 'cache', `${crypto.createHash('sha1').update(id).digest('hex')}.json`);
+  path.join(home, '.aws', 'sso', 'cache', path.basename(getSSOTokenFilepath(id)));
 const readCache = (id) => JSON.parse(fs.readFileSync(cacheFile(id), 'utf8'));
 
 describe('PKCE, authorize URL and the loopback callback', () => {
@@ -373,6 +375,39 @@ sso_region = us-east-1
 sso_account_id = 111111111111
 sso_role_name = ReadOnly
 `;
+
+  test('the config is read line by line in linear time, whatever a line holds', () => {
+    const cfg = parseAwsConfig([
+      '  [ profile dev ]   # a comment', 'region = eu-west-1', 'sso_start_url=https://x.awsapps.com/start', 'output   =   json   ',
+      '[sso-session corp] ; note', 'sso.region = us-east-1', '', '[default]', 'a-b_c.d = 1 = 2',
+      'not a key!! = x', '= no key', '[broken', '[] ', '[profile x] trailing text', 'region = kept-in-default',
+    ].join('\r\n'));
+    assert.deepEqual([...cfg.sections.keys()], ['profile:dev', 'sso-session:corp', 'profile:default']);
+    assert.deepEqual(cfg.sections.get('profile:dev').values, { region: 'eu-west-1', sso_start_url: 'https://x.awsapps.com/start', output: 'json' });
+    assert.deepEqual(cfg.sections.get('sso-session:corp').values, { 'sso.region': 'us-east-1' });
+    // Lines that aren't a header or `key = value` are ignored; the section stays open.
+    assert.deepEqual(cfg.sections.get('profile:default').values, { 'a-b_c.d': '1 = 2', region: 'kept-in-default' });
+    // Crafted lines (long runs of tabs) that made the old regular expressions crawl.
+    const tabs = '\t'.repeat(200_000);
+    const started = Date.now();
+    const hostile = parseAwsConfig(['[profile ok]', `[${tabs}`, `-=${tabs}\r`, `key${tabs}=${tabs}value${tabs}`, `[${tabs}x${tabs}]${tabs}`].join('\n'));
+    assert.ok(Date.now() - started < 1000, `parsed in ${Date.now() - started} ms`);
+    assert.equal(hostile.sections.get('profile:ok').values.key, 'value');
+    assert.equal(hostile.sections.has('other:x'), true);
+  });
+
+  test('a sign-in target is a profile of the config, named as the file names it', () => {
+    const text = [
+      '[sso-session s]', `sso_start_url = ${START}`, 'sso_region = us-east-1', '',
+      '[profile dev]', 'sso_session = s', 'sso_account_id = 111122223333', 'sso_role_name = Dev', '',
+      '[profile keys]', 'region = us-east-1', '',
+    ].join('\n');
+    assert.equal(ssoProfileNamed(text, 'dev'), 'dev');
+    assert.equal(ssoProfileNamed(text, 'keys'), null, 'not an SSO profile');
+    assert.equal(ssoProfileNamed(text, 'nope'), null);
+    assert.equal(ssoProfileNamed(text, 'dev]\n[profile evil'), null);
+    assert.equal(ssoProfileNamed('', 'dev'), null);
+  });
 
   test('each account gets its own session; the user\'s own session is never reused for it', () => {
     const a = ensureAccountSession(LEGACY, { startUrl: START, ssoRegion: 'us-east-1', accountId: '241533118296' });

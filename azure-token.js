@@ -70,6 +70,9 @@ export async function run(argv = []) {
   const { store, refreshToken } = readStoredRefreshToken();
 
   const tenant = argOf(argv, 'tenant') || store.tenant || 'organizations';
+  // A tenant is an id (GUID), a domain, or `organizations` / `common`: nothing
+  // else may become part of the URL the refresh token is sent to.
+  if (!/^[A-Za-z0-9.-]{1,253}$/.test(String(tenant))) throw new Error('--tenant is not a tenant id or domain');
   const r = await fetch(`${AAD}/${tenant}/oauth2/v2.0/token`, {
     method: 'POST',
     signal: cloudSignal(),

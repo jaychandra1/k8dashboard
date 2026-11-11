@@ -5,7 +5,7 @@
 // counts what reaches it.
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import crypto from 'node:crypto';
+import { getSSOTokenFilepath } from '@smithy/shared-ini-file-loader';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -54,7 +54,7 @@ describe('Home: connecting on request only', () => {
       '[profile in]', 'sso_session = s1', 'sso_account_id = 111122223333', 'sso_role_name = Dev', '',
       '[profile old]', 'sso_session = s2-production', 'sso_account_id = 444455556666', 'sso_role_name = Admin', '',
     ].join('\n'));
-    const tok = (name, ms) => fs.writeFileSync(path.join(aws, 'sso', 'cache', `${crypto.createHash('sha1').update(name).digest('hex')}.json`), JSON.stringify({ startUrl: 'x', region: 'us-east-1', accessToken: 'a', expiresAt: new Date(Date.now() + ms).toISOString() }));
+    const tok = (name, ms) => fs.writeFileSync(path.join(aws, 'sso', 'cache', path.basename(getSSOTokenFilepath(name))), JSON.stringify({ startUrl: 'x', region: 'us-east-1', accessToken: 'a', expiresAt: new Date(Date.now() + ms).toISOString() }));
     tok('s1', 3600e3);
     tok('s2-production', -3600e3);
   });
