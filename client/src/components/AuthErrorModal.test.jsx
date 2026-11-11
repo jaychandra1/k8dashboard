@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, within, waitFor, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import AuthErrorModal, { classify } from './AuthErrorModal';
 
@@ -236,15 +236,14 @@ describe('AuthErrorModal: the AWS sign-in', () => {
     expect(screen.queryByText(/Preferences/)).toBeNull();
   });
 
-  it('a production cluster gets a Production tag on its card, and no extra text', () => {
-    show({ sessionName: 'kubepilot-d-906600a9b0-production', production: true, covers: ['dev-env-cluster'] });
+  it('one sign-in per account: the card names the account, and there is no Production tag', () => {
+    show({ sessionName: 'kubepilot-d-906600a9b0-241533118296', covers: ['dev-env-cluster'] });
     const card = screen.getByRole('region', { name: 'dev-env-cluster connection' });
-    expect(within(card).getByText('Production')).toBeInTheDocument();
-    expect(screen.queryByText(/Production sign-in/)).toBeNull();
-  });
-
-  it('no Production tag for an ordinary sign-in', () => {
-    show({ sessionName: 'kubepilot-d-906600a9b0', covers: ['dev-env-cluster'] });
+    expect(card).toHaveTextContent('Account ••••8296');
+    expect(screen.queryByText('Production')).toBeNull();
+    // Even if an older backend still sent the flag.
+    cleanup();
+    show({ sessionName: 'kubepilot-d-906600a9b0-production', production: true, covers: ['dev-env-cluster'] });
     expect(screen.queryByText('Production')).toBeNull();
   });
 });

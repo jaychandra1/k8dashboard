@@ -4,6 +4,7 @@ import Loader from './Loader';
 import Modal from './ui/Modal';
 import Button from './ui/Button';
 import { getJson, postJson, errorMessage } from '../lib/api';
+import { maskAccountId, redactSensitive } from '../lib/redact';
 import { useSsoSignIn, SsoSignInPanel } from './AwsSsoSignIn';
 
 const keyOf = (c) => `${c.region}/${c.name}`;
@@ -44,7 +45,6 @@ export default function AwsIntegration({ onClose, onImported }) {
   const [profileName, setProfileName] = useState('');
   const [ssoProfile, setSsoProfile] = useState('');
   const [ssoStartUrl, setSsoStartUrl] = useState('');
-  const [ssoRegionField, setSsoRegionField] = useState('');
   const [existingProfile, setExistingProfile] = useState('');
   const [accessKeyId, setAccessKeyId] = useState('');
   const [secretKey, setSecretKey] = useState('');
@@ -102,7 +102,8 @@ export default function AwsIntegration({ onClose, onImported }) {
   const ssoParams = useRef({});
   const startSsoLogin = (profile) => {
     setError(null); setPhase('sso-login');
-    ssoParams.current = { profile: profile || undefined, startUrl: ssoStartUrl || undefined, ssoRegion: ssoRegionField || undefined };
+    // The region of IAM Identity Center is found from the start URL (the server asks AWS).
+    ssoParams.current = { profile: profile || undefined, startUrl: ssoStartUrl || undefined };
     sso.start(ssoParams.current);
   };
   // Cancelled inside the sign-in panel → back to the first step.
@@ -128,7 +129,8 @@ export default function AwsIntegration({ onClose, onImported }) {
 
   // Regions typed in the "Cluster regions" field (empty → the server scans every region).
   const regionList = () => clusterRegions.split(',').map((r) => r.trim().toLowerCase()).filter(Boolean);
-  const hostOf = (u) => { try { return new URL(u).host; } catch { return u; } };
+  // The portal's host is shown masked ("••••.awsapps.com"), as everywhere else.
+  const hostOf = (u) => { try { return redactSensitive(new URL(u).host); } catch { return ''; } };
   const ssoProfiles = profileDetails.filter((p) => p && (p.type === 'sso' || p.ssoStartUrl));
   // Picking a saved profile pre-fills the start URL / regions; clearing it keeps whatever was typed.
   const onPickSsoProfile = (name) => {
@@ -136,7 +138,6 @@ export default function AwsIntegration({ onClose, onImported }) {
     const p = ssoProfiles.find((x) => x.name === name);
     if (!p) return;
     if (p.ssoStartUrl) setSsoStartUrl(p.ssoStartUrl);
-    if (p.ssoRegion) setSsoRegionField(p.ssoRegion);
     if (p.region && !clusterRegions.trim()) setClusterRegions(p.region);
   };
   const discoverSso = async (account, role) => {
@@ -161,7 +162,6 @@ export default function AwsIntegration({ onClose, onImported }) {
     accessKeyId: !accessKeyId ? 'Access key ID is required.' : !ACCESS_KEY_RE.test(accessKeyId) ? 'Must start with AKIA or ASIA followed by 16 uppercase letters/digits.' : null,
     secretKey: !secretKey ? 'Secret access key is required.' : null,
     region: region && !REGION_RE.test(region) ? 'Use a region like us-east-1.' : null,
-    ssoRegion: ssoRegionField && !REGION_RE.test(ssoRegionField) ? 'Use a region like us-east-1.' : null,
     clusterRegions: clusterRegions.split(',').map((r) => r.trim()).filter(Boolean).some((r) => !REGION_RE.test(r)) ? 'Use region codes like eu-west-1, separated by commas.' : null,
     roleArn: !roleArn.trim() ? 'Role ARN is required.' : !/^arn:aws[a-z-]*:iam::\d{12}:role\/.+/.test(roleArn.trim()) ? 'Use the form arn:aws:iam::123456789012:role/Name.' : null,
     sourceProfile: !sourceProfile.trim() ? 'Source profile is required.' : null,
@@ -253,17 +253,14 @@ export default function AwsIntegration({ onClose, onImported }) {
               <Field id={f('sso-profile')} label="Saved SSO sign-in (optional)" hint="Profiles K8Board or the AWS CLI saved in ~/.aws/config. Pick one to reuse its start URL, or leave this on 'enter a start URL'.">
                 <select id={f('sso-profile')} className="aws-input" value={ssoProfile} onChange={(e) => onPickSsoProfile(e.target.value)}>
                   <option value="">— enter a start URL below —</option>
-                  {ssoProfiles.map((pr) => <option key={pr.name} value={pr.name}>{pr.name}{pr.ssoStartUrl ? ` · ${hostOf(pr.ssoStartUrl)}` : ''}{pr.ssoRegion ? ` (${pr.ssoRegion})` : ''}</option>)}
+                  {ssoProfiles.map((pr) => <option key={pr.name} value={pr.name}>{redactSensitive(pr.name)}{pr.ssoStartUrl ? ` · ${hostOf(pr.ssoStartUrl)}` : ''}</option>)}
                 </select>
               </Field>
             )}
             {!ssoProfile && (
               <>
-                <Field id={f('sso-url')} label="AWS SSO start URL">
+                <Field id={f('sso-url')} label="AWS SSO start URL" hint="From your AWS access portal. K8Board finds the region by itself.">
                   <input id={f('sso-url')} className="aws-input" type="url" placeholder="https://my-org.awsapps.com/start" value={ssoStartUrl} onChange={(e) => setSsoStartUrl(e.target.value)} autoComplete="off" spellCheck={false} required aria-required="true" />
-                </Field>
-                <Field id={f('sso-region')} label="SSO region (optional)" hint="Where IAM Identity Center is enabled, e.g. us-east-1. Leave empty to auto-detect." error={show('ssoRegion')}>
-                  <input id={f('sso-region')} className="aws-input" placeholder="e.g. us-east-1" value={ssoRegionField} onChange={(e) => setSsoRegionField(e.target.value.trim())} onBlur={() => touch('ssoRegion')} pattern="^[a-z]{2}-[a-z]+-\d$" aria-invalid={show('ssoRegion') ? 'true' : undefined} aria-describedby={describedBy(f('sso-region'), show('ssoRegion'), 'e.g. us-east-1')} autoComplete="off" spellCheck={false} />
                 </Field>
               </>
             )}
@@ -271,7 +268,7 @@ export default function AwsIntegration({ onClose, onImported }) {
               <input id={f('cluster-regions')} className="aws-input" placeholder="eu-west-1, us-east-1" value={clusterRegions} onChange={(e) => setClusterRegions(e.target.value)} onBlur={() => touch('clusterRegions')} aria-invalid={show('clusterRegions') ? 'true' : undefined} aria-describedby={describedBy(f('cluster-regions'), show('clusterRegions'), 'Only these regions are searched for EKS clusters, e.g. eu-west-1, us-east-1. Leave empty to search every AWS region (slower).')} autoComplete="off" spellCheck={false} />
             </Field>
             <div className="aws-sso-actions">
-              <Button variant="primary" onClick={() => startSsoLogin(ssoProfile)} disabled={(!ssoProfile && !ssoStartUrl.trim()) || !!v.ssoRegion || !!v.clusterRegions}>Sign in with AWS SSO</Button>
+              <Button variant="primary" onClick={() => startSsoLogin(ssoProfile)} disabled={(!ssoProfile && !ssoStartUrl.trim()) || !!v.clusterRegions}>Sign in with AWS SSO</Button>
               {profiles.length > 0 && <button type="button" className="azure-alt" onClick={() => discover(existingProfile)}>Skip — already signed in, just discover clusters</button>}
             </div>
           </div>
@@ -364,7 +361,7 @@ export default function AwsIntegration({ onClose, onImported }) {
               : (
                 <Field id={f('acct')} label="AWS account">
                   <select id={f('acct')} className="aws-input" value={chosenAccount} onChange={(e) => setChosenAccount(e.target.value)}>
-                    {ssoAccounts.map((a) => <option key={a.accountId} value={a.accountId}>{a.accountName} ({a.accountId})</option>)}
+                    {ssoAccounts.map((a) => <option key={a.accountId} value={a.accountId}>{a.accountName} ({maskAccountId(a.accountId)})</option>)}
                   </select>
                 </Field>
               )
@@ -379,7 +376,7 @@ export default function AwsIntegration({ onClose, onImported }) {
       {phase === 'sso-role' && (
         <div className="aws-form">
           <div className="aws-step-label">Choose AWS role for account</div>
-          <div className="azure-dim">{ssoAccounts.find((a) => a.accountId === chosenAccount)?.accountName} ({chosenAccount})</div>
+          <div className="azure-dim">{ssoAccounts.find((a) => a.accountId === chosenAccount)?.accountName} ({maskAccountId(chosenAccount)})</div>
           {busy ? <div className="azure-center"><Loader label="Loading roles…" /></div> : (
             ssoRoles.length === 0 ? <div className="azure-empty">No roles available in this account.</div>
               : (
@@ -405,7 +402,7 @@ export default function AwsIntegration({ onClose, onImported }) {
             <div className="azure-success" role="status">
               <Icon name="check" size={14} strokeWidth={2.6} />
               <span>
-                Signed in to AWS SSO as <b>{signedIn.role}</b> in <b>{signedIn.accountName || signedIn.account}</b>{signedIn.accountName ? ` (${signedIn.account})` : ''}.
+                Signed in to AWS SSO as <b>{signedIn.role}</b> in <b>{signedIn.accountName || maskAccountId(signedIn.account)}</b>{signedIn.accountName ? ` (${maskAccountId(signedIn.account)})` : ''}.
                 {currentCount > 0 && <> {currentCount === 1 ? 'The cluster' : `The ${currentCount} clusters`} marked “uses this sign-in” {currentCount === 1 ? 'reconnects' : 'reconnect'} with it automatically — nothing else to do.</>}
               </span>
             </div>

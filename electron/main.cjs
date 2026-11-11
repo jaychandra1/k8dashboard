@@ -33,7 +33,7 @@ const PROFILE_NAME = 'KubePilot';
 // helper ourselves, print exactly one ExecCredential JSON to stdout and exit —
 // before the single-instance lock, the menu, sessions or any window. Nothing
 // else may write to stdout on this path (stderr is fine).
-const TOKEN_HELPER_FILES = { eks: 'eks-token.js', azure: 'azure-token.js' };
+const TOKEN_HELPER_FILES = { eks: 'eks-token.js', azure: 'azure-token.js', gke: 'gke-token.js' };
 
 // The data key lib/secret-store.mjs seals the app's own secrets with (Azure
 // refresh token, AI provider API key). Windows only: DPAPI through safeStorage,
@@ -128,7 +128,8 @@ function runTokenHelper(argv) {
   process.on('uncaughtException', onFatal);
   process.on('unhandledRejection', onFatal);
   quietHelperRuntime();
-  if (helper === 'eks') useEksHelperProfile();
+  // The EKS and GKE helpers hold no secret: a throwaway profile keeps them quiet.
+  if (helper === 'eks' || helper === 'gke') useEksHelperProfile();
   // `--token-helper selftest`: print the fingerprint (never the key) of the data
   // key as the Azure helper would see it. Run by the GUI once per app version.
   if (helper === 'selftest') {
@@ -140,7 +141,7 @@ function runTokenHelper(argv) {
   }
   const file = TOKEN_HELPER_FILES[helper];
   if (!file) {
-    fail(`unknown helper "${helper ?? ''}" (expected eks or azure)`);
+    fail(`unknown helper "${helper ?? ''}" (expected eks, azure or gke)`);
     return;
   }
   // macOS: a sub-second CLI run should not bounce a Dock icon.
@@ -186,8 +187,9 @@ let logFile = null;
 const logEvent = (text) => { logFile?.write('main', text); };
 
 const PREFERRED_PORT = 3001; // used when free — keeps documented MCP URLs stable
-// Microsoft Store → Library / updates (Help → Check for Updates on a Store install).
-const MS_STORE_UPDATES_URL = 'ms-windows-store://downloadsandupdates';
+// K8Board's page in the Microsoft Store, where Windows updates come from
+// (Help → Check for Updates; the same address is in components/UpdateDialogs).
+const MS_STORE_URL = 'ms-windows-store://pdp/?productid=9N63V5DDVL9F';
 const READY_TIMEOUT_MS = 30000;
 
 let backendPort = null;
@@ -356,6 +358,13 @@ function backendEnv({ fixedPath, port, token }) {
     if (updateHost.install.kind) env.K8BOARD_INSTALL_KIND = updateHost.install.kind;
     else env.K8BOARD_INSTALL_UNAVAILABLE = updateHost.install.message;
     if (updateHost.install.managedBy) env.K8BOARD_INSTALL_MANAGED_BY = updateHost.install.managedBy;
+  }
+  // Windows: K8Board is distributed through the Microsoft Store, which delivers
+  // its updates. Every Windows copy (a Store install or an older installer
+  // build) says so: Check for Updates asks nothing of GitHub and installs
+  // nothing; it points to K8Board's Store page.
+  if (process.platform === 'win32') env.K8BOARD_INSTALL_MANAGED_BY = 'store';
+  if (updateHost) {
     env.K8BOARD_UPDATE_DIR = updateHost.dir;
   }
   return env;
@@ -635,9 +644,9 @@ function createWindow() {
   wc.on('will-attach-webview', (event) => event.preventDefault());
 
   // Open target=_blank / external links in the default browser, not a new window.
-  // The one non-web link: the Microsoft Store's updates page (Store installs).
+  // The one non-web link: K8Board's Microsoft Store page (Windows updates).
   wc.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/i.test(url) || url === MS_STORE_UPDATES_URL) shell.openExternal(url).catch(() => {});
+    if (/^https?:/i.test(url) || url === MS_STORE_URL) shell.openExternal(url).catch(() => {});
     return { action: 'deny' };
   });
 
@@ -665,7 +674,7 @@ function isAppPage(event) {
 //   window.dispatchEvent(new CustomEvent('kubepilot:host', { detail }))
 //   detail = { type: 'context-changed', context }
 //          | { type: 'open-contexts' }
-//          | { type: 'add-cluster', provider: 'aws' | 'azure' }
+//          | { type: 'add-cluster', provider: 'aws' | 'azure' | 'gcp' }
 //          | { type: 'show-release-notes' } | { type: 'check-updates' }      (Help menu)
 //          | { type: 'show-about' }                                         (Help → About K8Board)
 //          | { type: 'update-result', status: 'installed' | 'failed', version, from }
@@ -779,6 +788,7 @@ function clustersMenu() {
       { label: 'All contexts…', click: () => notifyRenderer({ type: 'open-contexts' }) },
       { label: 'Add AWS EKS cluster…', click: () => notifyRenderer({ type: 'add-cluster', provider: 'aws' }) },
       { label: 'Add Azure AKS cluster…', click: () => notifyRenderer({ type: 'add-cluster', provider: 'azure' }) },
+      { label: 'Add Google GKE cluster…', click: () => notifyRenderer({ type: 'add-cluster', provider: 'gcp' }) },
     ],
   };
 }
@@ -975,7 +985,9 @@ function buildMenu() {
     {
       label: 'Help',
       submenu: [
-        { label: 'Show Release Notes', click: () => notifyRendererWhenReady({ type: 'show-release-notes' }) },
+        // Windows: the Microsoft Store has the release notes ("What's new") and
+        // the updates, so nothing here reads GitHub.
+        ...(process.platform === 'win32' ? [] : [{ label: 'Show Release Notes', click: () => notifyRendererWhenReady({ type: 'show-release-notes' }) }]),
         { label: 'Check for Updates', click: () => notifyRendererWhenReady({ type: 'check-updates' }) },
         { type: 'separator' },
         { label: 'Export Diagnostics…', click: () => { exportDiagnostics(); } },

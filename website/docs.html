@@ -9,20 +9,20 @@
 <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
 <title>K8Board — Documentation</title>
 <meta name="description" content="K8Board documentation — connect your AWS EKS and Azure AKS clusters with no CLI required." />
-<link rel="canonical" href="https://k8dashboard.in/docs" />
+<link rel="canonical" href="https://k8board.vercel.app/docs" />
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="K8Board" />
-<meta property="og:url" content="https://k8dashboard.in/docs" />
+<meta property="og:url" content="https://k8board.vercel.app/docs" />
 <meta property="og:title" content="K8Board — Documentation" />
 <meta property="og:description" content="Connect your AWS EKS and Azure AKS clusters with no CLI required." />
-<meta property="og:image" content="https://k8dashboard.in/assets/og-image.png" />
+<meta property="og:image" content="https://k8board.vercel.app/assets/og-image.png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
 <meta property="og:image:alt" content="K8Board — a beautiful native desktop UI for your Kubernetes clusters" />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="K8Board — Documentation" />
 <meta name="twitter:description" content="Connect your AWS EKS and Azure AKS clusters with no CLI required." />
-<meta name="twitter:image" content="https://k8dashboard.in/assets/og-image.png" />
+<meta name="twitter:image" content="https://k8board.vercel.app/assets/og-image.png" />
 <link rel="icon" href="assets/icon.png" type="image/png" />
 <style>
   /* Proxima Nova where it's installed; else Figtree (SIL OFL 1.1, assets/fonts/OFL.txt), as in the app. */
@@ -296,6 +296,7 @@
     <nav>
       <a href="#aws" data-sect>AWS EKS</a>
       <a href="#azure" data-sect>Azure AKS</a>
+      <a href="#gke" data-sect>Google GKE</a>
       <a href="#local" data-sect>Local &amp; other</a>
     </nav>
     <div class="side-group">Using K8Board</div>
@@ -345,7 +346,7 @@
       </ul>
       <div class="callout tip">
         <span class="cico"><svg aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></span>
-        <p>New here? <a href="#install">Install K8Board</a>, then jump to your cloud: <a href="#aws">AWS</a> or <a href="#azure">Azure</a>. For local clusters (Docker Desktop, kind, minikube), see <a href="#local">Local &amp; other</a>.</p>
+        <p>New here? <a href="#install">Install K8Board</a>, then jump to your cloud: <a href="#aws">AWS</a>, <a href="#azure">Azure</a> or <a href="#gke">Google GKE</a>. For local clusters (Docker Desktop, kind, minikube), see <a href="#local">Local &amp; other</a>.</p>
       </div>
     </article>
 
@@ -390,7 +391,7 @@
       <div class="method-grid">
         <div class="method">
           <h4>AWS SSO (IAM Identity Center) <span class="rec">Recommended</span></h4>
-          <p>Enter your <strong>start URL</strong> (e.g. <code>https://my-org.awsapps.com/start</code>) or pick an existing profile; K8Board runs the device-authorization flow, then lets you choose an <strong>account + role</strong>.</p>
+          <p>Enter your <strong>start URL</strong> (e.g. <code>https://my-org.awsapps.com/start</code>) or pick an existing profile; K8Board runs the device-authorization flow, then lets you choose an <strong>account + role</strong>. You enter only the start URL: the region is found automatically. <strong>Each AWS account gets its own sign-in</strong>, so signing in for one account never signs in another, even on the same portal.</p>
         </div>
         <div class="method">
           <h4>Access keys (IAM user)</h4>
@@ -519,37 +520,23 @@
       </ul>
     </article>
 
-    <!-- ============ Google GKE (hidden for now — remove `hidden` + restore sidebar links to re-enable) ============ -->
-    <article id="gke" hidden>
+    <!-- ============ Google GKE ============ -->
+    <article id="gke">
       <div class="prov-head">
-        <div class="prov-badge">
-          <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none"><path d="M14.9 8.3l1.8-1.8.12-.76c-3.3-3-8.53-2.66-11.5.72A8.2 8.2 0 0 0 3.4 9.9l.64-.09 3.6-.6.28-.28a4 4 0 0 1 5.44-.44l.44.44z" fill="#EA4335"/><path d="M19.9 9.84a8.2 8.2 0 0 0-2.48-4l-2.53 2.53a4 4 0 0 1 1.48 3.16v.45a2 2 0 1 1 0 4h-4.5l-.45.46v2.7l.45.44h4.5a5.86 5.86 0 0 0 3.53-10.4z" fill="#4285F4"/><path d="M7.1 20.06h4.5v-3.6H7.1a1.98 1.98 0 0 1-.82-.18l-.64.18-1.82 1.8-.16.62a5.83 5.83 0 0 0 3.44 1.18z" fill="#34A853"/><path d="M7.1 8.3a5.86 5.86 0 0 0-3.53 10.5l2.6-2.6a2 2 0 1 1 2.65-2.65l2.6-2.6A5.85 5.85 0 0 0 7.1 8.3z" fill="#FBBC05"/></svg>
-        </div>
         <h2>Google GKE</h2>
       </div>
-      <div class="tagline">Connect your GKE clusters — browser sign-in or a service-account key.</div>
+      <div class="tagline">Add your GKE clusters with the Google account signed in to gcloud.</div>
 
-      <p>K8Board can import <strong>Google GKE</strong> clusters two ways:</p>
-      <div class="method-grid">
-        <div class="method">
-          <h4>Browser sign-in <span class="rec">Recommended</span></h4>
-          <p>Click <em>Sign in with browser</em>, authenticate with your own Google account, and K8Board stores a refresh token and mints access tokens for the kubeconfig. <strong>No service-account key, no <code>gcloud</code>.</strong> This is the Azure/AWS-style experience.</p>
-        </div>
-        <div class="method">
-          <h4>Service-account key</h4>
-          <p>Paste a service-account key JSON. Works with no OAuth client; ideal for CI or orgs that block the browser flow.</p>
-        </div>
-      </div>
+      <p>K8Board finds the <strong>GKE clusters of every project your Google account can see</strong> and writes the ones you pick into your kubeconfig. It has no Google sign-in of its own: it uses the <a href="https://cloud.google.com/sdk/docs/install" target="_blank" rel="noopener">Google Cloud CLI</a> (<code>gcloud</code>), which must be installed.</p>
 
       <h3>Use it</h3>
-      <p><strong>Preferences → Cloud Integrations → Add GKE clusters</strong>, or the <strong>Add GKE</strong> button in the context dropdown.</p>
+      <p><strong>Preferences → Cloud Integrations → Add GKE clusters</strong>, or <strong>Add cluster → Google GKE</strong> on Home or in the cluster menu.</p>
       <ol>
-        <li>Click <strong>Sign in with browser</strong> → your browser opens Google sign-in. (Or paste a service-account key JSON.)</li>
-        <li>Pick your account and approve.</li>
-        <li>K8Board discovers your GKE clusters across all accessible projects.</li>
+        <li>If gcloud isn't signed in yet, click <strong>Sign in with Google</strong>. It runs <code>gcloud auth login</code>, which opens your browser.</li>
+        <li>K8Board lists your GKE clusters across all the projects you can see. With several gcloud accounts, choose the one to use.</li>
         <li>Select clusters → <strong>Add</strong> → they're written to your kubeconfig.</li>
       </ol>
-      <p>Using the clusters needs no <code>gcloud</code>/<code>gke-gcloud-auth-plugin</code>: the bundled <code>gke-token.js</code> mints a fresh access token from the stored refresh token whenever <code>kubectl</code> / the app authenticates.</p>
+      <p>Using the clusters needs no <code>gke-gcloud-auth-plugin</code>: the kubeconfig entries run K8Board's own token helper, which asks gcloud for a short-lived access token whenever <code>kubectl</code> or the app needs one. The token is never stored.</p>
 
       <h3>Permissions you need</h3>
       <p>The signed-in account needs at least <strong>Kubernetes Engine Viewer</strong> + <strong>Browser</strong> (or <strong>Viewer</strong>) IAM on the projects, and two APIs enabled in those projects:</p>
@@ -558,21 +545,12 @@
         <li><strong>Cloud Resource Manager API</strong> (<code>cloudresourcemanager.googleapis.com</code>) — to list projects</li>
       </ul>
 
-      <h3>How auth works</h3>
-      <ul>
-        <li>Sign-in uses <strong>OAuth 2.0 authorization code + PKCE</strong> with a <strong>loopback</strong> redirect — Google's recommended flow for installed apps.</li>
-        <li>K8Board stores credentials at <code>~/.config/kubepilot/gke/credentials.json</code> (mode <code>600</code>): browser sign-in → <code>{ type: 'authorized_user', … }</code>; service-account key → the key JSON.</li>
-        <li>The kubeconfig <code>user</code> runs an <code>exec</code> credential plugin: <code>gke-token.js --credentials &lt;path&gt;</code>, which prints an <code>ExecCredential</code> with a short-lived access token. Clients refresh automatically.</li>
-        <li>Users only ever get the access <strong>their own Google IAM allows</strong> — the shipped OAuth client is just the app's identity, not an authorization grant.</li>
-      </ul>
-
       <h3>Troubleshooting</h3>
       <ul>
-        <li><strong>"Sign in with browser" isn't shown</strong> → no OAuth client id is configured in this build; use the <strong>service-account key</strong> option, or set up a client (below).</li>
-        <li><strong><code>access_denied</code> / "app isn't verified"</strong> → add the account under <strong>Test users</strong>, or publish the consent screen.</li>
-        <li><strong><code>invalid_grant</code> / no refresh token</strong> → the flow requests <code>access_type=offline&amp;prompt=consent</code>; make sure you approved the consent screen. Remove <code>~/.config/kubepilot/gke/credentials.json</code> and retry.</li>
-        <li><strong>No clusters found</strong> → confirm the IAM roles above and that both APIs are enabled in those projects.</li>
-        <li><strong>Private clusters</strong> → a cluster with no public endpoint can't be reached from a desktop; use its private endpoint over VPN/Connect Gateway, or import via a reachable endpoint.</li>
+        <li><strong>"gcloud isn't installed, or isn't on PATH"</strong> → install the Google Cloud CLI, open a new terminal so it is on PATH, then retry.</li>
+        <li><strong>No clusters found, or some projects "skipped"</strong> → confirm the IAM roles above and that both APIs are enabled in those projects.</li>
+        <li><strong>"Name in use"</strong> → another cluster in your kubeconfig already has that name, so this one isn't added.</li>
+        <li><strong>Private clusters</strong> → a cluster with no public endpoint can only be reached from its own network; connect your VPN first.</li>
       </ul>
     </article>
 
@@ -818,7 +796,7 @@ export GOOGLE_CLIENT_SECRET='GOCSPX-...'</code></pre>
         <li><strong>Desktop + Docker</strong> — macOS (Apple Silicon), Windows, Linux, and a multi-arch image.</li>
         <li><strong>Security Center</strong> — image CVEs, configuration audit, RBAC risk and exposed secrets.</li>
         <li><strong>MCP server</strong> — connect Claude, Cursor and other agents to the cluster you're viewing.</li>
-        <li><strong>Cloud onboarding</strong> — import EKS, AKS and GKE clusters without a CLI.</li>
+        <li><strong>Cloud onboarding</strong> — import EKS and AKS clusters without a CLI, and GKE clusters with your gcloud sign-in.</li>
       </ul>
     </article>
   </div>

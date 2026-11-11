@@ -8,6 +8,12 @@ const DOTS = '••••';
 /** "241533118296" → "••••8296" (anything that isn't 12 digits is returned as is). */
 export const maskAccountId = (id) => (/^\d{12}$/.test(String(id || '')) ? `${DOTS}${String(id).slice(-4)}` : id);
 
+/** "jane.doe@example.com" → "j••••@example.com" (anything that isn't an email is returned as is). */
+export const maskEmail = (email) => {
+  const m = /^([^@\s])[^@\s]*(@[^@\s]+)$/.exec(String(email || ''));
+  return m ? `${m[1]}${DOTS}${m[2]}` : email;
+};
+
 // Public documentation hosts that may appear in error text and are safe to show.
 const LOOPBACK = /^(?:localhost|127(?:\.\d{1,3}){3}|\[::1\])$/i;
 const PUBLIC_HOSTS = /^(?:[a-z0-9-]+\.)*(?:kubernetes\.io|k8s\.io|docs\.aws\.amazon\.com|aws\.amazon\.com|learn\.microsoft\.com|aka\.ms|cloud\.google\.com|github\.com|helm\.sh)$/i;

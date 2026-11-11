@@ -1,4 +1,4 @@
-# K8Board website (k8dashboard.in)
+# K8Board website (k8board.vercel.app)
 
 A static site: plain HTML with inline CSS and JS, no build step and no backend.
 
@@ -9,6 +9,7 @@ website/
 ├── docs.html      # user docs
 ├── privacy.html   # privacy policy (the Store listing links to /privacy)
 ├── terms.html     # terms of service
+├── vercel.json    # clean URLs (/privacy as well as /privacy.html)
 └── assets/        # icon, social preview image, light/dark screenshots
     └── fonts/     # Figtree (SIL OFL 1.1, OFL.txt), the app's typeface where Proxima Nova isn't installed
 ```
@@ -28,9 +29,8 @@ Every download button on the site links to `get.html`, which forwards to the
 Store. Windows is the only platform offered; the macOS and Linux cards say
 "Coming soon" and have no download link.
 
-**Before publishing**, open `get.html` and replace `REPLACE-WITH-STORE-ID` in
-both links with K8Board's Store ID (Partner Center → K8Board → Product
-management → Product identity; it looks like `9NXXXXXXXXXX`).
+`get.html` holds K8Board's Store ID (`9N63V5DDVL9F`, from Partner Center →
+K8Board → Product management → Product identity) in both of its links.
 
 ## What the site must not show
 
@@ -40,10 +40,12 @@ is by email (`kubepilot.dashboard@gmail.com`). The Docker section of
 checks all of this.
 
 The privacy policy still names GitHub as a service the app contacts (the
-update check, and the Trivy download for image scans), without a link: the
-policy has to list every connection the app makes.
+Trivy download for image scans; on macOS and Linux builds, the update check),
+without a link: the policy has to list every connection the app makes.
 
 ## Hosting
 
-Any static host works. The privacy policy must stay reachable at
-`https://k8dashboard.in/privacy`, the URL in the Store listing.
+The site is on Vercel, with `website/` as the project's root directory.
+`vercel.json` turns on clean URLs, so `/privacy`, `/terms`, `/docs` and `/get`
+work as well as the `.html` addresses. The privacy policy must stay reachable
+at `https://k8board.vercel.app/privacy.html`, the URL in the Store listing.

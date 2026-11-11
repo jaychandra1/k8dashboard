@@ -80,8 +80,8 @@ describe('diagnostics report', () => {
   });
 
   test('settings appear as their shape only', () => {
-    assert.deepEqual(settingsShape({ autoConnect: true, pins: ['prod', 'dev'], recent: [], mcpAllowWrite: false, theme: 'dark', aws: { a: 1 }, n: 3 }), {
-      autoConnect: true, pins: '[2 items]', recent: '[0 items]', mcpAllowWrite: false, theme: '(set)', aws: '{1 key}', n: 3,
+    assert.deepEqual(settingsShape({ mcpEnabled: true, pins: ['prod', 'dev'], recent: [], mcpAllowWrite: false, theme: 'dark', aws: { a: 1 }, n: 3 }), {
+      mcpEnabled: true, pins: '[2 items]', recent: '[0 items]', mcpAllowWrite: false, theme: '(set)', aws: '{1 key}', n: 3,
     });
     assert.deepEqual(settingsShape(null), {});
   });

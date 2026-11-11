@@ -8,9 +8,9 @@ import { CONNECT_STEPS } from './shell/useContexts';
 const SLOW = { timeout: 5000 };
 const contexts = ['dev-env-cluster', 'pixdora-tech', 'tr-prod-cashierbackend', 'kind-local'];
 const contextsInfo = [
-  { name: 'dev-env-cluster', provider: 'aws', signIn: { kind: 'aws', state: 'signed-in', production: false } },
-  { name: 'pixdora-tech', provider: 'aws', signIn: { kind: 'aws', state: 'expired', production: false } },
-  { name: 'tr-prod-cashierbackend', provider: 'aws', signIn: { kind: 'aws', state: 'signed-out', production: true } },
+  { name: 'dev-env-cluster', provider: 'aws', signIn: { kind: 'aws', state: 'signed-in' } },
+  { name: 'pixdora-tech', provider: 'aws', signIn: { kind: 'aws', state: 'expired' } },
+  { name: 'tr-prod-cashierbackend', provider: 'aws', signIn: { kind: 'aws', state: 'signed-out' } },
   { name: 'kind-local', provider: 'local' },
 ];
 const recent = [{ name: 'dev-env-cluster', at: Date.now() - 2 * 3600e3 }, { name: 'tr-prod-cashierbackend', at: Date.now() - 26 * 3600e3 }];
@@ -48,11 +48,11 @@ describe('Home', () => {
     expect(screen.queryByText('Recently connected')).toBeNull();
   });
 
-  it('badges from local information: production, signed out, session expired', () => {
+  it('badges from local information: signed out, session expired (no production tag)', () => {
     setup();
     const list = screen.getByRole('list', { name: 'Clusters in your kubeconfig' });
     const row = (name) => within(list).getByText(name).closest('li');
-    expect(row('tr-prod-cashierbackend')).toHaveTextContent('Production');
+    expect(list).not.toHaveTextContent('Production');
     expect(row('tr-prod-cashierbackend')).toHaveTextContent('Signed out of AWS');
     expect(row('pixdora-tech')).toHaveTextContent('AWS session expired');
     expect(row('dev-env-cluster')).not.toHaveTextContent(/expired|Signed out/);
@@ -105,7 +105,8 @@ describe('Home', () => {
     expect(orderClusters(['b', 'a', 'c'], { pins: ['c'], recent: [{ name: 'b', at: 1 }] })).toEqual(['c', 'b', 'a']);
     expect(orderClusters(['b', 'a'], { q: 'A' })).toEqual(['a']);
     expect(clusterBadges(undefined)).toEqual([]);
-    expect(clusterBadges({ signIn: { state: 'renewable', production: false } })).toEqual([]);
+    expect(clusterBadges({ signIn: { state: 'renewable' } })).toEqual([]);
+    expect(clusterBadges({ signIn: { state: 'signed-out', production: true } })).toEqual([{ tone: 'warn', text: 'Signed out of AWS' }]);
   });
 });
 

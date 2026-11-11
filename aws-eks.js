@@ -12,7 +12,7 @@ import { EKSClient, ListClustersCommand, DescribeClusterCommand } from '@aws-sdk
 import { STSClient, GetCallerIdentityCommand, AssumeRoleCommand } from '@aws-sdk/client-sts';
 import { SSOClient, ListAccountsCommand, ListAccountRolesCommand, GetRoleCredentialsCommand } from '@aws-sdk/client-sso';
 import { loadSharedConfigFiles, loadSsoSessionData } from '@smithy/shared-ini-file-loader';
-import { awsConfigPath, ensureSsoSession, isProductionSession, profileSsoInfo, saveAwsConfig, upsertSsoProfile } from './lib/aws-sso.mjs';
+import { awsConfigPath, ensureAccountSession, isManagedSession, profileSsoInfo, removeUnusedSession, saveAwsConfig, upsertSsoProfile } from './lib/aws-sso.mjs';
 import { execEntry } from './lib/paths.mjs';
 import { awsRequestHandler } from './lib/net-timeouts.mjs';
 
@@ -159,7 +159,7 @@ export class KubeconfigParseError extends Error {
   }
 }
 
-function loadKube() {
+export function loadKube() {
   const p = kubeconfigPath();
   let doc = { apiVersion: 'v1', kind: 'Config', clusters: [], users: [], contexts: [], 'current-context': '' };
   if (fs.existsSync(p)) {
@@ -186,12 +186,12 @@ function backupKubeconfigOnce(p) {
   kubeconfigBackedUp = true;
 }
 
-function saveKube(p, doc) {
+export function saveKube(p, doc) {
   backupKubeconfigOnce(p);
   writePrivate(p, yaml.dump(doc, { noRefs: true, lineWidth: -1 }));
 }
 
-function upsert(arr, name, entry) {
+export function upsert(arr, name, entry) {
   const i = arr.findIndex((x) => x.name === name);
   if (i >= 0) arr[i] = entry; else arr.push(entry);
 }
@@ -319,18 +319,13 @@ export async function saveSsoProfile(name, { startUrl, ssoRegion, accountId, rol
     if (!taken) break;
     chosen = `${base}-${i}`;
   }
-  // A profile marked production keeps its separate session when re-imported;
-  // anything else uses the start URL's shared session.
-  const current = profileSsoInfo(text, chosen);
-  let sessionName;
-  if (current?.startUrl === url && isProductionSession(current.sessionName)) {
-    sessionName = current.sessionName;
-  } else {
-    const session = ensureSsoSession(text, { startUrl: url, ssoRegion: sr });
-    text = session.text;
-    sessionName = session.name;
-  }
-  text = upsertSsoProfile(text, { name: chosen, sessionName, accountId: acct, roleName: role, region: rg });
+  // The profile signs in with its own account's session (one sign-in per
+  // account), never one shared with another account.
+  const before = profileSsoInfo(text, chosen)?.sessionName;
+  const session = ensureAccountSession(text, { startUrl: url, ssoRegion: sr, accountId: acct });
+  text = upsertSsoProfile(session.text, { name: chosen, sessionName: session.name, accountId: acct, roleName: role, region: rg });
+  // A shared session K8Board made that this was the last profile of goes too.
+  if (before && before !== session.name && isManagedSession(before)) text = removeUnusedSession(text, before);
   saveAwsConfig(configFile, text);
   // Stale static keys under the same name (written by older versions) would
   // take precedence over the SSO config — drop them.

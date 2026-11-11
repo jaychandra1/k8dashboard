@@ -28,7 +28,7 @@ import { ALL } from './routes';
  *   SecurityCenter      { namespaces, onNavigate, view, onViewChange, refreshSignal }
  *   ArgoCD              { onNavigate, view, onViewChange, refreshSignal }
  *   Events              { namespace, selectedNamespaces, namespaces, onNamespaceChange, onNavigate, refreshSignal }
- *   Preferences         { configStatus, theme, onSetTheme, onChangeConfig, onAddAzure, onAddAws, section, onSectionChange, onClose }
+ *   Preferences         { configStatus, theme, onSetTheme, onChangeConfig, onAddAzure, onAddAws, onAddGke, section, onSectionChange, onClose }
  *   ResourceViewer      { resourceType, resources, allResources, selectedResource, selectedKey, onSelectResource, selectedNamespaces, namespaces,
  *                         onNamespaceChange, loading, refetching, error, partialErrors, totalCount, onResourceTypeChange, onNavigate, onRefresh,
  *                         refreshSignal, route, navigate, setQuery, context, searchQuery, onSearchChange }
@@ -47,8 +47,8 @@ export default function ViewOutlet({
   focusNode, onFocusHandled,
   crSelection, onSelectCustomResource,
   subView, onSubViewChange,
-  prefSection, onPrefSectionChange, onClosePreferences, onChangeConfig, onAddAzure, onAddAws, onRemoveCluster,
-  onResourceTypeChange, onOpenClusterWide, nav, home, onSetAutoConnect,
+  prefSection, onPrefSectionChange, onClosePreferences, onChangeConfig, onAddAzure, onAddAws, onAddGke, onRemoveCluster,
+  onResourceTypeChange, onOpenClusterWide, nav, home,
   onClusterSummary,
 }) {
   const single = selectedNamespaces.length === 1 && selectedNamespaces[0] !== ALL ? selectedNamespaces[0] : ALL;
@@ -97,9 +97,9 @@ export default function ViewOutlet({
           onSetTheme={onSetTheme}
           onChangeConfig={onChangeConfig}
           onAddAzure={onAddAzure}
+          onAddGke={onAddGke}
           onAddAws={onAddAws}
           onRemoveCluster={onRemoveCluster}
-          onSetAutoConnect={onSetAutoConnect}
           section={prefSection}
           onSectionChange={onPrefSectionChange}
           onClose={onClosePreferences}

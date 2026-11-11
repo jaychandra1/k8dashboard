@@ -73,7 +73,7 @@ Keep the port published on `127.0.0.1`. If you must expose it on a network, put 
 **Home lists:**
 - **Last connected:** the cluster you used last, with a **Connect** button.
 - **Clusters:** every context in your kubeconfig, pinned first, then the most recently used, then by name. Each has **Connect**, **Pin** and **Remove** (shown on hover). Use the search box to filter.
-- **Badges, read from local files only:** **Production** (a cluster with its own AWS sign-in), and **Signed out of AWS** or **AWS session expired**, from the AWS token cache.
+- **Badges, read from local files only:** **Signed out of AWS** or **AWS session expired**, from the AWS token cache.
 - **Add cluster:** **AWS EKS**, **Azure AKS** or a **kubeconfig file**. With no kubeconfig at all, Home says so and offers the same choices.
 
 **Connect** shows its steps, with a **Cancel** button:
@@ -86,8 +86,6 @@ It then opens the **Dashboard** (`#/cluster`), and resource lists load as you op
 **If the sign-in fails,** the connection dialog explains why (expired token, unreachable API server, TLS error, missing auth plugin) and offers a fix. For an expired AWS session that's **Sign in with AWS**, which reconnects by itself once you're signed in. The dialog is only about the cluster you're connecting to. **Retry** tries again, and **Back to clusters** returns to Home to pick or add another cluster.
 
 **Leaving a cluster:** **Disconnect** in the cluster menu returns to Home, and stops any background work for that cluster.
-
-**Optional:** Preferences → General → **Connect to the last cluster at startup** brings back automatic connection, with the same steps and Cancel. It's off by default.
 
 Switching clusters happens from **one place**: the **cluster menu** at the left end of the top bar (the button showing the current context, above the sidebar, with the back/forward arrows right beside it) — or, in the desktop app, the native **Clusters** menu (between View and Window), which mirrors it. `⌘K` / `Ctrl+K` → type the context name also works. The cluster menu is laid out as:
 
@@ -126,7 +124,7 @@ After a switch the app returns to the **Dashboard** of the new cluster (the sele
 - **Namespace filter** — the "All namespaces" control at the top of resource views is a multi-select; the choice is kept in the URL (`?ns=`).
 - **Search** — press `/` to focus the search box of the current view.
 - **Auto-refresh** — the toolbar shows the interval (1 min by default). Click it to change or to refresh now. Refreshing never wipes your selection, scroll position or open panels.
-- **Theme** — Preferences → General, or the palette (Theme: Dark / Light / System). The chosen theme is applied before the first paint, so there is no flash.
+- **Theme** — Preferences → Kubernetes, or the palette (Theme: Dark / Light / System). The chosen theme is applied before the first paint, so there is no flash.
 
 ### 1.5 Working with resources
 
@@ -259,11 +257,13 @@ App data lives in `~/.config/kubepilot` (token, assistant config, scan cache). O
 | Helm view empty | The cluster has no Helm-managed releases (v3 Secrets storage). |
 | "All namespaces" slow the first time | One request per namespace; results are cached. Pick a namespace for faster loads. |
 | Port 3001 in use | Set `PORT=<other>` (the desktop app picks a free port automatically). |
-| Check for Updates: "Unable to check for updates" | K8Board could not reach `api.github.com` (offline, a proxy, or GitHub's anonymous rate limit of 60 requests/hour per IP — the dialog says when to retry). |
+| Check for Updates: "Unable to check for updates" (macOS, Linux) | K8Board could not reach `api.github.com` (offline, a proxy, or GitHub's anonymous rate limit of 60 requests/hour per IP — the dialog says when to retry). On Windows the check asks nothing of GitHub: see §1.11. |
 
 ### 1.11 Release notes and updates (desktop app)
 
-The desktop app's **Help** menu (after *Window*) has two items:
+**Windows: updates come from the Microsoft Store.** K8Board for Windows is distributed through the Store, which installs new versions automatically. **Help → Check for Updates** makes no version check of its own and contacts nobody: it opens a dialog with **Open Microsoft Store**, which goes to K8Board's Store page (it shows **Update** when a new version is out). There is no *Show Release Notes* item on Windows; the Store page has *What's new in this version*. This applies to every Windows copy, including one installed from an older installer.
+
+**macOS and Linux** (not yet offered for download). The **Help** menu (after *Window*) has two items:
 
 - **Show Release Notes** — the notes of the newest stable release on [jaychandra1/K8Board](https://github.com/jaychandra1/K8Board/releases), rendered in the app; **View on GitHub** opens the release in your browser.
 - **Check for Updates** — compares the running version (the `VERSION` file) with the newest stable GitHub release using semantic-version ordering. Drafts and prereleases (`-alpha`, `-beta`, `-rc`, …) are ignored. Nothing is downloaded until you choose **Download and Install**.
@@ -272,7 +272,6 @@ When you do, K8Board picks the one release file built for your OS, CPU and insta
 
 | Installed as | How the update is installed |
 |---|---|
-| Windows installer (`K8Board-windows.exe`) | **Install and Restart** closes K8Board, runs the installer silently (per-user, no administrator prompt) and reopens K8Board when it has finished; **Later** installs it the next time you quit. On the next start K8Board tells you whether the update completed. |
 | macOS app in a writable folder | The new `K8Board.app` is copied next to the old one and swapped in; the old one is restored if the swap fails. If the folder needs an administrator, macOS asks for one. Then **Restart Now** or **Later**. |
 | Linux AppImage | The AppImage file is replaced in place; then **Restart Now** or **Later**. |
 | Linux `.deb` | `pkexec dpkg -i` (polkit asks for an administrator password); then **Restart Now** or **Later**. |
@@ -289,25 +288,39 @@ A development build (`npm run app`), an unpacked copy (`release/win-unpacked`), 
 
 - In the desktop app this opens your AWS access portal in your browser; approve the request and K8Board reconnects by itself — nothing to type. (It uses a one-time `http://127.0.0.1:<port>/oauth/callback` redirect, the AWS CLI's default flow.)
 - **Use a sign-in code instead** shows a code to confirm on the AWS page — the right choice if the browser can't reach this machine, and what a K8Board *server* always uses.
-- Nothing starts on its own: you can instead pick any other cluster from the list (grouped by provider — AWS, Azure, GKE, on-prem…), or use **Add cluster** for AWS EKS, Azure AKS or a kubeconfig file (GKE, on-prem, kind…).
+- Nothing starts on its own: you can instead pick any other cluster from the list (grouped by provider — AWS, Azure, GKE, on-prem…), or use **Add cluster** for AWS EKS, Azure AKS, Google GKE or a kubeconfig file (on-prem, kind…).
 
-**One sign-in, several clusters.** IAM Identity Center signs you in once per access portal (start URL), and that one sign-in reaches every account and role you're assigned. So clusters whose AWS profiles use the same portal share a sign-in: signing in for a dev cluster also gives access to a prod cluster in another account. Preferences → Cloud Integrations → *AWS sign-ins* lists which clusters each sign-in covers. The "session expired" dialog doesn't name other clusters; a production cluster shows a **Production** tag there.
+**One sign-in per AWS account.** IAM Identity Center signs you in at an access portal (start URL), and AWS lets that one sign-in reach every account and role you're assigned. K8Board doesn't use it that way: each AWS account has its own stored sign-in (its own `[sso-session kubepilot-<portal>-<account id>]` in `~/.aws/config`, with its own token, expiry and sign-out), and a sign-in is used only for the account it was made for. Signing in for a dev account therefore never signs in a prod account, although both use the same portal. Clusters in the same account share that account's sign-in, whatever their role. There is nothing to mark or configure: it is how every account works.
 
-**Production clusters and signing out** (Preferences → Cloud Integrations → *AWS sign-ins*). Each sign-in is listed with its status and the clusters it covers (account IDs and the portal address are masked). The status is one of:
+- You sign in once per account. Your browser usually still remembers you at the portal, so the second and later sign-ins are one click on **Allow**.
+- The separation is K8Board's: AWS itself doesn't limit a portal token to one account. K8Board stores each token for its account and never uses it for another, but hard limits (who may reach which account, for how long) are set in IAM Identity Center.
+- **After updating from an earlier version**, accounts that shared a sign-in each need one fresh sign-in: the old shared token is removed, not copied. `~/.aws/config` is backed up first.
+- **Adding clusters** (*Add cluster → AWS EKS*): the sign-in is stored for the account you import from, and only for it. You enter just the start URL; K8Board finds the region of IAM Identity Center itself, and accepts a portal address pasted without `/start`.
+
+**Signing out** (Preferences → Cloud Integrations → *AWS sign-ins*). There is one card per account (account IDs and the portal address are masked) with its status and clusters. The status is one of:
 - *Signed in until …*
 - *Renews when you open one of its clusters*: the hour-long token has run out, but a renewal token is stored. K8Board doesn't renew it until you open one of its clusters, so whether AWS still accepts it is only known then.
 - *Expired — sign in when you open one of its clusters*: AWS refused the renewal (your IAM Identity Center session ended), or the renewal token's registration has run out.
-- *Signed out*: no token is stored.
+- *Not signed in — sign in when you open one of its clusters*: no token is stored.
 
-- **Production** gives a cluster a sign-in of its own: its AWS profile moves to a separate `[sso-session <name>-production]` with its own token. Signing in for other clusters then never reaches it, and it asks you to sign in the next time you open it. Other clusters on the same AWS profile (same account and role) move with it. Untick it to go back to the shared sign-in; the separate sign-in is then removed.
-- **Sign out** removes that sign-in's stored token from this computer, so its clusters ask you to sign in again. If you're on one of them, its sign-in dialog opens straight away. It doesn't end your browser's AWS access portal session or sign-ins on other machines.
-- Every change asks first and says what it will do; `~/.aws/config` is backed up before K8Board first changes it.
+- **Sign out** removes that account's stored token from this computer, so its clusters ask you to sign in again; other accounts stay signed in. If you're on one of its clusters, the sign-in dialog opens straight away. It doesn't end your browser's AWS access portal session or sign-ins on other machines.
+- It asks first and says what it will do; `~/.aws/config` is backed up before K8Board first changes it.
 
 **When a sign-in ends while K8Board is open** (signed out, or the Identity Center session is over), the cluster's requests stop and the "AWS session expired" dialog opens. You don't have to wait for pages to time out or restart the app.
 
 **Removing a cluster** (cluster switcher → **Remove "<cluster>"…**, or Preferences → Kubernetes → **Remove**) takes it out of your kubeconfig file, for kubectl too. That's different from signing out. The confirmation lists exactly what goes: the cluster, plus its credentials and server entries unless another cluster uses them. The file is backed up first (`config.k8board-backup-<time>`). Its AWS profile is kept unless you tick the box, which is only offered when no other cluster uses that profile.
 
-**Your existing profiles.** Signing in changes only the AWS profile of the cluster you sign in for. If that profile is in the older format (`sso_start_url` / `sso_region` inside the profile), it is moved to the session format: those two lines become `sso_session = <name>`; account, role, region, comments and other settings are kept. Your other profiles for the same portal are left alone. Preferences lists them under *AWS sign-ins*, with a button to move them to the shared sign-in if you want. Before K8Board first changes `~/.aws/config` it saves a copy next to it (`config.k8board-backup-<time>`). A session you created with `aws configure sso` is reused as is. Tools from before late 2022 (AWS CLI v1, old SDKs) don't understand `sso-session`; current AWS CLI v2, SDKs and Terraform do.
+**Your own AWS CLI profiles.** K8Board splits only the sign-ins it created. A cluster whose AWS profile uses a session you made with `aws configure sso`, or the older format (`sso_start_url` / `sso_region` inside the profile), keeps signing in the way you set it up, so several accounts can still share that sign-in. Its card under *AWS sign-ins* says so and offers **Use one sign-in per account**: the profiles of its clusters then move to their own account's session (account, role, region, comments and other settings are kept; your session stays in the file), each account asks for one sign-in, and the AWS CLI no longer shares its sign-in with those profiles. Before K8Board first changes `~/.aws/config` it saves a copy next to it (`config.k8board-backup-<time>`). Tools from before late 2022 (AWS CLI v1, old SDKs) don't understand `sso-session`; current AWS CLI v2, SDKs and Terraform do.
+
+### 1.13 Google GKE clusters
+
+*Add cluster → Google GKE* (Home, the cluster menu, Preferences → Cloud Integrations, or the **Clusters** menu) finds your GKE clusters and adds the ones you choose to your kubeconfig.
+
+- **It uses your gcloud sign-in.** K8Board has no Google sign-in of its own, so the [Google Cloud CLI](https://cloud.google.com/sdk/docs/install) (`gcloud`) must be installed. **Sign in with Google** runs `gcloud auth login`, which opens your browser; if you are already signed in to gcloud, the clusters are listed straight away. With several gcloud accounts you choose which one to use (account names are shown masked).
+- **What is asked of Google:** which projects the account can see (Cloud Resource Manager) and each project's clusters (Kubernetes Engine API), with gcloud's short-lived access token. A project where the Kubernetes Engine API is off, or where you may not list clusters, is skipped and counted. The token is never stored or logged.
+- **No extra plugin.** The kubeconfig entries K8Board writes use K8Board's own token helper, which asks gcloud for a token: `gke-gcloud-auth-plugin` is not needed, and kubectl in any terminal works with the same entries. One Google sign-in covers every project the account can reach; Google ties sign-ins to the person, not the project.
+- A cluster whose name another cluster in your kubeconfig already has is shown as *Name in use* and is not added. A **Private** cluster has no public endpoint: connect to its network (VPN) to reach it.
+- In Docker or on a server, `gcloud` must be installed there and signed in (`gcloud auth login` or a service account) for this to work.
 
 ---
 
@@ -443,7 +456,7 @@ The image is multi-stage: the client is built, production dependencies are insta
 
 ### 3.5 What the in-app updater needs from a release
 
-Help → Check for Updates (§1.11) reads the **latest stable** release of `releaseRepository` in `package.json` (`jaychandra1/K8Board`). For it to offer an update:
+On macOS and Linux, Help → Check for Updates (§1.11) reads the **latest stable** release of `releaseRepository` in `package.json` (`jaychandra1/K8Board`); on Windows, updates come from the Microsoft Store and this doesn't apply. For it to offer an update:
 
 - **Tag** `v<semver>` (the workflow enforces `v$(cat VERSION)`). A release that is a draft, marked *pre-release*, or tagged `-alpha`/`-beta`/`-rc`… is skipped.
 - **Assets** named `K8Board-<os>[-<arch>].<ext>` — exactly what `artifactName` in `package.json` produces: `K8Board-windows.exe`, `K8Board-macos.dmg`, `K8Board-linux.AppImage`, `K8Board-linux.deb`. Unsuffixed files are taken to be the one architecture the workflow builds per OS (Windows **x64**, macOS **arm64**, Linux **x64**). To ship another architecture, publish it with an `-x64` / `-arm64` suffix (e.g. `K8Board-windows-arm64.exe`); a suffixed file always wins over the unsuffixed one. An optional version segment (`K8Board-1.4.0-macos-arm64.dmg`) is accepted too.

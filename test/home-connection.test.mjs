@@ -1,6 +1,6 @@
 // Startup connects to nothing; a passing auth check is the connection.
 // GET /api/config/status reports it (connected, lastConnected, recent,
-// autoConnect, local sign-in hints), POST /api/config/disconnect ends it, and
+// local sign-in hints), POST /api/config/disconnect ends it, and
 // nothing reaches a cluster until the UI asks. A tiny fake Kubernetes API
 // counts what reaches it.
 import { test, describe, before, after } from 'node:test';
@@ -66,15 +66,15 @@ describe('Home: connecting on request only', () => {
 
   test('startup: the clusters are listed, nothing is connected, nothing reached a cluster', async () => {
     const s = await status();
-    assert.deepEqual([s.loaded, s.connected, s.lastConnected, s.recent, s.autoConnect], [true, false, null, [], false]);
+    assert.deepEqual([s.loaded, s.connected, s.lastConnected, s.recent], [true, false, null, []]);
     assert.deepEqual(s.contexts, ['dev', 'other', 'eks-signed-in', 'eks-expired']);
     assert.equal(hits, 0);
   });
 
   test('sign-in hints come from the local token cache', async () => {
     const info = Object.fromEntries((await status()).contextsInfo.map((c) => [c.name, c.signIn || null]));
-    assert.deepEqual(info['eks-signed-in'], { kind: 'aws', state: 'signed-in', production: false });
-    assert.deepEqual(info['eks-expired'], { kind: 'aws', state: 'expired', production: true });
+    assert.deepEqual(info['eks-signed-in'], { kind: 'aws', state: 'signed-in' });
+    assert.deepEqual(info['eks-expired'], { kind: 'aws', state: 'expired' });
     assert.equal(info.dev, null);
     assert.equal(hits, 0, 'still nothing sent to a cluster');
   });
@@ -104,11 +104,10 @@ describe('Home: connecting on request only', () => {
     assert.deepEqual([s.connected, s.lastConnected], [false, 'other'], 'still remembered for Home');
   });
 
-  test('"connect to the last cluster at startup" is saved; bad input refused', async () => {
-    assert.equal((await json('/api/settings/startup', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ autoConnect: 'yes' }) })).status, 400);
+  test('there is no connect-at-startup setting: no endpoint, nothing in the status', async () => {
     const r = await json('/api/settings/startup', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ autoConnect: true }) });
-    assert.deepEqual([r.status, r.body.autoConnect], [200, true]);
-    assert.equal((await status()).autoConnect, true);
+    assert.equal(r.status, 404);
+    assert.equal('autoConnect' in (await status()), false);
   });
 
   test('a removed cluster leaves the recent list', async () => {

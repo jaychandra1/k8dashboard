@@ -37,10 +37,11 @@ const v = (version) => (version ? `v${String(version).replace(/^v/, '')}` : '');
 const openExternal = (url) => {
   if (/^https:\/\//.test(url || '')) window.open(url, '_blank', 'noopener,noreferrer');
 };
-// Microsoft Store installs: the Store's Library / updates page (the desktop
-// host allows exactly this non-web link).
-const MS_STORE_UPDATES_URL = 'ms-windows-store://downloadsandupdates';
-const openStoreUpdates = () => window.open(MS_STORE_UPDATES_URL, '_blank', 'noopener,noreferrer');
+// Windows: updates come from the Microsoft Store. K8Board's page there shows
+// Update when a new version is out (the desktop host allows exactly this
+// non-web link; electron/main.cjs has the same address).
+export const MS_STORE_URL = 'ms-windows-store://pdp/?productid=9N63V5DDVL9F';
+const openStore = () => window.open(MS_STORE_URL, '_blank', 'noopener,noreferrer');
 
 export default function UpdateDialogs() {
   const toast = useToast();
@@ -310,6 +311,28 @@ export function UpdateDialog({ open, onClose, onShowNotes }) {
         )}
       </>
     );
+  } else if (phase === 'store') {
+    // Windows: no check of our own (nothing is asked of GitHub); the Store has the answer.
+    title = 'Updates come from the Microsoft Store';
+    icon = 'download';
+    body = (
+      <>
+        <p className="update-text">
+          You have <Brand /> <b>{v(current)}</b>. The Microsoft Store installs new versions automatically.
+        </p>
+        <p className="update-note" role="note">
+          To check now, open <Brand /> in the Store: it shows <b>Update</b> when a new version is out.
+        </p>
+      </>
+    );
+    footer = (
+      <>
+        <Button onClick={onClose}>Close</Button>
+        <Button variant="primary" icon="externalLink" onClick={openStore}>
+          Open Microsoft Store
+        </Button>
+      </>
+    );
   } else if (phase === 'up-to-date') {
     title = <><Brand /> is up to date</>;
     icon = 'check';
@@ -344,26 +367,14 @@ export function UpdateDialog({ open, onClose, onShowNotes }) {
             What&apos;s new in {v(latest?.version)}
           </button>
         )}
-        {!s.canInstall && s.managedBy === 'store' && (
-          <p className="update-note" role="note">
-            {s.installUnavailable} New versions reach the Store after Microsoft&apos;s review, usually within a few days.
-          </p>
-        )}
-        {!s.canInstall && s.managedBy !== 'store' && (
+        {!s.canInstall && (
           <p className="update-note" role="note">
             {s.installUnavailable} You can download the installer from the release page.
           </p>
         )}
       </>
     );
-    footer = s.managedBy === 'store' ? (
-      <>
-        <Button onClick={onClose}>Close</Button>
-        <Button variant="primary" icon="externalLink" onClick={openStoreUpdates}>
-          Open Microsoft Store
-        </Button>
-      </>
-    ) : s.canInstall ? (
+    footer = s.canInstall ? (
       <>
         <Button onClick={onClose}>Cancel</Button>
         <Button

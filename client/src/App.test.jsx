@@ -219,7 +219,7 @@ describe('App routing', () => {
     expect(gear()).toHaveAttribute('aria-pressed', 'false');
 
     await user.click(gear());
-    await waitFor(() => expect(window.location.hash).toBe('#/preferences/general'));
+    await waitFor(() => expect(window.location.hash).toBe('#/preferences/kubernetes'));
     expect(gear()).toHaveAttribute('aria-pressed', 'true');
     expect(gear()).toHaveAttribute('title', 'Close preferences');
 

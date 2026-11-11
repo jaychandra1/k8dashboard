@@ -43,8 +43,8 @@ Everything Partner Center asks for, in the order it asks, ready to paste. Writte
 | Subcategory | **Utilities** (alternative: Servers) |
 | Secondary category | Utilities + tools (optional) |
 | Does this product access, collect or transmit personal information? | **Yes**. It handles the user's AWS and Azure sign-in tokens and cluster credentials locally, and Partner Center may set Yes itself because of `runFullTrust`. |
-| Privacy policy URL | `https://k8dashboard.in/privacy` |
-| Website | `https://k8dashboard.in` |
+| Privacy policy URL | `https://k8board.vercel.app/privacy.html` |
+| Website | `https://k8board.vercel.app` |
 | Support contact info | ✏️ `kubepilot.dashboard@gmail.com` (the address in `package.json` and the Store guide), or a support page URL |
 | Phone number and address | ✏️ Optional for individual developers; required for company accounts selling in France |
 | Display mode | Leave all unchecked |
@@ -93,7 +93,7 @@ Expected result: the lowest rating (IARC 3+ / ESRB Everyone / PEGI 3). If you al
 
 **Product name:** K8Board
 
-### Description (2,991 / 10,000 characters; plain text, no URLs or HTML)
+### Description (3,178 / 10,000 characters; plain text, no URLs or HTML)
 
 ```text
 K8Board puts your Kubernetes clusters in one window. Point it at your kubeconfig, or sign in to AWS or Azure from the app, and get live dashboards, every workload, logs and terminals without memorising kubectl commands. Everything runs on your PC: there is no K8Board account, no K8Board server and no telemetry.
@@ -110,8 +110,9 @@ OPERATE
 
 CLOUD CLUSTERS WITHOUT A CLI
 • Sign in to AWS IAM Identity Center (SSO) or Azure in your browser, discover your EKS and AKS clusters across accounts and subscriptions, and add them to your kubeconfig. Bundled sign-in helpers mean you don't need the AWS CLI, the Azure CLI or kubelogin to use them.
-• See which clusters share an AWS sign-in, sign out, and give production clusters a sign-in of their own.
-• Clusters from GKE, on-premises, kind, minikube and Docker Desktop work straight from your existing kubeconfig.
+• Every AWS account has its own sign-in: signing in for a dev account never signs in a production account. Sign out of an account at any time.
+• Add Google GKE clusters from every project you can see, using your gcloud sign-in (the Google Cloud CLI must be installed); no extra auth plugin needed.
+• Clusters from on-premises, kind, minikube and Docker Desktop work straight from your existing kubeconfig.
 
 SECURITY CENTER
 • Find image vulnerabilities (CVEs), configuration issues, risky RBAC roles and exposed secrets, from Trivy Operator reports in the cluster or by scanning images on your PC with the open-source Trivy scanner, which K8Board downloads on first use (pinned version, checksum-verified).
@@ -146,8 +147,8 @@ Leave this **blank** for the first submission (Microsoft's instruction). For lat
 | 5 | Pod shell and Service port-forwarding (kubectl required) | 56 |
 | 6 | Scale, restart, delete, and apply YAML with a server-side dry run first | 71 |
 | 7 | Browser sign-in for Amazon EKS (AWS IAM Identity Center) and Azure AKS | 70 |
-| 8 | Production clusters can keep an AWS sign-in of their own | 56 |
-| 9 | Works with any kubeconfig: GKE, on-premises, kind, minikube, Docker Desktop | 75 |
+| 8 | One AWS sign-in per account: dev never signs in production | 58 |
+| 9 | Google GKE clusters with your gcloud sign-in; any kubeconfig works too | 70 |
 | 10 | Security Center: image CVEs, configuration, RBAC risks and exposed secrets | 74 |
 | 11 | Export security reports as PDF, HTML or CSV | 43 |
 | 12 | Helm releases with values and rendered manifests | 48 |
@@ -170,17 +171,21 @@ The images are in the **`Microsoft store/`** folder at the root of the repositor
 | 5 | `05-security-overview.png` | Security Center: vulnerabilities by severity, and what changed since each workload's previous version. | 102 |
 | 6 | `06-image-vulnerabilities.png` | Every running image with its vulnerability counts, changes and exposed secrets. | 79 |
 | 7 | `07-argo-cd.png` | Argo CD at a glance: sync and health status, applications that need attention, recent activity. | 95 |
-| 8 | `08-cloud-integrations.png` | Add Amazon EKS and Azure AKS clusters from your cloud account, and manage your AWS sign-ins. | 92 |
+| 8 | `08-cloud-integrations.png` | Add Amazon EKS, Azure AKS and Google GKE clusters from your cloud account; each AWS account has its own sign-in. | 112 |
 
 All screenshots show K8Board's real UI connected to its sample cluster (`demo-cluster`, a development fixture that isn't part of the Store app). The names, images, IPs and numbers in them are sample data, not a real environment.
 
 ### Store logos and art
 
-| Partner Center slot | File | Notes |
+All in `Microsoft store/images/`. Every size comes from one design, rendered from the icon master by `npx electron scripts/render-store-art.cjs`.
+
+| Partner Center slot | Files | Notes |
 |---|---|---|
-| **1:1 App tile icon (300 × 300)**, strongly recommended | `Microsoft store/images/store-tile-icon-300x300.png` | The Store uses this instead of the package logo. Tick **Only use images I upload** if Partner Center offers it. |
-| **16:9 Super hero art (1920 × 1080)**, recommended | `Microsoft store/images/super-hero-art-1920x1080.png` | Microsoft's rules: no text, no app UI, key art centred and clear of the bottom third. It is used at the top of the listing and for promotions. |
-| 2:3 Poster art / 1:1 Box art | (none) | Microsoft says these apply to games, not apps |
+| **Store logos → 9:16 Poster art** (720 × 1080, 1440 × 2160) | `poster-art-720x1080.png`, `poster-art-1440x2160.png` | The icon and the name, both in the top two-thirds (the Store may lay text over the bottom third). Microsoft's docs say this slot matters most for games; Partner Center recommends it, and it's harmless to provide. |
+| **Store logos → 1:1 Box art** (1080 × 1080, 2160 × 2160) | `box-art-1080x1080.png`, `box-art-2160x2160.png` | Same layout. Used where the Store needs a square logo. |
+| **Store display images → 1:1 App tile icon** (300 × 300, 150 × 150, 71 × 71), strongly recommended | `store-tile-icon-300x300.png`, `store-tile-icon-150x150.png`, `store-tile-icon-71x71.png` | The icon on transparent. The Store uses these instead of the package logo. |
+| **16:9 Super hero art** (1920 × 1080, 3840 × 2160), recommended | `super-hero-art-1920x1080.png`, `super-hero-art-3840x2160.png` | Microsoft's rules: no text, no app UI, key art centred and clear of the bottom third. Used at the top of the listing and for promotions. |
+| Xbox images (branded key art, titled hero art, promotional square art) | (none) | Only for products available on Xbox. K8Board is Windows desktop only; leave these empty. |
 | Trailers | (none) | Optional. Each needs an MP4 or MOV video at 1920 × 1080, a 1920 × 1080 PNG thumbnail, and the super hero art. |
 
 ### Supplemental fields
@@ -211,7 +216,7 @@ A fast desktop app for Kubernetes: live dashboards, logs, pod terminals, topolog
 |---|---|
 | Keywords (7 of 7, ≤ 40 characters each, 10 of 21 words) | `Kubernetes`, `k8s`, `kubectl`, `Kubernetes dashboard`, `EKS AKS`, `Helm`, `Argo CD` |
 | Copyright and trademark info (149 / 200) | © 2026 JDG Initiates. Kubernetes is a registered trademark of The Linux Foundation. All other trademarks are the property of their respective owners. |
-| Additional license terms | `https://k8dashboard.in/terms`. A single URL shows as a link. Leave the field blank to use Microsoft's Standard Application License Terms instead. |
+| Additional license terms | `https://k8board.vercel.app/terms.html`. A single URL shows as a link. Leave the field blank to use Microsoft's Standard Application License Terms instead. |
 | Developed by | `JDG Initiates` |
 
 ## 6. Submission options
@@ -234,7 +239,9 @@ Features that need something extra:
 - AI assistant: an OpenAI-compatible endpoint the user configures in Preferences > AI Assistant.
 - Security Center image scanning: on first use, and only when the user starts a scan, K8Board downloads the open-source Trivy scanner (pinned version 0.76.2) from its official GitHub release and verifies its SHA-256 checksum before use. Trivy then downloads its public vulnerability database and pulls the images being scanned from their registries. Trivy's anonymous usage data and update checks are turned off.
 
-Updates: in the Store edition, Help > Check for Updates never downloads or installs anything; when a newer version exists it offers to open the Microsoft Store.
+Updates: Help > Check for Updates never checks for, downloads or installs anything itself; it offers to open K8Board's Microsoft Store page, which delivers updates.
+
+Google GKE: optional. K8Board has no Google sign-in of its own; it uses the Google Cloud CLI (gcloud) if the user has installed it and signed in, to list their projects and GKE clusters. Without gcloud the dialog says so and nothing else happens.
 
 The package declares the app execution alias k8board.exe. K8Board writes it into kubeconfig as the credential helper for EKS and AKS clusters, so kubectl can authenticate from any terminal.
 
@@ -255,30 +262,37 @@ Approval normally carries over to later updates unless the package declares new 
 
 | File | Size | Use |
 |---|---|---|
-| `images/store-tile-icon-300x300.png` | 300 × 300, 138 KB | 1:1 app tile icon |
-| `images/super-hero-art-1920x1080.png` | 1920 × 1080, 2109 KB | 16:9 super hero art |
+| `images/poster-art-720x1080.png` | 720 × 1080, 423 KB | 9:16 poster art |
+| `images/poster-art-1440x2160.png` | 1440 × 2160, 1400 KB | 9:16 poster art |
+| `images/box-art-1080x1080.png` | 1080 × 1080, 601 KB | 1:1 box art |
+| `images/box-art-2160x2160.png` | 2160 × 2160, 1941 KB | 1:1 box art |
+| `images/store-tile-icon-71x71.png` | 71 × 71, 9 KB | 1:1 app tile icon |
+| `images/store-tile-icon-150x150.png` | 150 × 150, 35 KB | 1:1 app tile icon |
+| `images/store-tile-icon-300x300.png` | 300 × 300, 118 KB | 1:1 app tile icon |
+| `images/super-hero-art-1920x1080.png` | 1920 × 1080, 915 KB | 16:9 super hero art |
+| `images/super-hero-art-3840x2160.png` | 3840 × 2160, 2926 KB | 16:9 super hero art |
 | `screenshots/dark/01-cluster-dashboard.png` | 1920 × 1080, 166 KB | Desktop screenshot (dark) |
-| `screenshots/dark/02-pods-and-details.png` | 1920 × 1080, 312 KB | Desktop screenshot (dark) |
-| `screenshots/dark/03-logs.png` | 1920 × 1080, 309 KB | Desktop screenshot (dark) |
+| `screenshots/dark/02-pods-and-details.png` | 1920 × 1080, 311 KB | Desktop screenshot (dark) |
+| `screenshots/dark/03-logs.png` | 1920 × 1080, 308 KB | Desktop screenshot (dark) |
 | `screenshots/dark/04-topology.png` | 1920 × 1080, 240 KB | Desktop screenshot (dark) |
 | `screenshots/dark/05-security-overview.png` | 1920 × 1080, 162 KB | Desktop screenshot (dark) |
 | `screenshots/dark/06-image-vulnerabilities.png` | 1920 × 1080, 159 KB | Desktop screenshot (dark) |
 | `screenshots/dark/07-argo-cd.png` | 1920 × 1080, 153 KB | Desktop screenshot (dark) |
-| `screenshots/dark/08-cloud-integrations.png` | 1920 × 1080, 124 KB | Desktop screenshot (dark) |
+| `screenshots/dark/08-cloud-integrations.png` | 1920 × 1080, 128 KB | Desktop screenshot (dark) |
 | `screenshots/light/01-cluster-dashboard.png` | 1920 × 1080, 163 KB | Desktop screenshot (light, alternative) |
-| `screenshots/light/02-pods-and-details.png` | 1920 × 1080, 316 KB | Desktop screenshot (light, alternative) |
+| `screenshots/light/02-pods-and-details.png` | 1920 × 1080, 315 KB | Desktop screenshot (light, alternative) |
 | `screenshots/light/03-logs.png` | 1920 × 1080, 313 KB | Desktop screenshot (light, alternative) |
 | `screenshots/light/04-topology.png` | 1920 × 1080, 244 KB | Desktop screenshot (light, alternative) |
 | `screenshots/light/05-security-overview.png` | 1920 × 1080, 154 KB | Desktop screenshot (light, alternative) |
 | `screenshots/light/06-image-vulnerabilities.png` | 1920 × 1080, 151 KB | Desktop screenshot (light, alternative) |
 | `screenshots/light/07-argo-cd.png` | 1920 × 1080, 138 KB | Desktop screenshot (light, alternative) |
-| `screenshots/light/08-cloud-integrations.png` | 1920 × 1080, 113 KB | Desktop screenshot (light, alternative) |
+| `screenshots/light/08-cloud-integrations.png` | 1920 × 1080, 116 KB | Desktop screenshot (light, alternative) |
 
-All images are PNG and well under the 50 MB limit. The screenshots were taken from K8Board 1.8.4's own UI at 1920 × 1080, on the sample cluster; retake them for a later release with `npm run build`, then `npx electron scripts/capture-screenshots.cjs --store`. The sidebar shows the version number; the Store doesn't require it to match the package. The logos were rendered from `build/source/k8board-icon.svg`, the master the app icons come from.
+All images are PNG and well under the 50 MB limit. The screenshots were taken from K8Board 1.8.5's own UI at 1920 × 1080, on the sample cluster; retake them for a later release with `npm run build`, then `npx electron scripts/capture-screenshots.cjs --store`. The sidebar shows the version number; the Store doesn't require it to match the package. The logos and art are rendered from `build/source/k8board-icon.svg`, the master the app icons come from: `npx electron scripts/render-store-art.cjs`.
 
 ## Things that can fail certification, and the answer
 
 - **"The app looks empty."** Testers may have no cluster. The notes explain the first-run screen and give a two-minute way to get a test cluster.
 - **Downloaded code.** Trivy is downloaded only when the user starts an image scan, from Trivy's official release, at a pinned version, and checksum-verified. The description and the notes both say so.
 - **Self-updating.** The Store edition never installs updates itself; it sends people to the Store.
-- **Privacy policy.** `https://k8dashboard.in/privacy` must be online when you submit. It already covers the Microsoft Store edition.
+- **Privacy policy.** `https://k8board.vercel.app/privacy.html` must be online when you submit. It already covers the Microsoft Store edition.

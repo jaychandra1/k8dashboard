@@ -12,9 +12,9 @@ const OPEN_EVENT = 'kubepilot:about';
 export const openAbout = () => window.dispatchEvent(new Event(OPEN_EVENT));
 
 export const ABOUT_LINKS = [
-  { label: 'Website', href: 'https://k8dashboard.in' },
-  { label: 'Privacy', href: 'https://k8dashboard.in/privacy' },
-  { label: 'Terms', href: 'https://k8dashboard.in/terms' },
+  { label: 'Website', href: 'https://k8board.vercel.app' },
+  { label: 'Privacy', href: 'https://k8board.vercel.app/privacy.html' },
+  { label: 'Terms', href: 'https://k8board.vercel.app/terms.html' },
 ];
 
 // External pages open in the system browser (the desktop host routes window.open there).

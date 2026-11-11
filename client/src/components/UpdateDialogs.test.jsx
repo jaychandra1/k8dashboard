@@ -275,23 +275,24 @@ describe('Help → Check for Updates', { timeout: 15000 }, () => {
     expect(within(dlg).getByRole('button', { name: 'View Release' })).toBeInTheDocument();
   });
 
-  it('a Microsoft Store install points to the Store instead of downloading or the release page', async () => {
+  it('Windows: updates come from the Microsoft Store — no version check, no download, no release page', async () => {
     postJson.mockResolvedValue(
-      state('available', {
+      state('store', {
+        latest: null,
         canInstall: false,
         managedBy: 'store',
-        installUnavailable: 'This copy of K8Board comes from the Microsoft Store, which installs its updates.',
+        installUnavailable: 'K8Board for Windows gets its updates from the Microsoft Store.',
       })
     );
     const user = setup();
     await host({ type: 'check-updates' });
-    const dlg = await screen.findByRole('dialog', { name: 'K8Board Update Available' }, SLOW);
-    expect(dlg).toHaveTextContent('comes from the Microsoft Store');
-    expect(dlg).not.toHaveTextContent('download the installer');
+    const dlg = await screen.findByRole('dialog', { name: 'Updates come from the Microsoft Store' }, SLOW);
+    expect(dlg).toHaveTextContent('The Microsoft Store installs new versions automatically');
+    expect(dlg).not.toHaveTextContent(/GitHub|download the installer|is up to date/);
     expect(within(dlg).queryByRole('button', { name: 'Download and Install' })).toBeNull();
     expect(within(dlg).queryByRole('button', { name: 'View Release' })).toBeNull();
     await user.click(within(dlg).getByRole('button', { name: 'Open Microsoft Store' }));
-    expect(window.open).toHaveBeenCalledWith('ms-windows-store://downloadsandupdates', '_blank', 'noopener,noreferrer');
+    expect(window.open).toHaveBeenCalledWith('ms-windows-store://pdp/?productid=9N63V5DDVL9F', '_blank', 'noopener,noreferrer');
   });
 
   it('after a Windows update that did not complete, says the old version is untouched', async () => {

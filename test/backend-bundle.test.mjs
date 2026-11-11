@@ -36,9 +36,9 @@ describe('bundled backend (desktop app)', { skip: !hasRolldown && 'client depend
   });
 
   test('every entry point is bundled and loads nothing from node_modules but node-pty', () => {
-    assert.deepEqual(bundles.map((b) => b.entry), ['server.js', 'eks-token.js', 'azure-token.js', 'mcp-stdio.js']);
+    assert.deepEqual(bundles.map((b) => b.entry), ['server.js', 'eks-token.js', 'azure-token.js', 'gke-token.js', 'mcp-stdio.js']);
     const byEntry = Object.fromEntries(bundles.map((b) => [b.entry, b.externals]));
-    assert.deepEqual(byEntry, { 'server.js': ['node-pty'], 'eks-token.js': [], 'azure-token.js': [], 'mcp-stdio.js': [] });
+    assert.deepEqual(byEntry, { 'server.js': ['node-pty'], 'eks-token.js': [], 'azure-token.js': [], 'gke-token.js': [], 'mcp-stdio.js': [] });
   });
 
   test('the backend starts from the bundle and serves the demo cluster', async () => {

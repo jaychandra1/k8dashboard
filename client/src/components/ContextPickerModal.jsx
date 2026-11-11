@@ -8,7 +8,7 @@ import Button from './ui/Button';
 export const PROVIDERS = {
   aws: { label: 'AWS EKS', icon: 'aws' },
   azure: { label: 'Azure AKS', icon: 'azure' },
-  gcp: { label: 'Google GKE', icon: 'cluster' },
+  gcp: { label: 'Google GKE', icon: 'hexagon' },
   local: { label: 'Local', icon: 'box' },
   other: { label: 'Other clusters', icon: 'cluster' },
 };
@@ -168,9 +168,9 @@ export function ContextList({ contexts = [], contextsInfo, currentContext, onPic
  * and closes the dialog. Opened by App for the top-bar cluster menu, the
  * palette's "All contexts…" and the desktop Clusters menu (OPEN_CONTEXTS_EVENT).
  *
- *   <ContextPickerModal open onClose contexts contextsInfo currentContext onChange(ctx) onRemove(ctx)? canRemove(ctx)? onAddAws onAddAzure onAddLocal />
+ *   <ContextPickerModal open onClose contexts contextsInfo currentContext onChange(ctx) onRemove(ctx)? canRemove(ctx)? onAddAws onAddAzure onAddGke onAddLocal />
  */
-export default function ContextPickerModal({ open, onClose, contexts = [], contextsInfo, currentContext, onChange, onRemove, canRemove, onAddAws, onAddAzure, onAddLocal }) {
+export default function ContextPickerModal({ open, onClose, contexts = [], contextsInfo, currentContext, onChange, onRemove, canRemove, onAddAws, onAddAzure, onAddGke, onAddLocal }) {
   const pick = (ctx) => {
     onClose?.();
     if (ctx && ctx !== currentContext) onChange?.(ctx);
@@ -178,7 +178,7 @@ export default function ContextPickerModal({ open, onClose, contexts = [], conte
   // The confirmation opens on its own (one dialog at a time).
   const remove = (ctx) => { onClose?.(); onRemove?.(ctx); };
   const run = (fn) => () => { onClose?.(); fn?.(); };
-  const canAdd = !!(onAddAws || onAddAzure || onAddLocal);
+  const canAdd = !!(onAddAws || onAddAzure || onAddGke || onAddLocal);
 
   return (
     <Modal
@@ -193,6 +193,7 @@ export default function ContextPickerModal({ open, onClose, contexts = [], conte
           <span className="ctx-picker-add-label"><Icon name="plus" size={13} /> Add cluster</span>
           {onAddAws && <Button variant="ghost" size="sm" icon="aws" onClick={run(onAddAws)}>AWS EKS</Button>}
           {onAddAzure && <Button variant="ghost" size="sm" icon="azure" onClick={run(onAddAzure)}>Azure AKS</Button>}
+          {onAddGke && <Button variant="ghost" size="sm" icon="hexagon" onClick={run(onAddGke)}>Google GKE</Button>}
           {onAddLocal && <Button variant="ghost" size="sm" icon="box" onClick={run(onAddLocal)}>Kubeconfig</Button>}
         </div>
       ) : undefined}

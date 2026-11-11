@@ -18,6 +18,8 @@ import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { randomUUID } from 'crypto';
 import { createMcpServer } from './mcp.js';
 import * as awsEks from './aws-eks.js';
+import * as gke from './gcp-gke.js';
+import { gcloudStatus, gcloudAccessToken, startGcloudLogin, isAccount } from './lib/gcloud.mjs';
 import * as trivyScan from './trivy-scan.js';
 import * as demo from './demo.js';
 import { ensurePtyHelperExecutable } from './lib/pty-helper.mjs';
@@ -60,8 +62,8 @@ import { failureHints, operatorLogErrors, remediationFor, reportTarget, revision
 import { operatorDetail, uniqueDetails } from './lib/vuln-details.mjs';
 import {
   createSsoLogin, adoptSsoLogin, refreshSsoToken, profileSsoInfo, sessionsForProfiles, sessionTokenState, awsConfigPath,
-  convertLegacyProfiles, ensureSsoSession, isProductionSession, legacyProfilesOf, normalizeStartUrl, parseAwsConfig,
-  removeUnusedSession, saveAwsConfig, setProfileSession, signOutSession, removeProfile, writePrivateFile,
+  isManagedSession, normalizeStartUrl, ownsSignIn, parseAwsConfig, removeUnusedSession, saveAwsConfig,
+  splitByAccount, signOutSession, removeProfile, writePrivateFile,
 } from './lib/aws-sso.mjs';
 import { parseKubeconfigDoc, definesContext, removeContextFromDoc, dumpKubeconfigDoc } from './lib/kubeconfig-remove.mjs';
 
@@ -301,7 +303,7 @@ const agentView = (req, resource, kind) => {
 // imports, the assistant (its LLM key and spend), security scans, external
 // terminals, app settings and updates.
 const UI_ONLY_PREFIXES = [
-  '/api/mcp', '/api/config/load', '/api/config/reload', '/api/config/contexts', '/api/config/disconnect', '/api/azure', '/api/aws', '/api/assistant',
+  '/api/mcp', '/api/config/load', '/api/config/reload', '/api/config/contexts', '/api/config/disconnect', '/api/azure', '/api/aws', '/api/gke', '/api/assistant',
   '/api/security/scan', '/api/ai-agents/launch-external', '/api/app', '/api/settings',
 ];
 app.use(UI_ONLY_PREFIXES, (req, res, next) => (isMcpSource(req)
@@ -341,7 +343,7 @@ app.use((req, res, next) => {
   // Real config handlers stay in charge (they are demo-aware).
   if (p === '/api/config/status' || p === '/api/config/context' ||
       p === '/api/config/load' || p === '/api/config/reload' || p === '/api/config/capabilities' ||
-      p === '/api/settings/pins' || p === '/api/settings/startup' || p === '/api/config/disconnect' ||
+      p === '/api/settings/pins' || p === '/api/config/disconnect' ||
       p.startsWith('/api/config/contexts/')) return next();
   // Auth always "passes" in demo.
   if (p === '/api/config/auth') return res.json({ ok: true, currentContext: demo.DEMO_CONTEXT });
@@ -351,7 +353,7 @@ app.use((req, res, next) => {
   }
   if (p === '/api/assistant/chat' && req.method === 'POST') return demoAssistantChat(req, res);
   // Cloud sign-in, agent detection, MCP, version, app updates and non-API paths are unchanged.
-  if (p.startsWith('/api/azure') || p.startsWith('/api/aws') || p.startsWith('/api/app/') ||
+  if (p.startsWith('/api/azure') || p.startsWith('/api/aws') || p.startsWith('/api/gke') || p.startsWith('/api/app/') ||
       p.startsWith('/api/ai-agents') || p === '/mcp' || p === '/api/version' ||
       !p.startsWith('/api/')) return next();
   // The MCP write gate applies to (pretend) mutations in demo mode too.
@@ -658,14 +660,6 @@ app.post('/api/config/disconnect', (req, res) => {
   res.json({ ok: true, connected: false });
 });
 
-// "Connect to the last cluster at startup" (Preferences → General; off by default).
-app.put('/api/settings/startup', mcpWriteGate, (req, res) => {
-  const { autoConnect } = req.body || {};
-  if (typeof autoConnect !== 'boolean') return bad(res, 'autoConnect');
-  writeSettings({ autoConnect });
-  res.json({ autoConnect });
-});
-
 // What Home can say about a cluster's sign-in without any network call: AWS
 // IAM Identity Center profiles only, from the local token cache.
 function localSignInHints(kc, names) {
@@ -681,7 +675,7 @@ function localSignInHints(kc, names) {
       if (!tokens.has(key)) tokens.set(key, sessionTokenState(key));
       const t = tokens.get(key);
       const state = t.signedIn ? 'signed-in' : t.refreshable ? 'renewable' : t.expiresAt ? 'expired' : 'signed-out';
-      out.set(name, { kind: 'aws', state, production: isProductionSession(info.sessionName) });
+      out.set(name, { kind: 'aws', state });
     }
   } catch { /* hints are optional */ }
   return out;
@@ -708,7 +702,11 @@ app.get('/api/config/status', (req, res) => {
     contextsInfo = kubeConfig.contexts.map((c) => {
       const cl = clusterByName.get(c.cluster);
       const signIn = hints.get(c.name);
-      return { name: c.name, cluster: c.cluster, provider: providerOfServer(cl?.server) /* cloud from the server host name, for grouping and icons */, ...(signIn ? { signIn } : {}) };
+      // The cloud from the server host name, for grouping and icons. A GKE API
+      // server is often a bare IP address: the entry K8Board wrote says it is Google's.
+      const fromHost = providerOfServer(cl?.server);
+      const provider = fromHost === 'other' && gke.gkeEntryFor(kubeConfig, c.name) ? 'gcp' : fromHost;
+      return { name: c.name, cluster: c.cluster, provider, ...(signIn ? { signIn } : {}) };
     });
     contexts = kubeConfig.contexts.map((c) => c.name);
     clusters = kubeConfig.clusters.map((c) => c.name);
@@ -732,7 +730,6 @@ app.get('/api/config/status', (req, res) => {
     connected: inDemo || isConnected(),
     lastConnected: known.has(settings.lastContext) ? settings.lastContext : (recent[0]?.name || null),
     recent,
-    autoConnect: settings.autoConnect === true,
   };
   if (!kubeConfig && !inDemo) {
     const attemptedPath = getKubeConfigPath();
@@ -1244,12 +1241,14 @@ app.post('/api/azure/import', async (req, res) => {
 // discover every EKS cluster across accounts and regions, and write kubeconfig
 // entries whose auth execs our native eks-token.js helper. See aws-eks.js.
 // ------------------------------------------------------------------
-let awsSession = null; // { sso: { accessToken, ssoRegion, startUrl }, ssoClusters: Map, ssoSelected }
+// The add-cluster wizard's sign-in, in memory only: `ssoResult` is stored on
+// disk for one account, the one clusters are imported from (`ssoStoredFor`).
+let awsSession = null; // { sso: { accessToken, ssoRegion, startUrl }, ssoResult, ssoStoredFor, ssoClusters: Map, ssoSelected }
 
 // IAM Identity Center sign-in (lib/aws-sso.mjs): browser + PKCE in the desktop
 // app (the loopback redirect must reach this machine), device code otherwise
 // or on request. Each finished sign-in is stored as a refreshable
-// [sso-session] and converts this start URL's legacy profiles to it.
+// [sso-session] of one AWS account (one sign-in per account).
 const ssoBrowserAvailable = Boolean(process.versions.electron) || envFlag('SSO_BROWSER');
 const ssoLogin = createSsoLogin({ browserAvailable: ssoBrowserAvailable });
 let ssoAdopted = null; // adoptSsoLogin() result of the last finished sign-in
@@ -1257,8 +1256,8 @@ let ssoTargetProfile = null; // the AWS profile the running sign-in is for (the 
 
 // Keep the SSO session of the cluster in use ahead of expiry (refresh token),
 // so its token helper never has to renew it itself. Only that one: other
-// clusters' sessions — a production cluster's above all — are not kept alive
-// in the background; opening a cluster renews its session (checkClusterAuth).
+// accounts' sessions are not kept alive in the background; opening a cluster
+// renews its account's session (checkClusterAuth).
 const AWS_REFRESH_WINDOW_MS = 15 * 60 * 1000;
 const currentEksProfiles = () => {
   const profile = kubeConfig && currentContext ? eksEntryForKc(kubeConfig, currentContext)?.profile : null;
@@ -1299,16 +1298,17 @@ function awsSignInInfo() {
     profile: entry.profile, startUrl: info.startUrl, ssoRegion: info.ssoRegion, sessionName: info.sessionName,
     accountId: info.accountId || null, roleName: info.roleName || null, expiredAt: token?.expiresAt || null,
     canSignIn: true, browser: ssoBrowserAvailable,
-    // Every cluster this sign-in gives access to (they share its token).
-    production: isProductionSession(info.sessionName),
+    // Every cluster this sign-in gives access to (the same account's).
     covers: info.sessionName ? clustersOnSession(text, info.sessionName) : [currentContext],
   };
 }
 
-// ---- AWS sign-ins: what each covers, signing out, production clusters ----
+// ---- AWS sign-ins: one per account, what each covers, signing out ----
 // Every EKS context whose AWS profile signs in with IAM Identity Center,
-// grouped by the session (one sign-in, one token) its profile uses. Profiles
-// still in the legacy format are grouped by start URL (their token's key).
+// grouped by the session (one sign-in, one token) its profile uses. K8Board's
+// own sessions hold one account each. A session the user created (aws
+// configure sso), or profiles in the legacy format (grouped by start URL, their
+// token's key), can still hold several: `shared`, until the user splits them.
 function awsSignIns(text = readAwsConfigText()) {
   const groups = new Map();
   for (const c of kubeConfig?.contexts || []) {
@@ -1319,33 +1319,57 @@ function awsSignIns(text = readAwsConfigText()) {
     if (!groups.has(id)) {
       const tok = sessionTokenState(info.sessionName || info.startUrl);
       groups.set(id, {
-        id, sessionName: info.sessionName, legacy: !info.sessionName, production: isProductionSession(info.sessionName),
+        id, sessionName: info.sessionName, legacy: !info.sessionName, managed: isManagedSession(info.sessionName),
         startUrl: info.startUrl, signedIn: tok.signedIn, expiresAt: tok.expiresAt, refreshable: tok.refreshable,
         renewalRefused: tok.renewalRefused, clusters: [],
       });
     }
-    groups.get(id).clusters.push({ context: c.name, current: c.name === currentContext, profile, accountId: info.accountId || null, roleName: info.roleName || null });
+    groups.get(id).clusters.push({
+      context: c.name, current: c.name === currentContext, profile, accountId: info.accountId || null, roleName: info.roleName || null,
+      own: ownsSignIn(info), canSplit: !ownsSignIn(info) && !!info.ssoRegion && /^\d{12}$/.test(info.accountId || ''),
+    });
   }
-  return [...groups.values()];
+  return [...groups.values()].map((g) => {
+    const accounts = [...new Set(g.clusters.map((c) => c.accountId).filter(Boolean))];
+    return {
+      ...g,
+      // The one account this sign-in is for; null while several share it.
+      accountId: accounts.length === 1 ? accounts[0] : null,
+      accounts: accounts.length,
+      shared: g.clusters.some((c) => !c.own),
+      canSplit: g.clusters.some((c) => c.canSplit),
+    };
+  });
 }
 const clustersOnSession = (text, sessionName) => (awsSignIns(text).find((g) => g.sessionName === sessionName)?.clusters || []).map((c) => c.context);
 
 // Cached exec credentials (EKS tokens, up to 15 minutes) of the live
-// kubeconfig are dropped, so a sign-out or a production switch takes effect
-// now. Resetting the (default) plugin policy is the client's way to do it.
+// kubeconfig are dropped, so a sign-out or a split takes effect now.
+// Resetting the (default) plugin policy is the client's way to do it.
 const forgetClusterCredentials = () => { try { kubeConfig?.setExecCredentialPluginPolicy(undefined); } catch { /* older client */ } };
 
+// Move SSO profiles to their own account's session (lib/aws-sso.mjs
+// splitByAccount) and save. A shared session K8Board made that is left without
+// profiles is removed with its token, which is not copied to the new sessions:
+// each account asks for one sign-in of its own.
+function applyAccountSplit(opts) {
+  const file = awsConfigPath();
+  const out = splitByAccount(readAwsConfigText(), opts);
+  if (!out.moved.length) return out;
+  saveAwsConfig(file, out.text);
+  for (const name of out.removedSessions) { try { signOutSession(name); } catch { /* best effort */ } }
+  return out;
+}
+// Once, when the server starts: profiles that shared a session K8Board made
+// (every account of a portal on one sign-in, or a "-production" one) get their
+// account's own. Profiles on the user's own sessions are not touched.
+try {
+  const m = applyAccountSplit({ managedOnly: true });
+  if (m.moved.length) log.info('aws sign-ins are now one per account', { profiles: m.moved.length, removedSessions: m.removedSessions.length });
+} catch (e) { log.warn('aws sign-ins could not be split by account', { err: e }); }
+
 app.get('/api/aws/sessions', (req, res) => {
-  try {
-    const text = readAwsConfigText();
-    const signIns = awsSignIns(text);
-    // Legacy-format profiles of these start URLs that no cluster uses: left as
-    // they are, unless the user asks to move them to the shared sign-in.
-    const inUse = new Set(signIns.flatMap((g) => g.clusters.map((c) => c.profile)));
-    const legacyProfiles = [...new Set(signIns.map((g) => g.startUrl))]
-      .flatMap((startUrl) => legacyProfilesOf(text, startUrl).filter((p) => !inUse.has(p)).map((profile) => ({ profile, startUrl })));
-    res.json({ signIns, legacyProfiles });
-  } catch (e) { fail(res, e); }
+  try { res.json({ signIns: awsSignIns() }); } catch (e) { fail(res, e); }
 });
 
 app.post('/api/aws/sessions/sign-out', (req, res) => {
@@ -1360,63 +1384,30 @@ app.post('/api/aws/sessions/sign-out', (req, res) => {
     // and the UI asks for a sign-in.
     const current = group.clusters.some((c) => c.context === currentContext);
     if (current) execGate.block(currentUserName(), new Error('Signed out of AWS for this cluster. Sign in again to use it.'));
-    log.info('aws sso signed out', { production: group.production, clusters: group.clusters.length, current });
+    log.info('aws sso signed out', { clusters: group.clusters.length, current });
     res.json({ ok: true, signedOut: out.signedOut, clusters: group.clusters.map((c) => c.context), current });
   } catch (e) { fail(res, e); }
 });
 
-// Production: the cluster's profile moves to the start URL's separate
-// "-production" session (its own token), or back to the shared one. Every
-// cluster using the same profile (account + role) moves with it.
-app.post('/api/aws/production', async (req, res) => {
+// "Use one sign-in per account", for a sign-in several accounts still share
+// (a session the user created, or the legacy profile format): the profiles of
+// its clusters move to their accounts' own sessions. Only on request, since
+// the AWS CLI stops sharing that sign-in with these profiles too.
+app.post('/api/aws/sessions/split', async (req, res) => {
   try {
-    const { context, production } = req.body || {};
-    if (typeof production !== 'boolean') return bad(res, 'production');
-    const entry = typeof context === 'string' && kubeConfig ? eksEntryForKc(kubeConfig, context) : null;
-    if (!entry?.profile) return bad(res, 'context', 'Not an EKS cluster with an AWS profile');
-    const text = readAwsConfigText();
-    const info = profileSsoInfo(text, entry.profile);
-    if (!info?.startUrl || !info.ssoRegion) return bad(res, 'context', 'This cluster does not sign in with AWS IAM Identity Center');
-    const clusters = awsSignIns(text).flatMap((g) => g.clusters).filter((c) => c.profile === entry.profile).map((c) => c.context);
-    if (isProductionSession(info.sessionName) === production) return res.json({ production, changed: false, clusters });
-    const target = ensureSsoSession(text, { startUrl: info.startUrl, ssoRegion: info.ssoRegion, production });
-    let next = setProfileSession(target.text, entry.profile, target.name);
-    const previous = info.sessionName;
-    let previousRemoved = false;
-    if (previous && isProductionSession(previous)) {
-      next = removeUnusedSession(next, previous);
-      previousRemoved = !parseAwsConfig(next).sections.has(`sso-session:${previous}`);
-    }
-    saveAwsConfig(awsConfigPath(), next);
-    if (previousRemoved) signOutSession(previous); // no profile uses that sign-in any more
+    const { id } = req.body || {};
+    const group = typeof id === 'string' ? awsSignIns().find((g) => g.id === id) : null;
+    if (!group) return bad(res, 'id', 'Unknown AWS sign-in');
+    const out = applyAccountSplit({ profiles: [...new Set(group.clusters.filter((c) => c.canSplit).map((c) => c.profile))] });
     await awsEks.refreshAwsConfigCache();
     forgetClusterCredentials();
-    const signedIn = sessionTokenState(target.name).signedIn;
+    const moved = new Set(out.moved.map((m) => m.profile));
+    const clusters = group.clusters.filter((c) => moved.has(c.profile)).map((c) => c.context);
+    // The open cluster now has a sign-in of its own, not yet signed in.
     const current = clusters.includes(currentContext);
-    if (current && !signedIn) execGate.block(currentUserName(), new Error('This cluster now has its own AWS sign-in. Sign in to use it.'));
-    log.info('aws cluster production setting changed', { production, clusters: clusters.length });
-    res.json({ production, changed: true, clusters, signedIn, current });
-  } catch (e) { fail(res, e); }
-});
-
-// Legacy-format profiles move to the start URL's shared sign-in only when the
-// user asks (Preferences → Cloud Integrations).
-app.post('/api/aws/profiles/use-shared-sign-in', async (req, res) => {
-  try {
-    const { startUrl, profiles } = req.body || {};
-    const text = readAwsConfigText();
-    const url = typeof startUrl === 'string' ? normalizeStartUrl(startUrl) : '';
-    const legacy = url ? legacyProfilesOf(text, url) : [];
-    if (!Array.isArray(profiles) || !profiles.length || profiles.some((p) => !legacy.includes(p))) return bad(res, 'profiles', 'Unknown or already updated profiles');
-    const anyProfile = parseAwsConfig(text).sections.get(`profile:${profiles[0]}`);
-    const ssoRegion = anyProfile?.values.sso_region;
-    if (!ssoRegion) return bad(res, 'profiles', 'The profiles have no SSO region');
-    const session = ensureSsoSession(text, { startUrl: url, ssoRegion });
-    const conv = convertLegacyProfiles(session.text, { startUrl: url, ssoRegion, sessionName: session.name, only: profiles });
-    saveAwsConfig(awsConfigPath(), conv.text);
-    await awsEks.refreshAwsConfigCache();
-    log.info('aws legacy profiles updated on request', { count: conv.converted.length });
-    res.json({ converted: conv.converted });
+    if (current) execGate.block(currentUserName(), new Error('This cluster\'s AWS account now has its own sign-in. Sign in to use it.'));
+    log.info('aws sign-in split by account on request', { profiles: out.moved.length, current });
+    res.json({ moved: out.moved.length, clusters, current });
   } catch (e) { fail(res, e); }
 });
 
@@ -1432,36 +1423,28 @@ app.get('/api/aws/status', async (req, res) => {
 
 app.post('/api/aws/sso-login', async (req, res) => {
   try {
-    const { profile, startUrl: bodyUrl, ssoRegion: bodyRegion } = req.body || {};
-    // Accept pasted URLs with a "#/..." fragment or trailing slashes. Trim the
-    // fragment and trailing slashes without a backtracking regex (ReDoS-safe).
-    const clean = (u) => {
-      let s = String(u || '').trim();
-      const hash = s.indexOf('#');
-      if (hash !== -1) s = s.slice(0, hash);
-      let i = s.length;
-      while (i > 0 && s[i - 1] === '/') i--;
-      return s.slice(0, i);
-    };
-    const { method } = req.body || {};
-    let startUrl = clean(bodyUrl), ssoRegion = bodyRegion;
+    const { profile, startUrl: bodyUrl, ssoRegion: bodyRegion, method } = req.body || {};
+    // Pasted URLs may carry a "#/..." fragment or trailing slashes, or lack "/start".
+    let startUrl = normalizeStartUrl(bodyUrl), ssoRegion = bodyRegion;
     if (!startUrl || !ssoRegion) {
-      // Fall back to an existing SSO profile's start URL / region.
+      // The named profile (the "session expired" dialog), else a saved sign-in
+      // of this same start URL: its region is tried first. Never another
+      // portal's region; with none, the region is found from the start URL.
       const all = await awsEks.listProfiles();
-      const p = all.find((x) => x.name === profile) || all.find((x) => x.type === 'sso');
-      startUrl = startUrl || clean(p?.ssoStartUrl);
-      ssoRegion = ssoRegion || p?.ssoRegion;
+      const named = all.find((x) => x.name === profile && x.type === 'sso');
+      if (!startUrl) startUrl = normalizeStartUrl(named?.ssoStartUrl);
+      const saved = [named, ...all].find((x) => x?.type === 'sso' && x.ssoRegion && normalizeStartUrl(x.ssoStartUrl) === startUrl);
+      ssoRegion = ssoRegion || saved?.ssoRegion;
     }
-    // Leave ssoRegion undefined so the SDK layer auto-detects the Identity Center
-    // region from the start URL (cluster discovery still scans every region).
     if (!startUrl) return res.status(400).json({ error: 'Enter your AWS SSO start URL.' });
     ssoAdopted = null;
     // The "session expired" dialog signs in for one profile: the sign-in is
-    // stored for that profile's session (a production one stays separate).
+    // stored for that profile's account. The add-cluster wizard's is stored
+    // once an account is chosen (POST /api/aws/import).
     ssoTargetProfile = typeof profile === 'string' && profileSsoInfo(readAwsConfigText(), profile) ? profile : null;
     awsSession = { sso: null, ssoClusters: new Map() };
     const snap = await ssoLogin.start({ startUrl, ssoRegion: ssoRegion || undefined, method: method === 'device' ? 'device' : undefined });
-    log.info('aws sso sign-in started', { method: snap.method, region: snap.ssoRegion || 'auto' });
+    log.info('aws sso sign-in started', { method: snap.method, status: snap.status, region: snap.ssoRegion || 'unknown', forProfile: !!ssoTargetProfile });
     res.json(snap);
   } catch (e) { res.status(e.status || 500).json({ error: firstLine(e.message) }); }
 });
@@ -1471,13 +1454,18 @@ app.get('/api/aws/sso-login/status', async (req, res) => {
   if (snap.status === 'done') {
     const result = ssoLogin.takeResult();
     if (result) {
-      awsSession = { ...(awsSession || { ssoClusters: new Map() }), sso: { accessToken: result.accessToken, ssoRegion: result.ssoRegion, startUrl: result.startUrl } };
+      awsSession = {
+        ...(awsSession || { ssoClusters: new Map() }),
+        sso: { accessToken: result.accessToken, ssoRegion: result.ssoRegion, startUrl: result.startUrl },
+        // The wizard: kept in memory until an account is chosen (storeWizardSignIn).
+        ssoResult: ssoTargetProfile ? null : result, ssoStoredFor: null,
+      };
       try {
-        ssoAdopted = adoptSsoLogin(result, { profile: ssoTargetProfile });
+        ssoAdopted = ssoTargetProfile ? adoptSsoLogin(result, { profile: ssoTargetProfile }) : { sessionName: null, converted: [] };
         await awsEks.refreshAwsConfigCache();
         forgetClusterCredentials();
         execGate.clear();
-        log.info('aws sso sign-in finished', { method: snap.method, production: ssoAdopted.production, converted: ssoAdopted.converted.length, refreshable: !!result.refreshToken });
+        log.info('aws sso sign-in finished', { method: snap.method, stored: !!ssoAdopted.sessionName, converted: ssoAdopted.converted.length, refreshable: !!result.refreshToken });
       } catch (e) {
         // The sign-in itself worked (the wizard can continue); only storing it failed.
         ssoAdopted = { sessionName: null, converted: [], warning: `Signed in, but the session could not be saved to ~/.aws: ${firstLine(e.message)}` };
@@ -1487,7 +1475,7 @@ app.get('/api/aws/sso-login/status', async (req, res) => {
     const covers = ssoAdopted?.sessionName ? clustersOnSession(readAwsConfigText(), ssoAdopted.sessionName) : [];
     return res.json({
       ...snap, session: ssoAdopted?.sessionName || undefined, converted: ssoAdopted?.converted || [], warning: ssoAdopted?.warning,
-      production: !!ssoAdopted?.production, covers, legacyProfiles: ssoAdopted?.legacyProfiles || [],
+      covers,
     });
   }
   res.json(snap);
@@ -1563,6 +1551,17 @@ app.post('/api/aws/clusters', async (req, res) => {
   } catch (e) { res.status(500).json({ error: firstLine(e.message) }); }
 });
 
+// The wizard's sign-in is stored for one account only: the first one clusters
+// are imported from. Clusters of another account get a profile without a
+// token, and ask for their own sign-in when opened.
+function storeWizardSignIn(accountId) {
+  const result = awsSession?.ssoResult;
+  if (!result || (awsSession.ssoStoredFor && awsSession.ssoStoredFor !== accountId)) return;
+  if (awsSession.ssoStoredFor === accountId) return;
+  adoptSsoLogin(result, { accountId });
+  awsSession.ssoStoredFor = accountId;
+}
+
 app.post('/api/aws/import', async (req, res) => {
   const { clusters = [], profile } = req.body || {};
   if (!Array.isArray(clusters) || clusters.length === 0) return res.status(400).json({ error: 'No clusters selected' });
@@ -1597,6 +1596,7 @@ app.post('/api/aws/import', async (req, res) => {
             startUrl: awsSession.sso.startUrl, ssoRegion: awsSession.sso.ssoRegion,
             accountId: ssoInfo.account, roleName: ssoInfo.role, region: c.region,
           });
+          try { storeWizardSignIn(ssoInfo.account); } catch (e) { log.warn('aws sso session could not be saved', { err: e }); }
         } else {
           credProfile = `sso-${ssoInfo.account}`;
           awsEks.saveProfile(credProfile, { accessKeyId: credentials.accessKeyId, secretAccessKey: credentials.secretAccessKey, sessionToken: credentials.sessionToken, region: c.region });
@@ -1612,6 +1612,106 @@ app.post('/api/aws/import', async (req, res) => {
         return res.status(409).json({ error: firstLine(e.message), code: 'kubeconfig_unparseable', imported, updated, failed });
       }
       failed.push({ name: c.name, error: firstLine(e.message) });
+    }
+  }
+  // Keep the user on the cluster they were already using.
+  reloadPreservingContext();
+  res.json({ imported, updated, failed, contexts: kubeConfig?.contexts.map((c) => c.name) || [], currentContext });
+});
+
+// ------------------------------------------------------------------
+// Google GKE integration — the user's gcloud sign-in finds their GKE clusters
+// (every project the account can see) and writes kubeconfig entries that exec
+// K8Board's own gke-token.js helper: no gke-gcloud-auth-plugin. K8Board has no
+// Google sign-in of its own; "Sign in with Google" runs `gcloud auth login`.
+// See gcp-gke.js and lib/gcloud.mjs. Tokens never leave the server.
+// ------------------------------------------------------------------
+let gkeLogin = null; // { proc, status: pending|done|error, error }
+let gkeSession = null; // { account, clusters: Map(project/location/name → cluster with endpoint + CA) }
+const gkeFail = (res, e) => {
+  const status = e?.code === 'not_installed' ? 501 : e?.code === 'not_signed_in' || e?.code === 'auth' ? 401 : e?.code === 'unavailable' ? 502 : 500;
+  res.status(status).json({ error: firstLine(e?.message || String(e)), code: e?.code || 'failed' });
+};
+
+app.get('/api/gke/status', async (req, res) => {
+  try {
+    const st = await gcloudStatus();
+    res.json({ installed: st.installed, accounts: st.accounts, account: st.account, loggedIn: st.accounts.length > 0 });
+  } catch (e) { gkeFail(res, e); }
+});
+
+// `gcloud auth login` opens the browser and ends when the sign-in is done.
+app.post('/api/gke/login', async (req, res) => {
+  try {
+    if (!(await gcloudStatus()).installed) return res.status(501).json({ error: 'The Google Cloud CLI (gcloud) is not installed, or not on PATH.', code: 'not_installed' });
+    try { gkeLogin?.proc?.kill(); } catch { /* ignore */ }
+    const proc = startGcloudLogin();
+    trackChild(proc);
+    const session = { proc, status: 'pending', error: null, buffer: '' };
+    gkeLogin = session;
+    const onData = (buf) => { session.buffer = (session.buffer + buf.toString()).slice(-4000); };
+    proc.stdout?.on('data', onData);
+    proc.stderr?.on('data', onData);
+    proc.on('exit', (code) => {
+      session.status = code === 0 ? 'done' : 'error';
+      if (code !== 0) session.error = 'The Google sign-in did not finish. Try again.';
+      log.info('gcloud sign-in ended', { ok: code === 0 });
+    });
+    proc.on('error', (e) => { session.status = 'error'; session.error = firstLine(e.message); });
+    // Nobody finishing the browser page must not leave gcloud waiting for ever.
+    const timer = setTimeout(() => { if (session.status === 'pending') { try { proc.kill(); } catch { /* ignore */ } } }, 5 * 60 * 1000);
+    timer.unref();
+    res.json({ status: 'pending' });
+  } catch (e) { gkeFail(res, e); }
+});
+
+app.get('/api/gke/login/status', (req, res) => {
+  if (!gkeLogin) return res.json({ status: 'idle' });
+  res.json({ status: gkeLogin.status, error: gkeLogin.error || undefined });
+});
+
+app.post('/api/gke/login/cancel', (req, res) => {
+  try { gkeLogin?.proc?.kill(); } catch { /* ignore */ }
+  gkeLogin = null;
+  res.json({ ok: true });
+});
+
+// Every GKE cluster the account can see, with its relation to the kubeconfig.
+// Endpoints and certificates stay here (gkeSession); the UI gets names only.
+app.get('/api/gke/clusters', async (req, res) => {
+  const account = req.query.account ? String(req.query.account) : null;
+  if (account && !isAccount(account)) return bad(res, 'account', 'Not a Google account name');
+  try {
+    const { token } = await gcloudAccessToken({ account });
+    const found = await gke.discoverGkeClusters({ token });
+    gkeSession = { account, clusters: new Map(found.clusters.map((c) => [gke.gkeKey(c), c])) };
+    log.info('gke clusters discovered', { clusters: found.clusters.length, projects: found.projects, skipped: found.skipped });
+    res.json({ clusters: gke.gkeClusterStatus(kubeConfig, found.clusters), projects: found.projects, skipped: found.skipped });
+  } catch (e) { gkeFail(res, e); }
+});
+
+app.post('/api/gke/import', async (req, res) => {
+  const { clusters = [] } = req.body || {};
+  if (!Array.isArray(clusters) || clusters.length === 0) return res.status(400).json({ error: 'No clusters selected' });
+  const imported = [], updated = [], failed = [];
+  for (const c of clusters) {
+    const name = typeof c?.name === 'string' ? c.name.slice(0, 100) : '?';
+    // Only a cluster this sign-in just discovered: its endpoint and certificate come from Google, never from the request.
+    const known = gke.isGkeRef(c) ? gkeSession?.clusters.get(gke.gkeKey(c)) : null;
+    if (!known) { failed.push({ name, error: 'Unknown cluster. Discover the clusters again, then add it.' }); continue; }
+    const entry = gke.gkeEntryFor(kubeConfig, known.name);
+    const taken = (kubeConfig?.contexts || []).some((x) => x.name === known.name);
+    const same = !!entry && entry.project === known.project && entry.location === known.location && entry.cluster === known.name;
+    if (taken && !same) { failed.push({ name, error: `The name "${known.name}" is already used by a different cluster in your kubeconfig, so it was left unchanged.` }); continue; }
+    try {
+      gke.writeGkeCluster({ cluster: known, account: gkeSession.account });
+      imported.push(known.name);
+      if (same) updated.push(known.name);
+    } catch (e) {
+      if (awsEks.KubeconfigParseError && e instanceof awsEks.KubeconfigParseError) {
+        return res.status(409).json({ error: firstLine(e.message), code: 'kubeconfig_unparseable', imported, updated, failed });
+      }
+      failed.push({ name, error: firstLine(e.message) });
     }
   }
   // Keep the user on the cluster they were already using.

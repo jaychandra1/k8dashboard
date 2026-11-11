@@ -12,6 +12,7 @@
 //   server.js       the backend (utilityProcess.fork in electron/main.cjs)
 //   eks-token.js    `K8Board --token-helper eks` (electron/main.cjs imports it)
 //   azure-token.js  `K8Board --token-helper azure`
+//   gke-token.js    `K8Board --token-helper gke`
 //   mcp-stdio.js    run by MCP clients as `node <app>/mcp-stdio.js`
 // External: Node's built-ins, electron, node-pty (native, stays in
 // node_modules) and ws's optional native speed-ups (loaded in a try/catch).
@@ -22,7 +23,7 @@ import { builtinModules, createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
-export const ENTRIES = ['server.js', 'eks-token.js', 'azure-token.js', 'mcp-stdio.js'];
+export const ENTRIES = ['server.js', 'eks-token.js', 'azure-token.js', 'gke-token.js', 'mcp-stdio.js'];
 /** node_modules the bundles still load from disk. */
 export const KEEP_MODULES = ['node-pty'];
 const EXTERNAL = new Set(['electron', 'node-pty', 'bufferutil', 'utf-8-validate', ...builtinModules]);

@@ -5,7 +5,6 @@ import { useSsoSignIn, SsoSignInPanel } from './AwsSsoSignIn';
 import { maskAccountId, redactSensitive } from '../lib/redact';
 import Modal from './ui/Modal';
 import Button from './ui/Button';
-import Badge from './ui/Badge';
 
 // Blocking dialog shown before the app loads when the kubeconfig parses but the
 // cluster credentials don't actually work (expired token, unreachable API
@@ -155,7 +154,7 @@ const fmtEnded = (iso) => {
 
 // The dialog is about the cluster being connected and nothing else. Other
 // clusters are on Home, behind it ("Back to clusters"); which clusters an AWS
-// sign-in covers is in Preferences → Cloud Integrations → AWS sign-ins.
+// sign-in covers (its AWS account's) is in Preferences → Cloud Integrations → AWS sign-ins.
 export default function AuthErrorModal({ open = true, auth, onRetry, retrying, contextsInfo, currentContext, onAddAzure, onAddAws, onBack }) {
   // `detail` carries the exec plugin's raw stderr when the backend replaced the
   // message with a friendlier one (sso-expired / exec-helper).
@@ -225,7 +224,6 @@ export default function AuthErrorModal({ open = true, auth, onRetry, retrying, c
             <span className="auth-card-meta">{meta}</span>
           </span>
           <span className="auth-card-tags">
-            {aws?.production && <Badge tone="info" size="sm" title="This cluster has its own AWS sign-in">Production</Badge>}
             {ended && <span className="auth-pill" title={aws.expiredAt}>Ended {ended}</span>}
           </span>
         </header>

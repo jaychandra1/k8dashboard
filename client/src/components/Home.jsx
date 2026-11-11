@@ -14,12 +14,11 @@ import { formatAge } from '../lib/format';
 // the user clicks Connect — pinned ones first, then by last use, the last
 // connected one tagged "Recently connected", and ways to add a cluster. The
 // badges come from local files too
-// (GET /api/config/status: AWS sign-in state from the token cache, production
-// sign-ins). Also shown, inside the app, while connected (#/home).
+// (GET /api/config/status: AWS sign-in state from the token cache). Also shown, inside the app, while connected (#/home).
 //
 //   <Home contexts contextsInfo lastConnected recent pins connected connecting
 //         onConnect onOpenDashboard onDisconnect onTogglePin onRemove canRemove
-//         onAddAws onAddAzure onAddLocal onOpenPreferences />
+//         onAddAws onAddAzure onAddGke onAddLocal onOpenPreferences />
 
 const SIGN_IN_BADGE = {
   expired: { tone: 'warn', text: 'AWS session expired' },
@@ -29,7 +28,6 @@ const SIGN_IN_BADGE = {
 /** Badges for a cluster, from local information only. */
 export function clusterBadges(info) {
   const out = [];
-  if (info?.signIn?.production) out.push({ tone: 'info', text: 'Production' });
   const s = SIGN_IN_BADGE[info?.signIn?.state];
   if (s) out.push(s);
   return out;
@@ -74,7 +72,7 @@ export default function Home({
   contexts = [], contextsInfo = [], lastConnected = null, recent = [], pins = [],
   connected = null, connecting = null,
   onConnect, onOpenDashboard, onDisconnect, onTogglePin, onRemove, canRemove,
-  onAddAws, onAddAzure, onAddLocal, onOpenPreferences,
+  onAddAws, onAddAzure, onAddGke, onAddLocal, onOpenPreferences,
 }) {
   const [q, setQ] = useState('');
   const [addMenu, setAddMenu] = useState(null);
@@ -89,6 +87,7 @@ export default function Home({
   const addItems = [
     onAddAws && { key: 'aws', label: 'AWS EKS', icon: 'aws', onSelect: onAddAws },
     onAddAzure && { key: 'azure', label: 'Azure AKS', icon: 'azure', onSelect: onAddAzure },
+    onAddGke && { key: 'gke', label: 'Google GKE', icon: 'hexagon', onSelect: onAddGke },
     onAddLocal && { key: 'local', label: 'Kubeconfig file…', icon: 'box', onSelect: onAddLocal },
   ].filter(Boolean);
   const openAdd = () => {
@@ -145,7 +144,7 @@ export default function Home({
           <section className="home-empty" aria-label="No clusters">
             <Icon name="cluster" size={30} />
             <h2>No clusters yet</h2>
-            <p>Add one from AWS or Azure, or open a kubeconfig file.</p>
+            <p>Add one from AWS, Azure or Google Cloud, or open a kubeconfig file.</p>
             <div className="home-tiles">
               {addItems.map((it) => (
                 <button key={it.key} type="button" className="home-tile" onClick={it.onSelect}>

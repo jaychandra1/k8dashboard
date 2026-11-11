@@ -17,13 +17,13 @@ import AwsSignIns from './AwsSignIns';
 // The active section comes from the route (`#/preferences/<section>`).
 
 export const SECTIONS = [
-  { key: 'general', label: 'General', icon: 'configuration' },
   { key: 'kubernetes', label: 'Kubernetes', icon: 'cluster' },
   { key: 'integrations', label: 'Cloud Integrations', icon: 'hexagon' },
   { key: 'external-tools', label: 'External Tools', icon: 'sparkles' },
   { key: 'assistant', label: 'AI Assistant', icon: 'send' },
   { key: 'mcp', label: 'MCP Server', icon: 'terminal' },
-  // About is under Help → About K8Board (components/AboutDialog).
+  // No General section: Theme is the first setting under Kubernetes. About is
+  // under Help → About K8Board (components/AboutDialog).
 ];
 
 /** A valid absolute http(s) URL (for the LLM base URL). */
@@ -31,8 +31,8 @@ export function isHttpUrl(v) {
   try { const u = new URL(String(v || '').trim()); return u.protocol === 'http:' || u.protocol === 'https:'; } catch { return false; }
 }
 
-export default function Preferences({ configStatus, theme, onSetTheme, onChangeConfig, onAddAzure, onAddAws, onRemoveCluster, onSetAutoConnect, section: routeSection, onSectionChange, onClose }) {
-  const section = SECTIONS.some((s) => s.key === routeSection) ? routeSection : 'general';
+export default function Preferences({ configStatus, theme, onSetTheme, onChangeConfig, onAddAzure, onAddAws, onAddGke, onRemoveCluster, section: routeSection, onSectionChange, onClose }) {
+  const section = SECTIONS.some((s) => s.key === routeSection) ? routeSection : 'kubernetes';
 
   // Esc closes the page (when no dialog/menu is open above it).
   useEffect(() => {
@@ -62,9 +62,8 @@ export default function Preferences({ configStatus, theme, onSetTheme, onChangeC
         {onClose && (
           <Button variant="secondary" size="sm" iconOnly icon="close" iconSize={18} ariaLabel="Close preferences (Esc)" className="prefs-close" onClick={onClose} />
         )}
-        {section === 'general' && <GeneralSection theme={theme} onSetTheme={onSetTheme} autoConnect={!!configStatus?.autoConnect} onSetAutoConnect={onSetAutoConnect} />}
-        {section === 'kubernetes' && <KubernetesSection configStatus={configStatus} onChangeConfig={onChangeConfig} onRemoveCluster={onRemoveCluster} />}
-        {section === 'integrations' && <IntegrationsSection onAddAzure={onAddAzure} onAddAws={onAddAws} />}
+        {section === 'kubernetes' && <KubernetesSection configStatus={configStatus} onChangeConfig={onChangeConfig} onRemoveCluster={onRemoveCluster} theme={theme} onSetTheme={onSetTheme} />}
+        {section === 'integrations' && <IntegrationsSection onAddAzure={onAddAzure} onAddAws={onAddAws} onAddGke={onAddGke} />}
         {section === 'external-tools' && <ExternalToolsSection />}
         {section === 'assistant' && <AssistantSection />}
         {section === 'mcp' && <McpSection />}
@@ -73,40 +72,26 @@ export default function Preferences({ configStatus, theme, onSetTheme, onChangeC
   );
 }
 
-/* ── General ─────────────────────────────────────────────────────── */
-function GeneralSection({ theme, onSetTheme, autoConnect = false, onSetAutoConnect }) {
-  const id = useId();
-  const opts = [{ k: 'system', label: 'System', icon: 'monitor' }, { k: 'dark', label: 'Dark', icon: 'moon' }, { k: 'light', label: 'Light', icon: 'sun' }];
-  return (
-    <div className="prefs-section">
-      <h1 className="prefs-h2">General</h1>
-      <Field label="Theme" hint="Choose how the app looks. System follows your OS appearance." labelId={`${id}-theme`}>
-        <div className="prefs-seg" role="radiogroup" aria-labelledby={`${id}-theme`}>
-          {opts.map((t) => (
-            <button key={t.k} type="button" role="radio" aria-checked={theme === t.k} className={`prefs-seg-btn ${theme === t.k ? 'active' : ''}`} onClick={() => onSetTheme(t.k)}>
-              <Icon name={t.icon} size={14} /> {t.label}
-            </button>
-          ))}
-        </div>
-      </Field>
-      {onSetAutoConnect && (
-        <Field label="Startup" hint="K8Board opens on Home and contacts no cluster until you click Connect. Turn this on to connect to the last cluster you used as soon as it starts.">
-          <label className="prefs-check">
-            <input type="checkbox" checked={autoConnect} onChange={(e) => onSetAutoConnect(e.target.checked)} />
-            Connect to the last cluster at startup
-          </label>
-        </Field>
-      )}
-    </div>
-  );
-}
-
 /* ── Kubernetes ──────────────────────────────────────────────────── */
-function KubernetesSection({ configStatus, onChangeConfig, onRemoveCluster }) {
+const THEMES = [{ k: 'system', label: 'System', icon: 'monitor' }, { k: 'dark', label: 'Dark', icon: 'moon' }, { k: 'light', label: 'Light', icon: 'sun' }];
+
+function KubernetesSection({ configStatus, onChangeConfig, onRemoveCluster, theme, onSetTheme }) {
+  const id = useId();
   const contexts = [...(configStatus?.contexts || [])].sort((a, b) => a.localeCompare(b));
   return (
     <div className="prefs-section">
       <h1 className="prefs-h2">Kubernetes</h1>
+      {onSetTheme && (
+        <Field label="Theme" labelId={`${id}-theme`}>
+          <div className="prefs-seg" role="radiogroup" aria-labelledby={`${id}-theme`}>
+            {THEMES.map((t) => (
+              <button key={t.k} type="button" role="radio" aria-checked={theme === t.k} className={`prefs-seg-btn ${theme === t.k ? 'active' : ''}`} onClick={() => onSetTheme(t.k)}>
+                <Icon name={t.icon} size={14} /> {t.label}
+              </button>
+            ))}
+          </div>
+        </Field>
+      )}
       <Field label="Kubeconfig" hint="The file the app reads clusters and contexts from.">
         <div className="prefs-inline">
           <code className="prefs-code">{configStatus?.path || configStatus?.defaultPath || '~/.kube/config'}</code>
@@ -136,11 +121,11 @@ function KubernetesSection({ configStatus, onChangeConfig, onRemoveCluster }) {
 }
 
 /* ── Cloud Integrations ──────────────────────────────────────────── */
-function IntegrationsSection({ onAddAzure, onAddAws }) {
+function IntegrationsSection({ onAddAzure, onAddAws, onAddGke }) {
   return (
     <div className="prefs-section">
       <h1 className="prefs-h2">Cloud Integrations</h1>
-      <p className="prefs-lead">Add clusters straight from your cloud account — no CLI required. We handle login and write the kubeconfig for you.</p>
+      <p className="prefs-lead">Add clusters straight from your cloud account. K8Board handles the sign-in and writes the kubeconfig for you.</p>
       <div className="prefs-cards">
         <div className="prefs-int-card">
           <div className="prefs-int-head"><Icon name="azure" size={22} /> <span>Azure AKS</span></div>
@@ -152,6 +137,13 @@ function IntegrationsSection({ onAddAzure, onAddAws }) {
           <p className="prefs-muted">SSO, access keys or IAM role — discover and import EKS clusters.</p>
           <Button variant="primary" size="sm" onClick={onAddAws}>Add AWS clusters</Button>
         </div>
+        {onAddGke && (
+          <div className="prefs-int-card">
+            <div className="prefs-int-head"><Icon name="hexagon" size={22} /> <span>Google GKE</span></div>
+            <p className="prefs-muted">Uses your gcloud sign-in to find and import GKE clusters from every project.</p>
+            <Button variant="primary" size="sm" onClick={onAddGke}>Add GKE clusters</Button>
+          </div>
+        )}
       </div>
       <AwsSignIns />
     </div>

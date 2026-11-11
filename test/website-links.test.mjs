@@ -1,4 +1,4 @@
-// The website (k8dashboard.in) shows no GitHub addresses, and every download
+// The website (k8board.vercel.app) shows no GitHub addresses, and every download
 // goes to the Microsoft Store through get.html — the one place the Store link
 // lives. website/README.md says the same.
 import { test } from 'node:test';

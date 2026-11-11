@@ -131,7 +131,7 @@ COPY --from=kubelogin-build /out/kubectl-oidc_login /usr/local/bin/
 COPY --from=server-deps /app/node_modules ./node_modules
 COPY package.json package-lock.json VERSION ./
 # demo.js is imported by server.js but inert unless K8BOARD_DEMO=1 (test fixture).
-COPY server.js assistant.js mcp.js mcp-stdio.js aws-eks.js eks-token.js azure-aks.js azure-token.js trivy-scan.js demo.js ./
+COPY server.js assistant.js mcp.js mcp-stdio.js aws-eks.js eks-token.js azure-aks.js azure-token.js gcp-gke.js gke-token.js trivy-scan.js demo.js ./
 COPY lib/ ./lib/
 COPY scripts/ ./scripts/
 COPY --from=client-build /app/client/dist ./client/dist
@@ -163,7 +163,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 # links the package to its GitHub repo. docker/metadata-action overrides
 # source/revision/created automatically.
 # ------------------------------------------------------------------
-ARG APP_VERSION="1.8.5"
+ARG APP_VERSION="1.8.6"
 LABEL org.opencontainers.image.title="K8Board" \
       org.opencontainers.image.description="Browse and operate Kubernetes clusters — workloads, nodes, events, logs, in-browser exec/terminal, service port-forwarding, Helm releases, RBAC and CRDs. Reads your kubeconfig and serves the UI + token-protected REST API on port 3001." \
       org.opencontainers.image.version="${APP_VERSION}" \

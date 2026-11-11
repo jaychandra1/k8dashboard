@@ -127,7 +127,7 @@ describe('AwsIntegration — after an AWS SSO sign-in', () => {
     await user.click(await screen.findByRole('button', { name: 'Next' }));
 
     const banner = await screen.findByText(/Signed in to AWS SSO as/);
-    expect(banner.closest('[role="status"]')).toHaveTextContent('Signed in to AWS SSO as Admin in Dev (111122223333).');
+    expect(banner.closest('[role="status"]')).toHaveTextContent('Signed in to AWS SSO as Admin in Dev (••••3333).');
     expect(banner.closest('[role="status"]')).toHaveTextContent(/The 2 clusters marked “uses this sign-in” reconnect with it automatically/);
     expect(screen.getAllByText('Uses this sign-in')).toHaveLength(2);
     expect(screen.queryByRole('button', { name: /Add 0 clusters/ })).toBeNull();

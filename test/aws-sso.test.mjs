@@ -17,8 +17,12 @@ import {
   startCallbackServer,
   createSsoLogin,
   parseAwsConfig,
-  ensureSsoSession,
-  convertLegacyProfiles,
+  ensureAccountSession,
+  accountSessionName,
+  ownsSignIn,
+  isManagedSession,
+  splitByAccount,
+  SSO_PROBE_REGIONS,
   upsertSsoProfile,
   profileSsoInfo,
   sessionsForProfiles,
@@ -27,8 +31,6 @@ import {
   refreshSsoToken,
   sessionTokenState,
   tokenCacheDoc,
-  isProductionSession,
-  legacyProfilesOf,
   setProfileSession,
   removeUnusedSession,
   signOutSession,
@@ -37,6 +39,8 @@ import {
 } from '../lib/aws-sso.mjs';
 
 const START = 'https://d-906600a9b0.awsapps.com/start';
+// One sign-in per account: the session of account 241533118296 on that portal.
+const ACCT = 'kubepilot-d-906600a9b0-241533118296';
 const b64url = (b) => Buffer.from(b).toString('base64url');
 const get = (url) =>
   new Promise((resolve, reject) => {
@@ -76,7 +80,14 @@ const readCache = (id) => JSON.parse(fs.readFileSync(cacheFile(id), 'utf8'));
 describe('PKCE, authorize URL and the loopback callback', () => {
   test('start URL normalisation and session names', () => {
     assert.equal(normalizeStartUrl(' https://d-1.awsapps.com/start/#/ '), 'https://d-1.awsapps.com/start');
+    // A portal address pasted without its path gets "/start"; nothing else is touched.
+    assert.equal(normalizeStartUrl('https://d-1.awsapps.com'), 'https://d-1.awsapps.com/start');
+    assert.equal(normalizeStartUrl('https://my-org.awsapps.com/'), 'https://my-org.awsapps.com/start');
+    assert.equal(normalizeStartUrl('https://d-1.awsapps.com/custom'), 'https://d-1.awsapps.com/custom');
+    assert.equal(normalizeStartUrl('https://sso.example.com'), 'https://sso.example.com');
+    assert.equal(normalizeStartUrl(''), '');
     assert.equal(sessionNameFor(START), 'kubepilot-d-906600a9b0');
+    assert.equal(accountSessionName(START, '241533118296'), ACCT);
     assert.match(sessionNameFor('not a url'), /^kubepilot-[0-9a-f]{10}$/);
   });
 
@@ -183,18 +194,27 @@ const REG = {
   clientSecretExpiresAt: Math.floor(Date.now() / 1000) + 90 * 86400,
 };
 const TOKENS = { accessToken: 'access-1', expiresIn: 3600, refreshToken: 'refresh-1' };
+// Every sign-in first confirms the region with a device authorization.
+const DEVICE = () => ({ deviceCode: 'd', userCode: 'U', verificationUri: 'https://device', interval: 1, expiresIn: 600 });
+const onlyIn = (right) => (input, region) => {
+  if (region !== right) throw awsErr('InvalidRequestException', 'UnknownError');
+  return DEVICE();
+};
 
 describe('sign-in manager', () => {
   test('browser (PKCE): registers for authorization_code + refresh, exchanges the code with the verifier', async () => {
     const oidc = fakeOidc({
       RegisterClientCommand: () => REG,
+      StartDeviceAuthorizationCommand: DEVICE,
       CreateTokenCommand: () => TOKENS,
     });
     const login = createSsoLogin({ oidc, browserAvailable: true });
     const snap = await login.start({ startUrl: `${START}/`, ssoRegion: 'us-east-1' });
     assert.equal(snap.status, 'pending');
     assert.equal(snap.method, 'browser');
-    const reg = oidc.calls.find((c) => c.name === 'RegisterClientCommand').input;
+    // The saved region was right: no other region is asked.
+    assert.deepEqual([...new Set(oidc.calls.map((c) => c.region))], ['us-east-1']);
+    const reg = oidc.calls.filter((c) => c.name === 'RegisterClientCommand').at(-1).input;
     assert.deepEqual(reg, {
       clientName: 'k8board',
       clientType: 'public',
@@ -224,7 +244,7 @@ describe('sign-in manager', () => {
   });
 
   test('browser: AWS denial and cancel are reported, never "done"', async () => {
-    const oidc = fakeOidc({ RegisterClientCommand: () => REG, CreateTokenCommand: () => TOKENS });
+    const oidc = fakeOidc({ RegisterClientCommand: () => REG, StartDeviceAuthorizationCommand: DEVICE, CreateTokenCommand: () => TOKENS });
     const login = createSsoLogin({ oidc, browserAvailable: true });
     const snap = await login.start({ startUrl: START, ssoRegion: 'us-east-1' });
     const auth = new URL(snap.authUrl);
@@ -283,6 +303,34 @@ describe('sign-in manager', () => {
     );
   });
 
+  test('the region is found from the start URL: a wrong saved region is corrected, every region is asked', async () => {
+    assert.equal(new Set(SSO_PROBE_REGIONS).size, SSO_PROBE_REGIONS.length);
+    for (const r of ['us-east-1', 'eu-west-1', 'ap-northeast-2', 'me-south-1', 'af-south-1']) assert.ok(SSO_PROBE_REGIONS.includes(r), r);
+    // Saved region us-east-1, but this portal lives in ap-northeast-2.
+    const oidc = fakeOidc({ RegisterClientCommand: () => REG, StartDeviceAuthorizationCommand: onlyIn('ap-northeast-2'), CreateTokenCommand: () => TOKENS });
+    const login = createSsoLogin({ oidc, browserAvailable: true });
+    const snap = await login.start({ startUrl: START, ssoRegion: 'us-east-1' });
+    assert.deepEqual([snap.status, snap.ssoRegion], ['pending', 'ap-northeast-2']);
+    assert.equal(new URL(snap.authUrl).host, 'oidc.ap-northeast-2.amazonaws.com');
+    assert.equal(oidc.calls[0].region, 'us-east-1', 'the saved region is tried first');
+    login.cancel();
+    // No saved region: found the same way.
+    const none = await login.start({ startUrl: START });
+    assert.equal(none.ssoRegion, 'ap-northeast-2');
+    login.cancel();
+  });
+
+  test('a start URL no region knows, and no network, say so in plain words', async () => {
+    const nowhere = fakeOidc({ RegisterClientCommand: () => REG, StartDeviceAuthorizationCommand: onlyIn('nowhere') });
+    const bad = await createSsoLogin({ oidc: nowhere, browserAvailable: true }).start({ startUrl: START, ssoRegion: 'eu-west-1' });
+    assert.deepEqual([bad.status, bad.errorCode], ['error', 'bad_start_url']);
+    assert.match(bad.error, /didn’t recognise this start URL.*usually ends in \/start/);
+    assert.doesNotMatch(bad.error, /UnknownError/);
+    const offline = fakeOidc({ RegisterClientCommand: () => { throw Object.assign(new Error('getaddrinfo ENOTFOUND oidc.us-east-1.amazonaws.com'), { code: 'ENOTFOUND' }); } });
+    const off = await createSsoLogin({ oidc: offline, browserAvailable: true }).start({ startUrl: START });
+    assert.deepEqual([off.status, off.errorCode], ['error', 'offline']);
+  });
+
   test('no browser outside the desktop app; expired codes and bad URLs', async () => {
     const oidc = fakeOidc({
       RegisterClientCommand: () => REG,
@@ -326,71 +374,90 @@ sso_account_id = 111111111111
 sso_role_name = ReadOnly
 `;
 
-  test('a new session is added; an existing one for the URL (aws configure sso) is reused', () => {
-    const a = ensureSsoSession(LEGACY, { startUrl: START, ssoRegion: 'us-east-1' });
-    assert.equal(a.created, true);
-    assert.equal(a.name, 'kubepilot-d-906600a9b0');
+  test('each account gets its own session; the user\'s own session is never reused for it', () => {
+    const a = ensureAccountSession(LEGACY, { startUrl: START, ssoRegion: 'us-east-1', accountId: '241533118296' });
+    assert.deepEqual([a.created, a.name], [true, ACCT]);
     assert.match(
       a.text,
-      /\[sso-session kubepilot-d-906600a9b0\]\nsso_start_url = https:\/\/d-906600a9b0\.awsapps\.com\/start\nsso_region = us-east-1\nsso_registration_scopes = sso:account:access/
+      /\[sso-session kubepilot-d-906600a9b0-241533118296\]\nsso_start_url = https:\/\/d-906600a9b0\.awsapps\.com\/start\nsso_region = us-east-1\nsso_registration_scopes = sso:account:access/
     );
+    // Asked again: the same one. Another account: another one.
+    assert.deepEqual(ensureAccountSession(a.text, { startUrl: START, ssoRegion: 'us-east-1', accountId: '241533118296' }), { text: a.text, name: ACCT, created: false });
+    assert.equal(ensureAccountSession(a.text, { startUrl: START, ssoRegion: 'us-east-1', accountId: '111122223333' }).name, 'kubepilot-d-906600a9b0-111122223333');
+    // A session the user made (aws configure sso) for the same portal is left to the user.
     const mine = `[sso-session corp]\nsso_start_url = ${START}\nsso_region = us-east-1\n`;
-    assert.deepEqual(ensureSsoSession(mine, { startUrl: START, ssoRegion: 'us-east-1' }), {
-      text: mine,
-      name: 'corp',
-      created: false,
-    });
-    const clash = `[sso-session kubepilot-d-906600a9b0]\nsso_start_url = https://elsewhere.awsapps.com/start\nsso_region = us-east-1\n`;
-    assert.equal(
-      ensureSsoSession(clash, { startUrl: START, ssoRegion: 'us-east-1' }).name,
-      'kubepilot-d-906600a9b0-2'
-    );
+    assert.deepEqual([ensureAccountSession(mine, { startUrl: START, ssoRegion: 'us-east-1', accountId: '241533118296' }).name, isManagedSession('corp'), isManagedSession(ACCT)], [ACCT, false, true]);
+    // The name is taken by another portal's session: the next free one.
+    const clash = `[sso-session ${ACCT}]\nsso_start_url = https://elsewhere.awsapps.com/start\nsso_region = us-east-1\n`;
+    assert.equal(ensureAccountSession(clash, { startUrl: START, ssoRegion: 'us-east-1', accountId: '241533118296' }).name, `${ACCT}-2`);
+    // A profile without an account id: the portal's name alone.
+    assert.equal(ensureAccountSession('', { startUrl: START, ssoRegion: 'us-east-1' }).name, 'kubepilot-d-906600a9b0');
   });
 
-  test('legacy profiles of the URL point at the session; everything else is untouched; converting twice is a no-op', () => {
-    const { text, name } = ensureSsoSession(LEGACY, { startUrl: START, ssoRegion: 'us-east-1' });
-    const conv = convertLegacyProfiles(text, { startUrl: START, ssoRegion: 'us-east-1', sessionName: name });
-    assert.deepEqual(conv.converted, ['sso-241533118296']);
-    const cfg = parseAwsConfig(conv.text);
+  test('split by account: legacy profiles get their account\'s session; everything else is untouched; twice is a no-op', () => {
+    assert.deepEqual(splitByAccount(LEGACY, { managedOnly: true }).moved, [], 'the user\'s own profiles move only when asked');
+    const out = splitByAccount(LEGACY);
+    assert.deepEqual(out.moved, [
+      { profile: 'sso-241533118296', from: null, to: ACCT },
+      { profile: 'other-portal', from: null, to: 'kubepilot-d-other-111111111111' },
+    ]);
+    assert.deepEqual(out.removedSessions, []);
+    const cfg = parseAwsConfig(out.text);
     assert.deepEqual(cfg.sections.get('profile:sso-241533118296').values, {
-      sso_session: name,
+      sso_session: ACCT,
       sso_account_id: '241533118296',
       sso_role_name: 'AdministratorAccess',
       region: 'eu-west-1',
       s3: '',
     });
-    assert.match(conv.text, /^# my AWS config/);
-    assert.match(conv.text, /s3 =\n {2}max_concurrent_requests = 20/);
-    assert.equal(
-      cfg.sections.get('profile:other-portal').values.sso_start_url,
-      'https://d-other.awsapps.com/start'
-    );
-    assert.deepEqual(
-      convertLegacyProfiles(conv.text, { startUrl: START, ssoRegion: 'us-east-1', sessionName: name })
-        .converted,
-      []
-    );
-    assert.deepEqual(profileSsoInfo(conv.text, 'sso-241533118296'), {
+    assert.match(out.text, /^# my AWS config/);
+    assert.match(out.text, /s3 =\n {2}max_concurrent_requests = 20/);
+    assert.equal(cfg.sections.get('sso-session:kubepilot-d-other-111111111111').values.sso_start_url, 'https://d-other.awsapps.com/start');
+    assert.deepEqual(splitByAccount(out.text).moved, []);
+    const info = profileSsoInfo(out.text, 'sso-241533118296');
+    assert.deepEqual(info, {
       profile: 'sso-241533118296',
-      sessionName: name,
+      sessionName: ACCT,
       startUrl: START,
       ssoRegion: 'us-east-1',
       accountId: '241533118296',
       roleName: 'AdministratorAccess',
     });
+    assert.equal(ownsSignIn(info), true);
+    assert.equal(ownsSignIn(profileSsoInfo(LEGACY, 'sso-241533118296')), false);
     assert.equal(profileSsoInfo(LEGACY, 'other-portal').sessionName, null);
     assert.equal(profileSsoInfo(LEGACY, 'default'), null);
-    assert.deepEqual(sessionsForProfiles(conv.text, ['sso-241533118296', 'other-portal', 'nope']), [name]);
+    assert.deepEqual(sessionsForProfiles(out.text, ['sso-241533118296', 'nope']), [ACCT]);
   });
 
-  test('production sessions: separate from the shared one, never picked for anything else', () => {
-    const shared = ensureSsoSession('', { startUrl: START, ssoRegion: 'us-east-1' });
-    const prod = ensureSsoSession(shared.text, { startUrl: START, ssoRegion: 'us-east-1', production: true });
-    assert.deepEqual([shared.name, prod.name, prod.created], ['kubepilot-d-906600a9b0', 'kubepilot-d-906600a9b0-production', true]);
-    assert.equal(isProductionSession(prod.name), true);
-    assert.equal(isProductionSession(shared.name), false);
-    assert.equal(ensureSsoSession(prod.text, { startUrl: START, ssoRegion: 'us-east-1' }).name, 'kubepilot-d-906600a9b0');
-    assert.equal(ensureSsoSession(prod.text, { startUrl: START, ssoRegion: 'us-east-1', production: true }).created, false);
+  test('split by account: sessions K8Board made (shared, "-production") are split and removed; the user\'s own only on request', () => {
+    const text = [
+      '[sso-session kubepilot-d-906600a9b0]', `sso_start_url = ${START}`, 'sso_region = us-east-1', '',
+      '[sso-session kubepilot-d-906600a9b0-production]', `sso_start_url = ${START}`, 'sso_region = us-east-1', '',
+      '[sso-session corp]', `sso_start_url = ${START}`, 'sso_region = us-east-1', '',
+      '[profile dev]', 'sso_session = kubepilot-d-906600a9b0', 'sso_account_id = 111122223333', 'sso_role_name = Dev', '',
+      '[profile dev-readonly]', 'sso_session = kubepilot-d-906600a9b0', 'sso_account_id = 111122223333', 'sso_role_name = ReadOnly', '',
+      '[profile qa]', 'sso_session = kubepilot-d-906600a9b0', 'sso_account_id = 222233334444', 'sso_role_name = Dev', '',
+      '[profile prod]', 'sso_session = kubepilot-d-906600a9b0-production', 'sso_account_id = 444455556666', 'sso_role_name = Admin', '',
+      '[profile mine]', 'sso_session = corp', 'sso_account_id = 777788889999', 'sso_role_name = Admin', '',
+      '[profile keys]', 'region = us-east-1', '',
+    ].join('\n');
+    const out = splitByAccount(text, { managedOnly: true });
+    const session = (name) => parseAwsConfig(out.text).sections.get(`profile:${name}`).values.sso_session;
+    // Two roles of one account share that account's sign-in; other accounts have their own.
+    assert.deepEqual(['dev', 'dev-readonly', 'qa', 'prod', 'mine'].map(session), [
+      'kubepilot-d-906600a9b0-111122223333', 'kubepilot-d-906600a9b0-111122223333', 'kubepilot-d-906600a9b0-222233334444',
+      'kubepilot-d-906600a9b0-444455556666', 'corp',
+    ]);
+    assert.deepEqual(out.removedSessions.sort(), ['kubepilot-d-906600a9b0', 'kubepilot-d-906600a9b0-production']);
+    const sections = parseAwsConfig(out.text).sections;
+    assert.deepEqual(['kubepilot-d-906600a9b0', 'kubepilot-d-906600a9b0-production', 'corp'].map((n) => sections.has(`sso-session:${n}`)), [false, false, true]);
+    assert.equal(sections.get('profile:keys').values.region, 'us-east-1');
+    assert.deepEqual(splitByAccount(out.text, { managedOnly: true }).moved, [], 'already one per account');
+    // On request: the user's profile moves too; the user's session stays in the file.
+    const asked = splitByAccount(out.text, { profiles: ['mine'] });
+    assert.deepEqual(asked.moved, [{ profile: 'mine', from: 'corp', to: 'kubepilot-d-906600a9b0-777788889999' }]);
+    assert.deepEqual([asked.removedSessions, parseAwsConfig(asked.text).sections.has('sso-session:corp')], [[], true]);
   });
 
   test('a profile moves to another session (from either format); an unused session block is dropped', () => {
@@ -399,7 +466,6 @@ sso_role_name = ReadOnly
       '[profile legacy]', `sso_start_url = ${START}`, 'sso_region = us-east-1', 'sso_account_id = 444455556666', 'sso_role_name = Admin', 'region = eu-west-1', '',
       '[profile kept]', 'region = us-east-1', '',
     ].join('\n');
-    assert.deepEqual(legacyProfilesOf(text, START), ['legacy']);
     const moved = setProfileSession(text, 'legacy', 'kubepilot-d-906600a9b0-production');
     const p = parseAwsConfig(moved).sections.get('profile:legacy').values;
     assert.deepEqual(p, { sso_session: 'kubepilot-d-906600a9b0-production', sso_account_id: '444455556666', sso_role_name: 'Admin', region: 'eu-west-1' });
@@ -471,24 +537,18 @@ describe('storing a sign-in, renewing it, and the AWS SDK reading it', () => {
   });
   const result = { startUrl: START, ssoRegion: 'us-east-1', ...TOKENS, ...REG };
 
-  test('adopt for a profile: its session, only that profile converted, a refreshable token for that session only', () => {
+  test('adopt for a profile: its account\'s session, only that profile changed, a refreshable token for that session only', () => {
     fs.appendFileSync(process.env.AWS_CONFIG_FILE, `\n[profile other-account]\nsso_start_url = ${START}\nsso_region = us-east-1\nsso_account_id = 111122223333\nsso_role_name = Dev\n`);
     const out = adoptSsoLogin(result, { profile: 'sso-241533118296' });
-    assert.deepEqual(out, {
-      sessionName: 'kubepilot-d-906600a9b0',
-      production: false,
-      converted: ['sso-241533118296'],
-      created: true,
-      legacyProfiles: ['other-account'],
-    });
-    // The other legacy profile is untouched, and nothing is copied to the start-URL cache it reads.
+    assert.deepEqual(out, { sessionName: ACCT, converted: ['sso-241533118296'], created: true });
+    // The other account's profile is untouched, and nothing is copied to the start-URL cache it reads.
     const other = parseAwsConfig(fs.readFileSync(process.env.AWS_CONFIG_FILE, 'utf8')).sections.get('profile:other-account').values;
     assert.equal(other.sso_start_url, START);
     assert.equal(other.sso_session, undefined);
     assert.equal(fs.existsSync(cacheFile(START)), false, 'no start-URL copy');
     const cfg = parseAwsConfig(fs.readFileSync(process.env.AWS_CONFIG_FILE, 'utf8'));
-    assert.equal(cfg.sections.get('profile:sso-241533118296').values.sso_session, 'kubepilot-d-906600a9b0');
-    const tok = readCache('kubepilot-d-906600a9b0');
+    assert.equal(cfg.sections.get('profile:sso-241533118296').values.sso_session, ACCT);
+    const tok = readCache(ACCT);
     assert.deepEqual(Object.keys(tok).sort(), [
       'accessToken',
       'clientId',
@@ -505,42 +565,54 @@ describe('storing a sign-in, renewing it, and the AWS SDK reading it', () => {
       fs.readdirSync(path.join(home, '.aws')).filter((f) => f.startsWith('config.k8board-backup-')).length,
       1
     );
-    assert.equal(sessionTokenState('kubepilot-d-906600a9b0').refreshable, true);
+    assert.equal(sessionTokenState(ACCT).refreshable, true);
+    // Signing in again for the same profile: the same session, nothing to change.
+    assert.deepEqual(adoptSsoLogin(result, { profile: 'sso-241533118296' }), { sessionName: ACCT, converted: [], created: false });
   });
 
-  test('adopt without a profile (the add-cluster wizard): the shared session, no profile changed', () => {
-    const out = adoptSsoLogin(result);
-    assert.deepEqual([out.sessionName, out.converted, out.legacyProfiles], ['kubepilot-d-906600a9b0', [], ['sso-241533118296']]);
+  test('adopt for an account (the add-cluster wizard): that account\'s session, no profile changed', () => {
+    const out = adoptSsoLogin(result, { accountId: '999900001111' });
+    assert.deepEqual(out, { sessionName: 'kubepilot-d-906600a9b0-999900001111', converted: [], created: true });
     assert.equal(parseAwsConfig(fs.readFileSync(process.env.AWS_CONFIG_FILE, 'utf8')).sections.get('profile:sso-241533118296').values.sso_session, undefined);
+    assert.equal(sessionTokenState('kubepilot-d-906600a9b0-999900001111').signedIn, true);
+    assert.equal(sessionTokenState(ACCT).signedIn, false, 'no other account is signed in');
   });
 
-  test('a production profile: its sign-in goes to its own session; a sign-in for another cluster never reaches it', () => {
+  test('one sign-in per account: signing in for one account never reaches another, even on the same portal', () => {
     fs.writeFileSync(process.env.AWS_CONFIG_FILE, [
       '[sso-session kubepilot-d-906600a9b0]', `sso_start_url = ${START}`, 'sso_region = us-east-1', '',
-      '[sso-session kubepilot-d-906600a9b0-production]', `sso_start_url = ${START}`, 'sso_region = us-east-1', '',
+      '[sso-session corp]', `sso_start_url = ${START}`, 'sso_region = us-east-1', '',
       '[profile dev]', 'sso_session = kubepilot-d-906600a9b0', 'sso_account_id = 111122223333', 'sso_role_name = Dev', '',
-      '[profile prod]', 'sso_session = kubepilot-d-906600a9b0-production', 'sso_account_id = 444455556666', 'sso_role_name = Admin', '',
+      '[profile prod]', 'sso_session = kubepilot-d-906600a9b0', 'sso_account_id = 444455556666', 'sso_role_name = Admin', '',
+      '[profile mine]', 'sso_session = corp', 'sso_account_id = 777788889999', 'sso_role_name = Admin', '',
     ].join('\n'));
-    const dev = adoptSsoLogin(result, { profile: 'dev' });
-    assert.deepEqual([dev.sessionName, dev.production], ['kubepilot-d-906600a9b0', false]);
-    assert.equal(sessionTokenState('kubepilot-d-906600a9b0').signedIn, true);
-    assert.equal(sessionTokenState('kubepilot-d-906600a9b0-production').signedIn, false, 'the dev sign-in did not reach prod');
+    const DEV = 'kubepilot-d-906600a9b0-111122223333';
+    const PROD = 'kubepilot-d-906600a9b0-444455556666';
+    const sections = () => parseAwsConfig(fs.readFileSync(process.env.AWS_CONFIG_FILE, 'utf8')).sections;
+    // dev shared a session with prod: it moves to its own account's, and only it is signed in.
+    assert.deepEqual(adoptSsoLogin(result, { profile: 'dev' }), { sessionName: DEV, converted: ['dev'], created: true });
+    assert.equal(sessionTokenState(DEV).signedIn, true);
+    assert.equal(sessionTokenState(PROD).signedIn, false, 'the dev sign-in did not reach prod');
+    assert.equal(sessionTokenState('kubepilot-d-906600a9b0').signedIn, false, 'nor the session they used to share');
+    assert.equal(sections().get('profile:prod').values.sso_session, 'kubepilot-d-906600a9b0', 'prod is not changed by a dev sign-in');
     const prod = adoptSsoLogin({ ...result, accessToken: 'access-prod' }, { profile: 'prod' });
-    assert.deepEqual([prod.sessionName, prod.production], ['kubepilot-d-906600a9b0-production', true]);
-    assert.equal(readCache('kubepilot-d-906600a9b0-production').accessToken, 'access-prod');
-    assert.equal(readCache('kubepilot-d-906600a9b0').accessToken, 'access-1', 'and the prod sign-in did not touch dev');
-    // The wizard never puts a new profile on the production session.
-    assert.equal(adoptSsoLogin(result).sessionName, 'kubepilot-d-906600a9b0');
+    assert.equal(prod.sessionName, PROD);
+    assert.equal(readCache(PROD).accessToken, 'access-prod');
+    assert.equal(readCache(DEV).accessToken, 'access-1', 'and the prod sign-in did not touch dev');
+    assert.equal(sections().has('sso-session:kubepilot-d-906600a9b0'), false, 'the shared session is gone once nothing uses it');
+    // A profile on a session the user made keeps it.
+    assert.deepEqual(adoptSsoLogin(result, { profile: 'mine' }), { sessionName: 'corp', converted: [], created: false });
+    assert.equal(sections().get('profile:mine').values.sso_session, 'corp');
   });
 
   test('sign-out: the session\'s token is gone (and an old start-URL copy of the same sign-in)', () => {
     adoptSsoLogin(result, { profile: 'sso-241533118296' });
-    fs.writeFileSync(cacheFile(START), JSON.stringify(readCache('kubepilot-d-906600a9b0'))); // as older versions wrote it
-    assert.deepEqual(signOutSession('kubepilot-d-906600a9b0'), { signedOut: true });
-    assert.equal(fs.existsSync(cacheFile('kubepilot-d-906600a9b0')), false);
+    fs.writeFileSync(cacheFile(START), JSON.stringify(readCache(ACCT))); // as older versions wrote it
+    assert.deepEqual(signOutSession(ACCT), { signedOut: true });
+    assert.equal(fs.existsSync(cacheFile(ACCT)), false);
     assert.equal(fs.existsSync(cacheFile(START)), false);
-    assert.equal(sessionTokenState('kubepilot-d-906600a9b0').signedIn, false);
-    assert.deepEqual(signOutSession('kubepilot-d-906600a9b0'), { signedOut: false });
+    assert.equal(sessionTokenState(ACCT).signedIn, false);
+    assert.deepEqual(signOutSession(ACCT), { signedOut: false });
   });
 
   test('renewal: only near expiry, rotates the refresh token, reports a finished session as expired', async () => {
@@ -554,10 +626,10 @@ describe('storing a sign-in, renewing it, and the AWS SDK reading it', () => {
         return { accessToken: 'access-2', expiresIn: 3600, refreshToken: 'refresh-2' };
       },
     });
-    assert.equal((await refreshSsoToken('kubepilot-d-906600a9b0', { oidc })).status, 'fresh');
+    assert.equal((await refreshSsoToken(ACCT, { oidc })).status, 'fresh');
     assert.equal(oidc.calls.length, 0);
     const later = Date.now() + 50 * 60 * 1000; // 10 minutes left
-    const r = await refreshSsoToken('kubepilot-d-906600a9b0', { oidc, now: () => later });
+    const r = await refreshSsoToken(ACCT, { oidc, now: () => later });
     assert.equal(r.status, 'refreshed');
     assert.deepEqual(oidc.calls[0].input, {
       clientId: 'cid-1',
@@ -565,29 +637,29 @@ describe('storing a sign-in, renewing it, and the AWS SDK reading it', () => {
       grantType: 'refresh_token',
       refreshToken: 'refresh-1',
     });
-    assert.equal(readCache('kubepilot-d-906600a9b0').refreshToken, 'refresh-2');
+    assert.equal(readCache(ACCT).refreshToken, 'refresh-2');
     assert.equal(fs.existsSync(cacheFile(START)), false, 'renewing a session never writes a start-URL copy');
     // The old refresh token is now rejected → the session needs a browser sign-in.
-    const tok = readCache('kubepilot-d-906600a9b0');
+    const tok = readCache(ACCT);
     fs.writeFileSync(
-      cacheFile('kubepilot-d-906600a9b0'),
+      cacheFile(ACCT),
       JSON.stringify({
         ...tok,
         refreshToken: 'refresh-1',
         expiresAt: new Date(Date.now() - 1000).toISOString(),
       })
     );
-    assert.equal(sessionTokenState('kubepilot-d-906600a9b0').refreshable, true, 'a stored refresh token looks renewable until tried');
-    assert.equal((await refreshSsoToken('kubepilot-d-906600a9b0', { oidc })).status, 'expired');
+    assert.equal(sessionTokenState(ACCT).refreshable, true, 'a stored refresh token looks renewable until tried');
+    assert.equal((await refreshSsoToken(ACCT, { oidc })).status, 'expired');
     // The refusal is remembered: the sign-in is shown as over, not "renews when opened".
     assert.deepEqual(
-      [sessionTokenState('kubepilot-d-906600a9b0').refreshable, sessionTokenState('kubepilot-d-906600a9b0').renewalRefused],
+      [sessionTokenState(ACCT).refreshable, sessionTokenState(ACCT).renewalRefused],
       [false, true]
     );
     // A new sign-in writes a new token, which is renewable again.
     adoptSsoLogin(result, { profile: 'sso-241533118296' });
     assert.deepEqual(
-      [sessionTokenState('kubepilot-d-906600a9b0').refreshable, sessionTokenState('kubepilot-d-906600a9b0').renewalRefused],
+      [sessionTokenState(ACCT).refreshable, sessionTokenState(ACCT).renewalRefused],
       [true, false]
     );
     assert.equal((await refreshSsoToken('nope', { oidc })).status, 'missing');
@@ -602,15 +674,15 @@ describe('storing a sign-in, renewing it, and the AWS SDK reading it', () => {
 
   test('a token whose client registration has run out is not renewable, without asking AWS', async () => {
     adoptSsoLogin(result, { profile: 'sso-241533118296' });
-    const tok = readCache('kubepilot-d-906600a9b0');
-    fs.writeFileSync(cacheFile('kubepilot-d-906600a9b0'), JSON.stringify({
+    const tok = readCache(ACCT);
+    fs.writeFileSync(cacheFile(ACCT), JSON.stringify({
       ...tok, expiresAt: new Date(Date.now() - 1000).toISOString(), registrationExpiresAt: new Date(Date.now() - 1000).toISOString(),
     }));
-    assert.deepEqual(sessionTokenState('kubepilot-d-906600a9b0'), {
-      signedIn: false, expiresAt: readCache('kubepilot-d-906600a9b0').expiresAt, refreshable: false, renewalRefused: true,
+    assert.deepEqual(sessionTokenState(ACCT), {
+      signedIn: false, expiresAt: readCache(ACCT).expiresAt, refreshable: false, renewalRefused: true,
     });
     const oidc = fakeOidc({ CreateTokenCommand: () => { throw new Error('not called'); } });
-    assert.equal((await refreshSsoToken('kubepilot-d-906600a9b0', { oidc })).status, 'expired');
+    assert.equal((await refreshSsoToken(ACCT, { oidc })).status, 'expired');
     assert.equal(oidc.calls.length, 0);
   });
 
@@ -621,9 +693,9 @@ describe('storing a sign-in, renewing it, and the AWS SDK reading it', () => {
     assert.equal(fresh.token, 'access-1');
 
     // Expired access token: the SDK must refresh it with our stored refresh token.
-    const tok = readCache('kubepilot-d-906600a9b0');
+    const tok = readCache(ACCT);
     fs.writeFileSync(
-      cacheFile('kubepilot-d-906600a9b0'),
+      cacheFile(ACCT),
       JSON.stringify({ ...tok, expiresAt: new Date(Date.now() - 60_000).toISOString() })
     );
     const seen = [];
@@ -660,7 +732,7 @@ describe('storing a sign-in, renewing it, and the AWS SDK reading it', () => {
         },
         { grantType: 'refresh_token', refreshToken: 'refresh-1', clientId: 'cid-1' }
       );
-      assert.equal(readCache('kubepilot-d-906600a9b0').refreshToken, 'refresh-from-sdk');
+      assert.equal(readCache(ACCT).refreshToken, 'refresh-from-sdk');
     } finally {
       fake.close();
     }

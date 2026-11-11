@@ -19,7 +19,7 @@ import { PROVIDERS, providerKeyOf } from './ContextPickerModal';
 //   Pin / Unpin "<current>"
 //   Remove "<current>"…         → RemoveClusterDialog (confirms what goes)
 //   Disconnect                   → back to Home (the clusters to connect to)
-//   Add cluster ▸                → AWS EKS · Azure AKS
+//   Add cluster ▸                → AWS EKS · Azure AKS · Google GKE
 //
 // The desktop app mirrors the pinned list in its native "Clusters" menu; both
 // read the pins from /api/settings/pins (see shell/usePins.js).
@@ -27,7 +27,7 @@ export const MAX_INLINE = 12;
 
 function ClusterSwitcher({
   contexts = [], contextsInfo, currentContext, pins = [],
-  onSwitch, onTogglePin, onOpenContexts, onAddAws, onAddAzure, onRemove, onDisconnect,
+  onSwitch, onTogglePin, onOpenContexts, onAddAws, onAddAzure, onAddGke, onRemove, onDisconnect,
 }) {
   const btnRef = useRef(null);
   const [open, setOpen] = useState(false);
@@ -90,13 +90,14 @@ function ClusterSwitcher({
     const add = [];
     if (onAddAws) add.push({ key: 'aws', label: 'AWS EKS', icon: 'aws', onSelect: () => onAddAws() });
     if (onAddAzure) add.push({ key: 'azure', label: 'Azure AKS', icon: 'azure', onSelect: () => onAddAzure() });
+    if (onAddGke) add.push({ key: 'gke', label: 'Google GKE', icon: 'hexagon', onSelect: () => onAddGke() });
     if (add.length) list.push({ key: 'add', label: 'Add cluster', icon: 'plus', children: add });
     if (onDisconnect && currentContext) {
       list.push({ divider: true });
       list.push({ key: 'disconnect', label: 'Disconnect', icon: 'close', onSelect: () => onDisconnect() });
     }
     return list;
-  }, [pinned, sorted, providerOf, currentContext, isPinned, onSwitch, onTogglePin, onOpenContexts, onAddAws, onAddAzure, onRemove, onDisconnect]);
+  }, [pinned, sorted, providerOf, currentContext, isPinned, onSwitch, onTogglePin, onOpenContexts, onAddAws, onAddAzure, onAddGke, onRemove, onDisconnect]);
 
   const onKeyDown = (e) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (!open) openMenu(); }

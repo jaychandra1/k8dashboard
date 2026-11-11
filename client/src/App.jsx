@@ -9,6 +9,7 @@ import CommandPalette from './components/CommandPalette';
 import KubeConfigModal from './components/KubeConfigModal';
 import AuthErrorModal from './components/AuthErrorModal';
 import AzureIntegration from './components/AzureIntegration';
+import GkeIntegration from './components/GkeIntegration';
 import AwsIntegration from './components/AwsIntegration';
 import Assistant from './components/Assistant';
 import AgentPanel from './components/AgentPanel';
@@ -18,7 +19,7 @@ import ErrorBoundary from './components/ui/ErrorBoundary';
 import useHashRoute from './hooks/useHashRoute';
 import useDocumentTitle from './hooks/useDocumentTitle';
 import useRequest from './hooks/useRequest';
-import { bootstrapTokenFromHash, getToken, onUnauthorized, getJson, putJson, errorMessage } from './lib/api';
+import { bootstrapTokenFromHash, getToken, onUnauthorized, getJson } from './lib/api';
 import { RESOURCE_TYPES, byKey, pluralKey } from './lib/kinds';
 import { refreshMs } from './components/RefreshControl';
 import useAuthGate from './components/shell/useAuthGate';
@@ -76,7 +77,7 @@ function App() {
   const selectedKey = useMemo(() => selectionFromRoute(route), [route]);
   const crSelection = useMemo(() => crSelectionFromRoute(route), [route]);
   const subView = view === 'argocd' ? (route.params[0] || 'dashboard') : view === 'security' ? (route.params[0] || 'overview') : null;
-  const prefSection = view === 'preferences' ? (route.params[0] || 'general') : null;
+  const prefSection = view === 'preferences' ? (route.params[0] || 'kubernetes') : null;
   const focusNode = view === 'nodes' ? (route.params[0] || null) : null;
   const nsQuery = route.query.ns;
 
@@ -128,24 +129,6 @@ function App() {
     if (out?.current && authOkRef.current) disconnect();
     gate.fetchConfigStatus();
   }, [toast, refetchPins, disconnect, gate]);
-
-  // "Connect to the last cluster at startup" (Preferences → General, off by
-  // default): once, when the kubeconfig is first read.
-  const autoConnectTried = useRef(false);
-  useEffect(() => {
-    if (autoConnectTried.current || !configStatus.loaded) return;
-    autoConnectTried.current = true;
-    const last = configStatus.lastConnected;
-    if (configStatus.autoConnect && last && (configStatus.contexts || []).includes(last)) connect(last);
-  }, [configStatus, connect]);
-  const setAutoConnect = useCallback(async (on) => {
-    try {
-      await putJson('/api/settings/startup', { autoConnect: !!on });
-      await gate.fetchConfigStatus();
-    } catch (err) {
-      toast.error(errorMessage(err, 'The setting could not be saved.'), { title: 'Preferences' });
-    }
-  }, [gate, toast]);
 
   // ---- context-switch loading screen ------------------------------------
   // Shown over <main> from the moment a switch starts (`switching`) until the
@@ -254,7 +237,7 @@ function App() {
     navigate(r.view, [sub], r.query);
   }, [navigate]);
 
-  const openPreferences = useCallback((section = 'general') => navigate('preferences', [section], {}), [navigate]);
+  const openPreferences = useCallback((section = 'kubernetes') => navigate('preferences', [section], {}), [navigate]);
   const onPrefSectionChange = useCallback((section) => navigate('preferences', [section], {}, { replace: true }), [navigate]);
   const closePreferences = useCallback(() => { if (canBack) back(); else navigate(DEFAULT_VIEW); }, [canBack, back, navigate]);
   const onFocusHandled = useCallback(() => {
@@ -263,10 +246,10 @@ function App() {
   }, [navigate]);
   const goEvents = useCallback(() => goView('events'), [goView]);
   const goAiSettings = useCallback(() => openPreferences('external-tools'), [openPreferences]);
-  const goPrefs = useCallback(() => openPreferences('general'), [openPreferences]);
+  const goPrefs = useCallback(() => openPreferences('kubernetes'), [openPreferences]);
   // The sidebar gear toggles: a second click closes Preferences.
   const togglePrefs = useCallback(
-    () => (routeRef.current.view === 'preferences' ? closePreferences() : openPreferences('general')),
+    () => (routeRef.current.view === 'preferences' ? closePreferences() : openPreferences('kubernetes')),
     [closePreferences, openPreferences]
   );
 
@@ -292,11 +275,12 @@ function App() {
   // ---- overlays -----------------------------------------------------------
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const [cloud, setCloud] = useState(null); // null | { kind: 'azure', mode: null|'az' } | { kind: 'aws' }
+  const [cloud, setCloud] = useState(null); // null | { kind: 'azure', mode: null|'az' } | { kind: 'aws' } | { kind: 'gke' }
   // When the failing cluster uses kubelogin/azurecli, the fix is `az login`, so
   // the auth-error "Sign in to Azure" opens the modal in CLI-login mode.
   const openAzure = useCallback((mode) => setCloud({ kind: 'azure', mode: mode === 'az' ? 'az' : null }), []);
   const openAws = useCallback(() => setCloud({ kind: 'aws' }), []);
+  const openGke = useCallback(() => setCloud({ kind: 'gke' }), []);
   const closeCloud = useCallback(() => setCloud(null), []);
   const { setForceConfigModal } = gate;
   const openLocal = useCallback(() => setForceConfigModal(true), [setForceConfigModal]);
@@ -341,11 +325,11 @@ function App() {
   // talks to the backend over HTTP itself and then dispatches
   //   window.dispatchEvent(new CustomEvent('kubepilot:host', { detail }))
   // with detail = { type: 'context-changed', context? } | { type: 'open-contexts' }
-  //             | { type: 'add-cluster', provider: 'aws' | 'azure' }.
+  //             | { type: 'add-cluster', provider: 'aws' | 'azure' | 'gcp' }.
   // The Help menu's events (show-release-notes, check-updates, update-result)
   // are handled by <UpdateDialogs>; show-about by <AboutDialog>.
   const hostRef = useRef(null);
-  hostRef.current = { afterSwitch, openContexts, openAws, openAzure };
+  hostRef.current = { afterSwitch, openContexts, openAws, openAzure, openGke };
   useEffect(() => {
     const onHost = (e) => {
       const d = e?.detail || {};
@@ -353,7 +337,7 @@ function App() {
       if (!h) return;
       if (d.type === 'context-changed') h.afterSwitch(typeof d.context === 'string' ? d.context : undefined);
       else if (d.type === 'open-contexts') h.openContexts();
-      else if (d.type === 'add-cluster') { if (d.provider === 'azure') h.openAzure(); else h.openAws(); }
+      else if (d.type === 'add-cluster') { if (d.provider === 'azure') h.openAzure(); else if (d.provider === 'gcp') h.openGke(); else h.openAws(); }
     };
     window.addEventListener('kubepilot:host', onHost);
     return () => window.removeEventListener('kubepilot:host', onHost);
@@ -387,6 +371,7 @@ function App() {
         onOpenContexts={openContexts}
         onAddAws={openAws}
         onAddAzure={openAzure}
+        onAddGke={openGke}
         onRemove={configStatus.demoAvailable && currentContext === 'demo-cluster' ? undefined : openRemoveCluster}
         onDisconnect={disconnect}
       />
@@ -399,7 +384,7 @@ function App() {
         </Tooltip>
       </div>
     </>
-  ), [ctxList, contextsInfo, currentContext, pins, switchContext, togglePin, openContexts, openAws, openAzure, openRemoveCluster, disconnect, configStatus.demoAvailable, canBack, canForward, back, forward]);
+  ), [ctxList, contextsInfo, currentContext, pins, switchContext, togglePin, openContexts, openAws, openAzure, openGke, openRemoveCluster, disconnect, configStatus.demoAvailable, canBack, canForward, back, forward]);
 
   // ---- Home (the landing page) ---------------------------------------------
   // Not connected: Home (or Preferences) fills the window. Old links to cluster
@@ -423,6 +408,7 @@ function App() {
       canRemove={canRemoveCluster}
       onAddAws={openAws}
       onAddAzure={openAzure}
+      onAddGke={openGke}
       onAddLocal={openLocal}
       onOpenPreferences={goPrefs}
     />
@@ -473,6 +459,7 @@ function App() {
           onSubmit={gate.loadConfigFromPath}
           onAddAws={openAws}
           onAddAzure={openAzure}
+          onAddGke={openGke}
           onClose={configStatus.loaded ? () => gate.setForceConfigModal(false) : undefined}
         />
       )}
@@ -485,6 +472,7 @@ function App() {
           contextsInfo={configStatus.contextsInfo}
           currentContext={configStatus.currentContext}
           onAddAzure={openAzure}
+          onAddGke={openGke}
           onAddAws={openAws}
           onBack={disconnect}
         />
@@ -497,6 +485,9 @@ function App() {
       )}
       {cloud?.kind === 'aws' && (
         <AwsIntegration onClose={closeCloud} onImported={onCloudImported} />
+      )}
+      {cloud?.kind === 'gke' && (
+        <GkeIntegration onClose={closeCloud} onImported={onCloudImported} />
       )}
 
       {tokenOk && authOk ? (
@@ -560,12 +551,12 @@ function App() {
                   onClosePreferences={closePreferences}
                   onChangeConfig={openLocal}
                   onAddAzure={openAzure}
+                  onAddGke={openGke}
                   onAddAws={openAws}
                   onRemoveCluster={openRemoveCluster}
                   onResourceTypeChange={goView}
                   onOpenClusterWide={openClusterWide}
                   home={homeElement}
-                  onSetAutoConnect={setAutoConnect}
                   nav={nav}
                   onClusterSummary={onClusterSummary}
                 />
@@ -603,9 +594,9 @@ function App() {
               onSetTheme={setTheme}
               onChangeConfig={openLocal}
               onAddAzure={openAzure}
+              onAddGke={openGke}
               onAddAws={openAws}
               onRemoveCluster={openRemoveCluster}
-              onSetAutoConnect={setAutoConnect}
               section={prefSection}
               onSectionChange={onPrefSectionChange}
               onClose={closePreferences}
@@ -642,6 +633,7 @@ function App() {
           canRemove={(ctx) => !(configStatus.demoAvailable && ctx === 'demo-cluster')}
           onAddAws={openAws}
           onAddAzure={openAzure}
+          onAddGke={openGke}
           onAddLocal={openLocal}
         />
       )}

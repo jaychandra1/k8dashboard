@@ -1,12 +1,12 @@
 # Publishing K8Board to the Microsoft Store
 
-K8Board ships on Windows two ways:
+K8Board for Windows is distributed through the **Microsoft Store**; the website's download button goes there, and the Store delivers updates. The release workflow still builds the older installer as well:
 
 | | GitHub Releases | Microsoft Store |
 |---|---|---|
 | File | `K8Board-windows.exe` (NSIS installer) | `K8Board-windows-store.msix` (MSIX) |
 | Signed by | Not signed at the OS level (SmartScreen shows "Unknown publisher") | **Microsoft**, after certification — no SmartScreen warning |
-| Updates | In-app updater (Help → Check for Updates), verified against K8Board's release-signing key | The Microsoft Store |
+| Updates | The Microsoft Store (Check for Updates points there; the installer build no longer updates itself) | The Microsoft Store |
 | Install folder | `%LOCALAPPDATA%\Programs\kubepilot` | `C:\Program Files\WindowsApps\…` (read-only; Windows refuses to start a tampered copy) |
 
 The release workflow builds both on every tagged release. The `.msix` is uploaded as the **`store-k8board-windows`** workflow artifact (not to the GitHub release — it only installs through the Store), and the optional `store` job submits it to Partner Center.
@@ -40,7 +40,7 @@ The release workflow builds both on every tagged release. The `.msix` is uploade
    Either way, build it **after** step 1.3: the package carries the identity from those variables (`npm run dist:store` refuses to build without them). A build without them, such as a plain `npm run dist`, writes `K8Board-windows-store-placeholder.msix` instead. That file installs for local testing (section 5), but Partner Center rejects it with *Invalid package identity name* and *Invalid package publisher name*. A release without the variables uploads no Store package and says so in a warning.
 2. Partner Center → the product → **Start your submission**:
    - **Pricing and availability:** Free; choose markets.
-   - **Properties:** Category **Developer tools**. Privacy policy URL: `https://k8dashboard.in/privacy`. Website: `https://k8dashboard.in`. Support contact: `kubepilot.dashboard@gmail.com`.
+   - **Properties:** Category **Developer tools**. Privacy policy URL: `https://k8board.vercel.app/privacy.html`. Website: `https://k8board.vercel.app`. Support contact: `kubepilot.dashboard@gmail.com`.
    - **Age ratings:** complete the questionnaire. K8Board has no user-generated content and no purchases, and it shares no user data with us.
    - **Packages:** upload `K8Board-windows-store.msix`. Device family: Windows 10/11 Desktop.
    - **Store listings:** use the text in [section 6](#6-store-listing-draft) and screenshots from `website/assets/screenshot-*.png` (1366×768 or larger).
@@ -52,7 +52,7 @@ The release workflow builds both on every tagged release. The `.msix` is uploade
 
 ## 3. What's different in the Store edition
 
-- **Updates come from the Store.** Help → Check for Updates still tells you a new version exists, but offers **Open Microsoft Store** instead of downloading an installer. K8Board never installs anything over a Store install.
+- **Updates come from the Store.** Help → Check for Updates makes no version check of its own (nothing is asked of GitHub): it offers **Open Microsoft Store**, which opens K8Board's Store page. K8Board never installs anything over a Store install. There is no *Show Release Notes* item on Windows; fill in *What's new in this version* in each submission.
 - **Token helper alias.** The kubeconfig entries K8Board writes for EKS and AKS run K8Board itself as their token helper. Other programs can't start an exe under `WindowsApps` by path, so the Store package declares an app execution alias, `k8board.exe` (in `%LOCALAPPDATA%\Microsoft\WindowsApps`, which Windows puts on `PATH`). The Store edition writes that alias into kubeconfig, so `kubectl` works from any terminal, and keeps working across Store updates.
 - **Settings are shared.** `~/.config/kubepilot`, `~/.kube`, `~/.aws` and `~/.azure` are outside the package, so the Store and GitHub editions see the same clusters and settings. Uninstall the GitHub edition after switching, so kubeconfig entries don't point at two different copies.
 
@@ -102,7 +102,7 @@ An unsigned `.msix` installs only on a machine in Developer Mode. These steps ch
 >
 > Operate: stream and search logs across containers, open a shell in any pod, port-forward, scale, restart, and edit or apply YAML with a server-side dry run first.
 >
-> Connect: one-click sign-in to AWS IAM Identity Center (SSO) and Azure. K8Board adds your EKS and AKS clusters and keeps your sessions fresh. Works with any cluster in your kubeconfig: GKE, on-premises, kind, minikube and Docker Desktop.
+> Connect: one-click sign-in to AWS IAM Identity Center (SSO) and Azure, with a separate sign-in for each AWS account. K8Board adds your EKS and AKS clusters and keeps your sessions fresh, and adds GKE clusters with your gcloud sign-in. Works with any cluster in your kubeconfig: on-premises, kind, minikube and Docker Desktop.
 >
 > Secure by design: K8Board runs entirely on your computer. There are no K8Board servers and no telemetry, and your credentials never leave your machine. AI features are optional and bring-your-own-model; Secret values are masked for AI agents by default.
 >
@@ -114,7 +114,7 @@ An unsigned `.msix` installs only on a machine in Developer Mode. These steps ch
 - Edit and apply YAML with server-side validation
 - Helm releases and Argo CD applications
 - One-click AWS SSO and Azure sign-in for EKS and AKS
-- Works with any kubeconfig: GKE, on-prem, kind, minikube
+- Google GKE with your gcloud sign-in; any kubeconfig works too
 - Built-in MCP server for AI agents (read-only by default)
 - No telemetry; your credentials stay on your device
 
@@ -124,4 +124,4 @@ An unsigned `.msix` installs only on a machine in Developer Mode. These steps ch
 
 **What's new in this version:** copy the release's section from `CHANGELOG.md`.
 
-**Website.** Every download button on k8dashboard.in goes to the Store through `website/get.html`, the only page that holds the Store link. Before publishing the website, replace `REPLACE-WITH-STORE-ID` in both of its links with the Store ID from step 1.3; the link becomes `https://apps.microsoft.com/detail/<Store ID>`. After the listing is live, you can also add the Store badge to `README.md`.
+**Website.** Every download button on k8board.vercel.app goes to the Store through `website/get.html`, the only page that holds the Store link. Both of its links are `https://apps.microsoft.com/detail/9N63V5DDVL9F` (the Store ID from step 1.3). After the listing is live, you can also add the Store badge to `README.md`.

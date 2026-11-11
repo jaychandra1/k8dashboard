@@ -579,6 +579,7 @@ describe('update workflow (service)', () => {
     latest,
     sig,
     trustedKeys = [],
+    managedBy = null,
   } = {}) {
     const rel = ghRelease(tag, { assets: assets || assetsFor(tag) });
     const routes = { [`${API}/releases/latest`]: latest || json(rel) };
@@ -599,7 +600,7 @@ describe('update workflow (service)', () => {
       currentVersion: current,
       releases: createReleaseService({ repo: REPO, fetchImpl, cacheMs: 0 }),
       target: detectTarget({ platform, arch, installKind: kind }),
-      install: { kind },
+      install: { kind, managedBy },
       updateDir: dir,
       host: fakeHost,
       trustedKeys,
@@ -819,6 +820,16 @@ describe('update workflow (service)', () => {
     assert.equal(c.phase, 'failed');
     assert.equal(c.error.code, 'github_unavailable');
     assert.equal(c.error.stage, 'check');
+  });
+
+  test('Windows (updates from the Microsoft Store): the check asks nobody and nothing can be downloaded', async () => {
+    const calls = [];
+    const { svc } = setup({ managedBy: 'store', latest: () => { calls.push('latest'); return new Response('{}'); } });
+    const s = await svc.check();
+    assert.deepEqual([s.phase, s.managedBy, s.latest, s.error], ['store', 'store', null, null]);
+    assert.deepEqual(calls, [], 'no request to GitHub');
+    assert.throws(() => svc.startDownload());
+    assert.equal((await svc.check()).phase, 'store', 'checking again is the same');
   });
 
   test('no desktop host (dev server / portable copy): can check, cannot download', async () => {

@@ -24,7 +24,7 @@ export const NONE = '-';
 
 export const ARGO_VIEWS = ['dashboard', 'applications', 'view', 'appsets', 'projects', 'repositories', 'clusters'];
 export const SECURITY_VIEWS = ['overview', 'images', 'resources', 'roles'];
-export const PREF_SECTIONS = ['general', 'kubernetes', 'integrations', 'external-tools', 'assistant', 'mcp', 'about'];
+export const PREF_SECTIONS = ['kubernetes', 'integrations', 'external-tools', 'assistant', 'mcp'];
 
 /** `?ns=a,b` → ['a','b']; absent/empty → ['all']. */
 export function nsFromQuery(query) {

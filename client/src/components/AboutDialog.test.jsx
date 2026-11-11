@@ -21,7 +21,7 @@ describe('AboutDialog (Help → About K8Board)', () => {
     expect(dlg).toHaveTextContent('SIL Open Font License');
     const links = within(screen.getByRole('navigation', { name: 'K8Board links' })).getAllByRole('link');
     expect(links.map((a) => a.getAttribute('href'))).toEqual(ABOUT_LINKS.map((l) => l.href));
-    for (const a of links) expect(a.getAttribute('href')).toMatch(/^https:\/\/k8dashboard\.in/);
+    for (const a of links) expect(a.getAttribute('href')).toMatch(/^https:\/\/k8board\.vercel\.app/);
     expect(dlg.innerHTML).not.toMatch(/github/i);
     // The web build has no updater: no Check for Updates.
     expect(within(dlg).queryByRole('button', { name: /Check for Updates/ })).toBeNull();
@@ -35,7 +35,7 @@ describe('AboutDialog (Help → About K8Board)', () => {
     render(<AboutDialog />);
     act(() => openAbout());
     fireEvent.click(screen.getByRole('link', { name: 'Privacy' }));
-    expect(open).toHaveBeenCalledWith('https://k8dashboard.in/privacy', '_blank', 'noopener,noreferrer');
+    expect(open).toHaveBeenCalledWith('https://k8board.vercel.app/privacy.html', '_blank', 'noopener,noreferrer');
   });
 
   it('desktop app: Check for Updates closes About and starts the Help menu check', () => {
