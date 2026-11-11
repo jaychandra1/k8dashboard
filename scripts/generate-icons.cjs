@@ -3,16 +3,16 @@
 //   k8board-icon-small.svg  the simplified mark (16–48 px: taskbar, tray, tabs)
 //
 //   npx electron scripts/generate-icons.cjs
-//   npx electron scripts/generate-icons.cjs splash  # only outputs whose path has "splash"
+//   npx electron scripts/generate-icons.cjs website # only outputs whose path has "website"
 //   npx electron scripts/generate-appx-assets.cjs   # then the Store tiles
 //
 // Writes build/icon.png (1024, electron-builder makes the macOS .icns and Linux
 // icons from it), build/icon-small.png, build/icon.ico (16–256),
 // build/icon-detailed.png (README), client/public/logo*.png (sidebar,
-// favicon), website/assets/icon*.png, website/assets/og-image.png, and the
-// desktop app's loading screen: electron/splash-icon.png, embedded as a data:
-// URL in electron/loading.html (its CSP allows nothing else). The output is
-// committed; the SVGs are the source of truth.
+// favicon), website/assets/icon*.png and website/assets/og-image.png. The
+// output is committed; the SVGs are the source of truth. (The loading screens
+// draw their own mark, a turning helm: electron/loading.html and the client's
+// components/shell/LoadingScreen.)
 const { app, BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
@@ -33,13 +33,11 @@ const PNGS = [
   ['build/icon-detailed.png', 512],
   ['build/icon-small.png', 256, SMALL],
   ['client/public/logo.png', 256],
-  ['client/public/logo-detailed.png', 512],
   // The sidebar shows the logo at 30px: the simplified mark.
   ['client/public/logo-mark.png', 128, SMALL],
   ['website/assets/icon.png', 256],
   ['website/assets/icon-detailed.png', 512],
   // The loading screen shows it at 96px: 2× for high-DPI displays.
-  ['electron/splash-icon.png', 192],
 ];
 const ICO_SIZES = [16, 24, 32, 48, 64, 128, 256];
 
@@ -73,17 +71,6 @@ app.whenReady().then(async () => {
   const write = (rel, buf) => { fs.mkdirSync(path.dirname(path.join(ROOT, rel)), { recursive: true }); fs.writeFileSync(path.join(ROOT, rel), buf); console.log(`${rel}  ${buf.length.toLocaleString()} bytes`); };
 
   for (const [rel, size, src] of PNGS) if (wanted(rel)) write(rel, await render(src || FULL, size));
-
-  // The loading screen (a file: page with a strict CSP) carries its logo inline.
-  if (wanted('electron/splash-icon.png')) {
-    const file = path.join(ROOT, 'electron', 'loading.html');
-    const html = fs.readFileSync(file, 'utf8');
-    const png = fs.readFileSync(path.join(ROOT, 'electron', 'splash-icon.png')).toString('base64');
-    const next = html.replace(/(<img class="logo" alt="" src=")data:image\/png;base64,[^"]*(")/, `$1data:image/png;base64,${png}$2`);
-    if (next === html && !html.includes(png)) throw new Error('electron/loading.html: logo <img> not found');
-    fs.writeFileSync(file, next);
-    console.log('electron/loading.html  logo embedded');
-  }
 
   if (wanted('build/icon.ico')) {
     const icoImages = [];

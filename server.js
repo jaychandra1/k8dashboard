@@ -116,6 +116,21 @@ const CACHE_TTL = {
 const getCacheKey = (prefix, params) => cache.key(prefix, params);
 const setCache = (key, value, ttl) => cache.set(key, value, ttl);
 const getCache = (key) => cache.get(key);
+// After a change to something in a namespace, only what it can have touched is
+// refetched. Entries that hold one *other* namespace's data stay; everything
+// else goes: the changed namespace, "all namespaces", and every cluster-wide
+// view (summary, nodes, events, storage, custom resources, Argo CD…). In "All
+// namespaces" the UI asks for each namespace separately, so a whole-cache
+// flush made every action re-list every namespace. A change that isn't in one
+// known namespace (cluster-scoped, or several kinds at once) still flushes all.
+const NAMESPACE_CACHES = new Set(['resources', 'topology', 'metrics-pods', 'logs', 'deployment-pods']);
+function invalidateAfterWrite(namespaces) {
+  const changed = [namespaces].flat();
+  if (!changed.length || !changed.every((ns) => isDnsLabel(ns))) return cache.clear();
+  const touched = new Set(changed);
+  return cache.invalidate((prefix, params) =>
+    NAMESPACE_CACHES.has(prefix) && isDnsLabel(params?.namespace) && params.namespace !== 'all' && !touched.has(params.namespace));
+}
 
 // kubectl runner bound to the in-memory context (lib/kubectl.mjs). kubectl is
 // only needed for the interactive pod terminal, service port-forward, the
@@ -2595,7 +2610,7 @@ app.put('/api/yaml/:namespace/:kind/:name', mcpWriteGate, async (req, res) => {
     // An edit replaces the object (kubectl replace / edit semantics): fields
     // removed in the editor are removed, whoever set them (lib/k8s-ops.mjs).
     const result = await replaceDocument(kubeConfig, doc, { scope: discoveryScope(), defaultNamespace: effectiveNamespace(k, namespace) || contextNamespace() });
-    cache.clear();
+    invalidateAfterWrite(effectiveNamespace(k, namespace));
     res.json({ success: true, message: result.message });
   } catch (error) {
     fail(res, error);
@@ -2624,7 +2639,7 @@ app.post('/api/apply', mcpWriteGate, async (req, res) => {
       try { validateApplyDocument(doc); } catch (e) { throw badRequest(docs.length > 1 ? `Document ${i + 1}: ${e.message}` : e.message, 'invalid_yaml'); }
     });
     const results = await applyDocumentsEach(kubeConfig, docs, { scope: discoveryScope(), defaultNamespace: namespace || contextNamespace(), dryRun });
-    if (!dryRun) cache.clear();
+    if (!dryRun) invalidateAfterWrite(results.map((r) => r.namespace));
     const message = results.map((r) => (r.ok ? r.message : `${r.label}: ${r.error}`)).join('\n');
     const failedDocs = results.filter((r) => !r.ok);
     if (failedDocs.length) {
@@ -2661,7 +2676,7 @@ app.delete('/api/resource/:namespace/:kind/:name', mcpWriteGate, async (req, res
       const ns = effectiveNamespace(k, namespace);
       message = await runKubectl(['delete', ...(ns ? [`--namespace=${ns}`] : []), ...positional(k, name)]);
     }
-    cache.clear();
+    invalidateAfterWrite(effectiveNamespace(k, namespace));
     res.json({ success: true, message: message || `${name} deleted` });
   } catch (error) {
     fail(res, error);
@@ -2680,7 +2695,7 @@ app.post('/api/scale/:namespace/:kind/:name', mcpWriteGate, async (req, res) => 
     const { api, method } = scaleTarget(k);
     if (!effectiveNamespace(k, namespace)) return bad(res, 'namespace');
     await kubeConfig.makeApiClient(k8s[api])[method]({ name, namespace, body: scalePatch(replicas) }, patchOptions(PatchStrategy.MergePatch, 20000));
-    cache.clear();
+    invalidateAfterWrite(namespace);
     res.json({ success: true, message: `${resourceLabel(restMappingFor(k), name)} scaled` });
   } catch (error) {
     fail(res, error);
@@ -2698,7 +2713,7 @@ app.post('/api/restart/:namespace/:kind/:name', mcpWriteGate, async (req, res) =
     const { api, method } = restartTarget(k);
     if (!effectiveNamespace(k, namespace)) return bad(res, 'namespace');
     await kubeConfig.makeApiClient(k8s[api])[method]({ name, namespace, body: restartPatch() }, patchOptions(PatchStrategy.StrategicMergePatch, 20000));
-    cache.clear();
+    invalidateAfterWrite(namespace);
     res.json({ success: true, message: `${resourceLabel(restMappingFor(k), name)} restarted` });
   } catch (error) {
     fail(res, error);
@@ -3236,7 +3251,7 @@ app.put('/api/customresource/:group/:version/:plural/:name', mcpWriteGate, async
       if ((doc.metadata.namespace || namespace) !== namespace) throw badRequest(`YAML metadata.namespace "${doc.metadata.namespace}" does not match this resource (${namespace})`, 'yaml_mismatch');
     }
     const result = await replaceDocument(kubeConfig, doc, { scope: discoveryScope(), defaultNamespace: namespace });
-    cache.clear();
+    invalidateAfterWrite(m.namespaced ? namespace : undefined);
     res.json({ success: true, message: result.message });
   } catch (error) {
     fail(res, error);

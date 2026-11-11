@@ -3570,13 +3570,14 @@ button:active:not(:disabled) { transform: scale(0.97); }
   /* keep genuine status spinners turning — they convey progress, not decoration */
   .refresh-toggle.spinning svg,
   .loader-spinner,
+  .loading-steps li[data-state="current"] .loading-step-mark,
   .ui-btn-spinner {
     animation-duration: 0.9s !important;
     animation-iteration-count: infinite !important;
   }
-  /* loading screen: the indeterminate bar conveys progress; the logo pulse is decoration */
+  /* loading screen: the indeterminate bar conveys progress; the turning helm and its halo are decoration */
   .loading-screen-bar > span { animation-duration: 1.4s !important; animation-iteration-count: infinite !important; }
-  .loading-screen-logo { animation: none !important; }
+  .loading-wheel, .loading-mark::after { animation: none !important; }
   /* skeleton shimmer becomes a static block */
   .ui-skeleton { animation: none !important; background: var(--bg-hover) !important; }
 }
@@ -4767,15 +4768,37 @@ h3.sec-drawer-section:first-child { margin-top: 0; }
   background: var(--bg-base); color: var(--text-secondary); text-align: center;
 }
 .loading-screen[data-overlay] { position: absolute; inset: 0; z-index: var(--z-dropdown); }
-.loading-screen-logo { width: 120px; height: 120px; border-radius: 0; animation: loading-pulse 1.6s ease-in-out infinite; }
+/* The mark: a glass tile in the brand's blues with a white helm turning in
+   it. Only transform and opacity animate, so it costs no layout or paint. */
+.loading-mark {
+  position: relative; width: 96px; height: 96px; margin-bottom: 8px; display: grid; place-items: center;
+  border: 1.5px solid transparent; border-radius: 26px; color: #fff;
+  background:
+    linear-gradient(150deg, #2563eb 0%, #1e3a8a 48%, #4c1d95 100%) padding-box,
+    linear-gradient(135deg, #7dd3fc, #3b82f6 50%, #a78bfa) border-box;
+  box-shadow: 0 14px 34px -12px rgba(59, 130, 246, 0.65), 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+/* a soft sheen across the top half of the tile */
+.loading-mark::before {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0) 46%);
+}
+/* a ring that grows and fades around it */
+.loading-mark::after {
+  content: ''; position: absolute; inset: -9px; border-radius: 34px; pointer-events: none;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); opacity: 0;
+  animation: loading-halo 2.6s ease-out infinite;
+}
+.loading-wheel { position: relative; z-index: 1; animation: loading-spin 7s linear infinite; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.28)); will-change: transform; }
+@keyframes loading-spin { to { transform: rotate(360deg); } }
+@keyframes loading-halo { 0% { transform: scale(0.94); opacity: 0.6; } 100% { transform: scale(1.14); opacity: 0; } }
 /* Cluster page while its first summary loads: the loading screen fills the page. */
 .dashboard.dashboard--loading { display: flex; flex-direction: column; min-height: 100%; }
 .dashboard--loading .loading-screen { flex: 1; }
-.loading-screen-text { margin: 0; font-size: 0.9375rem; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+.loading-screen-text { margin: 0; font-size: 1rem; font-weight: 650; letter-spacing: -0.01em; color: var(--text); overflow-wrap: anywhere; }
 .loading-screen-hint { margin: -6px 0 0; font-size: 0.75rem; color: var(--text-muted); }
-.loading-screen-bar { width: 200px; max-width: 80%; height: 3px; border-radius: 999px; background: var(--bg-hover); overflow: hidden; }
-.loading-screen-bar > span { display: block; width: 40%; height: 100%; border-radius: inherit; background: var(--accent); animation: loading-bar 1.4s ease-in-out infinite; }
-@keyframes loading-pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.06); opacity: 0.8; } }
+.loading-screen-bar { width: 220px; max-width: 80%; height: 3px; margin-top: 4px; border-radius: 999px; background: var(--bg-hover); overflow: hidden; }
+.loading-screen-bar > span { display: block; width: 40%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #38bdf8, var(--accent) 55%, #a78bfa); animation: loading-bar 1.4s ease-in-out infinite; }
 @keyframes loading-bar { 0% { transform: translateX(-110%); } 100% { transform: translateX(360%); } }
 
 /* Context picker modal ("Search contexts…") */
@@ -5102,12 +5125,15 @@ h3.sec-drawer-section:first-child { margin-top: 0; }
 .about-legal { margin: 18px 0 0; font-size: 0.6875rem; line-height: 1.6; color: var(--text-muted); }
 
 /* Connecting: the steps and Cancel on the loading screen */
-.loading-steps { list-style: none; margin: 14px 0 4px; padding: 0; display: flex; flex-direction: column; gap: 6px; text-align: left; font-size: 0.8125rem; color: var(--text-muted); }
-.loading-steps li { display: flex; align-items: center; gap: 8px; }
+.loading-steps { list-style: none; margin: 8px 0 2px; padding: 0; display: flex; flex-direction: column; gap: 9px; text-align: left; font-size: 0.8125rem; color: var(--text-muted); }
+.loading-steps li { display: flex; align-items: center; gap: 10px; transition: color 0.2s ease; }
 .loading-steps li[data-state="current"] { color: var(--text); font-weight: 600; }
 .loading-steps li[data-state="done"] { color: var(--text-secondary); }
-.loading-step-mark { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid currentColor; display: grid; place-items: center; font-size: 0.625rem; flex-shrink: 0; }
+.loading-step-mark { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--border-strong); display: grid; place-items: center; flex-shrink: 0; }
 .loading-steps li[data-state="done"] .loading-step-mark { background: var(--green); border-color: var(--green); color: #fff; }
-.loading-steps li[data-state="current"] .loading-step-mark { border-color: var(--accent); box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent); }
+.loading-steps li[data-state="current"] .loading-step-mark {
+  border: 2px solid color-mix(in srgb, var(--accent) 28%, transparent); border-top-color: var(--accent);
+  animation: loading-spin 0.8s linear infinite;
+}
 .loading-cancel { margin-top: 16px; }
 
