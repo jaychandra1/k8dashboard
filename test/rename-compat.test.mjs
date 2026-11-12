@@ -37,7 +37,8 @@ describe('K8Board rename: what keeps its KubePilot identity', () => {
     assert.doesNotMatch(wf, /cp -- "\$f" "KubePilot-/, 'no KubePilot-named installer copies');
     assert.match(wf, /output-file: dist\/k8board-\$\{\{ needs\.verify\.outputs\.tag \}\}\.cdx\.json/);
     assert.match(wf, /pattern: k8board-\*/);
-    assert.equal(pkg.releaseRepository, 'jaychandra1/K8Board');
+    // The app itself names no release repository (it reads none); the workflow publishes to it.
+    assert.equal(pkg.releaseRepository, undefined);
     assert.match(wf, /RELEASE_REPO: jaychandra1\/K8Board/);
     assert.match(wf, /repository: jaychandra1\/K8Board/);
   });

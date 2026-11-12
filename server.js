@@ -4876,7 +4876,8 @@ registerAssistant(app, {
 // Help → Show Release Notes / Check for Updates (GitHub Releases; installs
 // go through the desktop host — see lib/updater/)
 // ============================================================
-registerUpdateRoutes(app, { service: createUpdates({ rootDir: __dirname, version: getAppVersion(), log }).service, isMcpSource });
+const updates = createUpdates({ rootDir: __dirname, version: getAppVersion(), log });
+registerUpdateRoutes(app, { service: updates.service, notes: updates.notes, isMcpSource });
 
 // Unknown /api or /mcp route → JSON 404 (after every router, incl. the assistant).
 app.use(['/api', '/mcp'], apiNotFound);

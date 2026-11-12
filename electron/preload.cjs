@@ -10,4 +10,6 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('k8boardHost', Object.freeze({
   /** html: string → Promise<Uint8Array> (the PDF). */
   reportPdf: (html) => ipcRenderer.invoke('k8board:report-pdf', String(html)),
+  /** Does this copy have somewhere to check for updates? Windows: the Microsoft Store. */
+  updates: process.platform === 'win32',
 }));

@@ -138,9 +138,9 @@ jobs:
           echo "::error::CI for $SHA did not finish in time"
           exit 1
 
-      # The app refuses updates that aren't signed with a key it trusts, so a
-      # release is only built once the trust anchor is in place (the release
-      # job then checks the secret matches it before signing).
+      # Every release's checksum list is signed, so a release is only built
+      # once the public key is in the repository (the release job then checks
+      # the secret matches it before signing).
       - name: Require a trusted release-signing key
         shell: bash
         run: |
@@ -334,7 +334,7 @@ jobs:
           fi
 
       # Fail before touching anything if the signing secret is missing or
-      # doesn't match a key the app trusts (lib/updater/keys.mjs).
+      # doesn't match a public key in lib/updater/keys.mjs.
       - name: Require RELEASE_SIGNING_KEY
         env:
           RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
@@ -364,7 +364,8 @@ jobs:
           cat SHA256SUMS.txt
 
       # SHA256SUMS.txt.sig: Ed25519 over "KubePilot release <version>\n" +
-      # SHA256SUMS.txt. The in-app updater installs nothing without it.
+      # SHA256SUMS.txt, so a downloaded installer can be checked against the
+      # public key in lib/updater/keys.mjs.
       - name: Sign SHA256SUMS.txt
         env:
           RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}

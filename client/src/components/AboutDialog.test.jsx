@@ -23,7 +23,7 @@ describe('AboutDialog (Help → About K8Board)', () => {
     expect(links.map((a) => a.getAttribute('href'))).toEqual(ABOUT_LINKS.map((l) => l.href));
     for (const a of links) expect(a.getAttribute('href')).toMatch(/^https:\/\/k8board\.vercel\.app/);
     expect(dlg.innerHTML).not.toMatch(/github/i);
-    // The web build has no updater: no Check for Updates.
+    // The web build has no store behind it: no Check for Updates.
     expect(within(dlg).queryByRole('button', { name: /Check for Updates/ })).toBeNull();
 
     fireEvent.click(within(dlg).getByRole('button', { name: 'Close' }));
@@ -38,8 +38,28 @@ describe('AboutDialog (Help → About K8Board)', () => {
     expect(open).toHaveBeenCalledWith('https://k8board.vercel.app/privacy.html', '_blank', 'noopener,noreferrer');
   });
 
-  it('desktop app: Check for Updates closes About and starts the Help menu check', () => {
-    window.k8boardHost = {};
+  it("What's new closes About and opens the release notes, in every kind of copy", () => {
+    const seen = [];
+    const onHost = (e) => seen.push(e.detail.type);
+    window.addEventListener('kubepilot:host', onHost);
+    render(<AboutDialog />);
+    act(() => openAbout());
+    fireEvent.click(screen.getByRole('button', { name: "What's new" }));
+    window.removeEventListener('kubepilot:host', onHost);
+    expect(seen).toEqual(['show-release-notes']);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('desktop app with no store behind it (macOS, Linux): no Check for Updates', () => {
+    window.k8boardHost = { updates: false };
+    render(<AboutDialog />);
+    act(() => openAbout());
+    expect(screen.queryByRole('button', { name: /Check for Updates/ })).toBeNull();
+    expect(screen.getByRole('button', { name: "What's new" })).toBeInTheDocument();
+  });
+
+  it('Windows desktop app: Check for Updates closes About and starts the Help menu check', () => {
+    window.k8boardHost = { updates: true };
     const seen = [];
     const onHost = (e) => seen.push(e.detail.type);
     window.addEventListener('kubepilot:host', onHost);

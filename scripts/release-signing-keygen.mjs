@@ -11,9 +11,9 @@
 //
 // Then store the private key as the RELEASE_SIGNING_KEY secret of the GitHub
 // `release` environment, keep an offline backup of the file, and commit
-// lib/updater/keys.mjs. Every app version built from then on refuses updates
-// that aren't signed with this key, so losing it means shipping a release that
-// trusts a new key before the old one can be retired.
+// lib/updater/keys.mjs. Every release from then on is signed with this key
+// (the workflow refuses any other), so losing it means listing a new key
+// before the next release can be published.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';

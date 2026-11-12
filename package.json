@@ -1,6 +1,6 @@
 {
   "name": "kubepilot",
-  "version": "1.8.7",
+  "version": "1.8.8",
   "description": "A native desktop UI for browsing and operating Kubernetes clusters",
   "author": {
     "name": "JDG Initiates",
@@ -10,7 +10,6 @@
   "desktopName": "k8board",
   "type": "module",
   "main": "electron/main.cjs",
-  "releaseRepository": "jaychandra1/K8Board",
   "scripts": {
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "server": "node server.js",
@@ -87,6 +86,7 @@
       "*.js",
       "lib/**/*",
       "VERSION",
+      "release-notes.json",
       "package.json",
       "client/dist/**/*",
       "!**/*.d.ts",

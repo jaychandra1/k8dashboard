@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, act, within } from '@testing-library/react';
+import { render, screen, act, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import UpdateDialogs, { fmtBytes } from './UpdateDialogs';
-import { ToastProvider } from './Toast';
+import UpdateDialogs from './UpdateDialogs';
 
 vi.mock('../lib/api', async (orig) => {
   const actual = await orig();
@@ -15,35 +14,35 @@ const host = (detail) =>
   act(() => {
     window.dispatchEvent(new CustomEvent('kubepilot:host', { detail }));
   });
-const LATEST = {
-  version: '1.4.0',
-  tag: 'v1.4.0',
-  name: 'K8Board 1.4.0',
-  publishedAt: '2026-10-01T10:00:00Z',
-  htmlUrl: 'https://github.com/jaychandra1/K8Board/releases/tag/v1.4.0',
+// /api/app/release-notes: the notes shipped with the app, for the running version.
+const NOTES = {
+  current: '1.4.0',
+  releases: [
+    {
+      version: '1.4.0',
+      date: '2026-10-01',
+      current: true,
+      highlights: [
+        { title: 'Google GKE clusters', text: 'Add your GKE clusters from Preferences.' },
+        { title: 'Faster lists', text: '' },
+      ],
+    },
+    {
+      version: '1.3.0',
+      date: '2026-09-01',
+      current: false,
+      highlights: [{ title: 'A new Home screen', text: 'Home lists your clusters.' }],
+    },
+  ],
 };
+const STORE_URL = 'ms-windows-store://pdp/?productid=9N63V5DDVL9F';
+// POST /api/app/update/check (and GET /api/app/update): what the backend answers.
 const state = (phase, extra = {}) => ({
-  state: {
-    phase,
-    currentVersion: '1.3.0',
-    latest: LATEST,
-    canInstall: true,
-    installUnavailable: null,
-    installMode: 'on-restart',
-    asset: { name: 'K8Board-windows.exe', size: 49_388_749 },
-    progress: null,
-    error: null,
-    dryRun: false,
-    ...extra,
-  },
+  state: { phase, currentVersion: '1.8.5', latest: null, managedBy: 'store', ...extra },
 });
 
 function setup() {
-  render(
-    <ToastProvider>
-      <UpdateDialogs />
-    </ToastProvider>
-  );
+  render(<UpdateDialogs />);
   return userEvent.setup();
 }
 
@@ -56,50 +55,83 @@ describe('Help → Show Release Notes', { timeout: 15000 }, () => {
     vi.restoreAllMocks();
   });
 
-  it('loads the latest release, renders its Markdown safely, and opens it on GitHub', async () => {
-    getJson.mockResolvedValue({
-      release: {
-        ...LATEST,
-        body: '# K8Board 1.4.0\n\n## Added\n- **Help menu**\n\n<script>window.__pwned = 1</script>\n[docs](javascript:alert(1))',
-      },
-    });
-    const user = setup();
+  it("shows what's new in each version, the running one first, and nothing leads out of the app", async () => {
+    getJson.mockResolvedValue(NOTES);
+    setup();
     await host({ type: 'show-release-notes' });
     const dlg = await screen.findByRole('dialog', { name: 'K8Board Release Notes' }, SLOW);
-    expect(await within(dlg).findByText('Version 1.4.0', {}, SLOW)).toBeInTheDocument();
-    const day = new Date('2026-10-01T10:00:00Z').toLocaleDateString(undefined, {
+    const mine = await within(dlg).findByRole('region', { name: 'Version 1.4.0' }, SLOW);
+    expect(within(mine).getByRole('heading', { name: 'Version 1.4.0' })).toBeInTheDocument();
+    expect(mine).toHaveTextContent('This version');
+    // A date without a time is that day everywhere (never the evening before).
+    const day = new Date('2026-10-01').toLocaleDateString(undefined, {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
+      timeZone: 'UTC',
     });
-    expect(within(dlg).getByText(/^Released: /)).toHaveTextContent(`Released: ${day}`);
-    expect(within(dlg).getByRole('heading', { name: 'Added' })).toBeInTheDocument();
-    expect(within(dlg).getByText('Help menu').tagName).toBe('STRONG');
-    expect(dlg.querySelector('script')).toBeNull();
-    expect(window.__pwned).toBeUndefined();
-    expect(within(dlg).queryByRole('link', { name: 'docs' })).toBeNull(); // unsafe href → plain text
-    expect(getJson).toHaveBeenCalledWith('/api/app/release-notes', { params: undefined });
-    await user.click(within(dlg).getByRole('button', { name: 'View on GitHub' }));
-    expect(window.open).toHaveBeenCalledWith(LATEST.htmlUrl, '_blank', 'noopener,noreferrer');
+    expect(mine).toHaveTextContent(day);
+    expect(within(mine).getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+      'Google GKE clustersAdd your GKE clusters from Preferences.',
+      'Faster lists',
+    ]);
+    const versions = [...dlg.querySelectorAll('section.release')].map((el) => el.getAttribute('aria-label'));
+    expect(versions).toEqual(['Version 1.4.0', 'Version 1.3.0']);
+    const older = within(dlg).getByRole('region', { name: 'Version 1.3.0' });
+    expect(older).toHaveTextContent('A new Home screen');
+    expect(older).not.toHaveTextContent('This version');
+    expect(getJson).toHaveBeenCalledWith('/api/app/release-notes');
+    // No link, no address, no "View on GitHub": the notes are the app's own.
+    expect(within(dlg).queryAllByRole('link')).toEqual([]);
+    expect(within(dlg).getAllByRole('button').map((b) => b.textContent)).not.toContain('View on GitHub');
+    expect(dlg.innerHTML).not.toMatch(/github|https?:\/\//i);
+    expect(window.open).not.toHaveBeenCalled();
   });
 
-  it('shows a friendly error when GitHub cannot be reached, and retries', async () => {
+  it('a version with no notes of its own says so, and what was written is shown as text', async () => {
+    getJson.mockResolvedValue({
+      current: '1.5.0',
+      releases: [
+        {
+          version: '1.4.0',
+          date: null,
+          current: false,
+          highlights: [{ title: '<img src=x onerror="window.__pwned = 1">', text: '[docs](https://example.com)' }],
+        },
+      ],
+    });
+    setup();
+    await host({ type: 'show-release-notes' });
+    const dlg = await screen.findByRole('dialog', { name: 'K8Board Release Notes' }, SLOW);
+    expect(await within(dlg).findByText(/You have version 1\.5\.0/, {}, SLOW)).toBeInTheDocument();
+    expect(dlg).not.toHaveTextContent('This version');
+    expect(dlg.querySelector('img')).toBeNull();
+    expect(window.__pwned).toBeUndefined();
+    expect(within(dlg).queryAllByRole('link')).toEqual([]);
+    expect(dlg).toHaveTextContent('[docs](https://example.com)');
+  });
+
+  it('no notes at all: says so', async () => {
+    getJson.mockResolvedValue({ current: '1.4.0', releases: [] });
+    setup();
+    await host({ type: 'show-release-notes' });
+    const dlg = await screen.findByRole('dialog', { name: 'K8Board Release Notes' }, SLOW);
+    expect(await within(dlg).findByText(/No release notes came with this version/, {}, SLOW)).toBeInTheDocument();
+  });
+
+  it('shows a friendly error when the notes cannot be loaded, and retries', async () => {
     getJson.mockRejectedValueOnce(
-      new ApiError({
-        status: 503,
-        code: 'offline',
-        message: 'K8Board could not connect to GitHub. Please check your network connection.',
-      })
+      new ApiError({ status: 500, code: 'error', message: 'The backend is not answering.' })
     );
     const user = setup();
     await host({ type: 'show-release-notes' });
     const alert = await screen.findByRole('alert', {}, SLOW);
     expect(alert).toHaveTextContent('Unable to load release notes');
-    expect(alert).toHaveTextContent('could not connect to GitHub');
-    getJson.mockResolvedValueOnce({ release: { ...LATEST, body: 'ok' } });
+    expect(alert).toHaveTextContent('The backend is not answering.');
+    getJson.mockResolvedValueOnce(NOTES);
     await user.click(screen.getByRole('button', { name: 'Try Again' }));
-    expect(await screen.findByText('Version 1.4.0', {}, SLOW)).toBeInTheDocument();
-    expect(getJson).toHaveBeenLastCalledWith('/api/app/release-notes', { params: { fresh: '1' } });
+    expect(await screen.findByRole('heading', { name: 'Version 1.4.0' }, SLOW)).toBeInTheDocument();
+    expect(getJson).toHaveBeenLastCalledWith('/api/app/release-notes');
   });
 });
 
@@ -107,208 +139,99 @@ describe('Help → Check for Updates', { timeout: 15000 }, () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.spyOn(window, 'open').mockImplementation(() => null);
-    getJson.mockResolvedValue(state('idle', { latest: null }));
+    getJson.mockResolvedValue(state('idle'));
   });
   afterEach(() => {
     vi.restoreAllMocks();
   });
+  // Whatever the answer, K8Board itself offers nothing to download, install or restart.
+  const installsNothing = (dlg) => {
+    for (const name of ['Download and Install', 'Install and Restart', 'Restart Now', 'Later', 'View Release'])
+      expect(within(dlg).queryByRole('button', { name })).toBeNull();
+    expect(within(dlg).queryAllByRole('link')).toEqual([]);
+    expect(dlg).not.toHaveTextContent(/GitHub|release page|Latest version|What's new/);
+  };
 
-  it('up to date: says so, downloads nothing', async () => {
-    postJson.mockResolvedValue(state('up-to-date', { latest: null }));
+  describe('Windows: the Microsoft Store is asked', () => {
+    it('a newer version in the Store: both versions, and the way to the Store', async () => {
+      let answer;
+      postJson.mockReturnValue(new Promise((resolve) => { answer = resolve; }));
+      const user = setup();
+      await host({ type: 'check-updates' });
+      expect(await screen.findByText('Checking the Microsoft Store…', {}, SLOW)).toBeInTheDocument();
+      await act(async () => {
+        answer(state('available', { latest: { version: '1.8.6' } }));
+      });
+      const dlg = await screen.findByRole('dialog', { name: 'K8Board Update Available' }, SLOW);
+      expect(dlg).toHaveTextContent('A new version of K8Board is available in the Microsoft Store.');
+      expect(dlg).toHaveTextContent('Installed versionv1.8.5');
+      expect(dlg).toHaveTextContent('Microsoft Store versionv1.8.6');
+      expect(dlg).toHaveTextContent('The Microsoft Store installs it automatically');
+      installsNothing(dlg);
+      await user.click(within(dlg).getByRole('button', { name: 'Open Microsoft Store' }));
+      expect(window.open).toHaveBeenCalledWith(STORE_URL, '_blank', 'noopener,noreferrer');
+      expect(getJson).toHaveBeenCalledWith('/api/app/update');
+      expect(postJson).toHaveBeenCalledTimes(1);
+      expect(postJson).toHaveBeenCalledWith('/api/app/update/check', {});
+    });
+
+    it('the Store has nothing newer: up to date, and says who was asked', async () => {
+      postJson.mockResolvedValue(state('up-to-date'));
+      setup();
+      await host({ type: 'check-updates' });
+      const dlg = await screen.findByRole('dialog', { name: 'K8Board is up to date' }, SLOW);
+      expect(dlg).toHaveTextContent('You are running the latest version: v1.8.5');
+      expect(dlg).toHaveTextContent('Checked with the Microsoft Store.');
+      installsNothing(dlg);
+      expect(window.open).not.toHaveBeenCalled();
+    });
+
+    it("the Store can't be asked: no error, the way to K8Board's Store page instead", async () => {
+      postJson.mockResolvedValue(state('store'));
+      const user = setup();
+      await host({ type: 'check-updates' });
+      const dlg = await screen.findByRole('dialog', { name: 'Updates come from the Microsoft Store' }, SLOW);
+      expect(dlg).toHaveTextContent('The Microsoft Store installs new versions automatically');
+      expect(dlg).not.toHaveTextContent(/is up to date/);
+      expect(screen.queryByRole('alert')).toBeNull();
+      installsNothing(dlg);
+      await user.click(within(dlg).getByRole('button', { name: 'Open Microsoft Store' }));
+      expect(window.open).toHaveBeenCalledWith(STORE_URL, '_blank', 'noopener,noreferrer');
+    });
+  });
+
+  it('a copy with no store behind it: says there is no update check, and asks nobody else', async () => {
+    getJson.mockResolvedValue(state('idle', { managedBy: null }));
+    postJson.mockResolvedValue(state('unavailable', { managedBy: null, currentVersion: '1.8.7' }));
     setup();
     await host({ type: 'check-updates' });
-    const dlg = await screen.findByRole('dialog', { name: 'K8Board is up to date' }, SLOW);
-    expect(dlg).toHaveTextContent('You are running the latest version: v1.3.0');
-    expect(postJson).toHaveBeenCalledTimes(1);
-    expect(postJson).toHaveBeenCalledWith('/api/app/update/check', {});
+    const dlg = await screen.findByRole('dialog', { name: 'Check for Updates' }, SLOW);
+    expect(await within(dlg).findByText(/doesn't check for updates/, {}, SLOW)).toBeInTheDocument();
+    expect(dlg).toHaveTextContent('You have K8Board v1.8.7.');
+    expect(dlg).not.toHaveTextContent(/Microsoft Store|up to date/);
+    expect(within(dlg).queryByRole('button', { name: 'Open Microsoft Store' })).toBeNull();
+    installsNothing(dlg);
+    expect(window.open).not.toHaveBeenCalled();
   });
 
-  it('update available → nothing happens until "Download and Install"; then progress and Cancel', async () => {
-    postJson.mockResolvedValueOnce(state('available'));
-    const user = setup();
-    await host({ type: 'check-updates' });
-    const dlg = await screen.findByRole('dialog', { name: 'K8Board Update Available' }, SLOW);
-    expect(dlg).toHaveTextContent('A new version of K8Board is available.');
-    expect(dlg).toHaveTextContent('Installed versionv1.3.0');
-    expect(dlg).toHaveTextContent('Latest versionv1.4.0');
-    expect(postJson).toHaveBeenCalledTimes(1);
-
-    postJson.mockResolvedValueOnce(
-      state('downloading', { progress: { received: 35_861_094, total: 49_388_749 } })
-    );
-    getJson.mockResolvedValue(
-      state('downloading', { progress: { received: 35_861_094, total: 49_388_749 } })
-    );
-    await user.click(within(dlg).getByRole('button', { name: 'Download and Install' }));
-    expect(postJson).toHaveBeenLastCalledWith('/api/app/update/download', {});
-    const updating = await screen.findByRole('dialog', { name: 'Updating K8Board' }, SLOW);
-    expect(updating).toHaveTextContent('Downloading K8Board v1.4.0…');
-    expect(within(updating).getByRole('progressbar')).toHaveAttribute('aria-valuenow', '72');
-    expect(updating).toHaveTextContent('34.2 MB / 47.1 MB');
-
-    postJson.mockResolvedValueOnce(state('cancelled'));
-    await user.click(within(updating).getByRole('button', { name: 'Cancel' }));
-    expect(postJson).toHaveBeenLastCalledWith('/api/app/update/cancel', {});
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), SLOW);
-    expect(await screen.findByText('The update download was cancelled.', {}, SLOW)).toBeInTheDocument();
-  });
-
-  it('verification failure: explains it, and offers no way to install anyway', async () => {
-    postJson.mockResolvedValue(
-      state('failed', {
-        error: {
-          code: 'verification_failed',
-          stage: 'verify',
-          message: 'The downloaded K8Board update could not be verified and will not be installed.',
-        },
-      })
-    );
-    setup();
-    await host({ type: 'check-updates' });
-    const dlg = await screen.findByRole('dialog', { name: 'Update verification failed' }, SLOW);
-    expect(dlg).toHaveTextContent('could not be verified and will not be installed');
-    // Only Close (the footer button and the header X) — no Try Again / Install anyway.
-    expect(
-      within(dlg)
-        .getAllByRole('button')
-        .map((b) => b.getAttribute('aria-label') || b.textContent)
-    ).toEqual(['Close dialog', 'Close']);
-  });
-
-  it('no compatible installer: names the platform and links the release', async () => {
-    postJson.mockResolvedValue(
-      state('failed', {
-        error: {
-          code: 'no_asset_for_arch',
-          stage: 'select',
-          message: 'K8Board v1.4.0 is available, but an installer for Windows ARM64 could not be found.',
-        },
-      })
-    );
-    const user = setup();
-    await host({ type: 'check-updates' });
-    const dlg = await screen.findByRole('dialog', { name: 'No compatible installer' }, SLOW);
-    expect(dlg).toHaveTextContent('Windows ARM64');
-    await user.click(within(dlg).getByRole('button', { name: 'View Release' }));
-    expect(window.open).toHaveBeenCalledWith(LATEST.htmlUrl, '_blank', 'noopener,noreferrer');
-  });
-
-  it('GitHub unavailable: "Unable to check for updates" with Try Again', async () => {
-    postJson.mockResolvedValueOnce(
-      state('failed', {
-        latest: null,
-        error: {
-          code: 'offline',
-          stage: 'check',
-          message: 'K8Board could not connect to GitHub. Please check your network connection.',
-        },
-      })
+  it('the backend cannot be reached: "Unable to check for updates" with Try Again', async () => {
+    postJson.mockRejectedValueOnce(
+      new ApiError({ status: 503, code: 'error', message: 'The backend is not answering.' })
     );
     const user = setup();
     await host({ type: 'check-updates' });
     const dlg = await screen.findByRole('dialog', { name: 'Unable to check for updates' }, SLOW);
-    expect(dlg).toHaveTextContent('Please check your network connection.');
-    postJson.mockResolvedValueOnce(state('up-to-date', { latest: null }));
+    expect(within(dlg).getByRole('alert')).toHaveTextContent('The backend is not answering.');
+    postJson.mockResolvedValueOnce(state('up-to-date'));
     await user.click(within(dlg).getByRole('button', { name: 'Try Again' }));
     expect(await screen.findByRole('dialog', { name: 'K8Board is up to date' }, SLOW)).toBeInTheDocument();
     expect(postJson).toHaveBeenCalledTimes(2);
   });
 
-  it('install failure keeps the old installation and offers Try Again', async () => {
-    postJson.mockResolvedValue(
-      state('failed', {
-        error: {
-          code: 'install_failed',
-          stage: 'install',
-          message:
-            'The update could not be installed. Your existing K8Board installation has not been modified.',
-        },
-      })
-    );
-    setup();
-    await host({ type: 'check-updates' });
-    const dlg = await screen.findByRole('dialog', { name: 'Update failed' }, SLOW);
-    expect(dlg).toHaveTextContent('has not been modified');
-    expect(within(dlg).getByRole('button', { name: 'Try Again' })).toBeInTheDocument();
-  });
-
-  it('Windows: verified update → "Later" schedules it for quit', async () => {
-    getJson.mockResolvedValue(state('ready'));
-    const user = setup();
-    await host({ type: 'check-updates' });
-    const dlg = await screen.findByRole('dialog', { name: 'Ready to Install' }, SLOW);
-    expect(postJson).not.toHaveBeenCalled(); // resumed, not re-checked
-    postJson.mockResolvedValueOnce(state('scheduled'));
-    await user.click(within(dlg).getByRole('button', { name: 'Later' }));
-    expect(postJson).toHaveBeenCalledWith('/api/app/update/install', { when: 'on-quit' });
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), SLOW);
-    expect(
-      await screen.findByText('K8Board v1.4.0 will be installed when you quit K8Board.', {}, SLOW)
-    ).toBeInTheDocument();
-  });
-
-  it('macOS / Linux: installed → "Restart Now" asks the app to relaunch', async () => {
-    getJson.mockResolvedValue(state('installed', { installMode: 'in-place' }));
-    const user = setup();
-    await host({ type: 'check-updates' });
-    const dlg = await screen.findByRole('dialog', { name: 'Update Installed' }, SLOW);
-    expect(dlg).toHaveTextContent('K8Board v1.4.0 has been installed successfully.');
-    expect(dlg).toHaveTextContent('Restart K8Board to complete the update.');
-    postJson.mockResolvedValueOnce(state('restarting', { installMode: 'in-place' }));
-    await user.click(within(dlg).getByRole('button', { name: 'Restart Now' }));
-    expect(postJson).toHaveBeenCalledWith('/api/app/update/restart', {});
-    expect(await screen.findByText('Restarting K8Board…', {}, SLOW)).toBeInTheDocument();
-  });
-
-  it('a copy that cannot update itself offers the release page instead of downloading', async () => {
-    postJson.mockResolvedValue(
-      state('available', {
-        canInstall: false,
-        installUnavailable: "This is a development build of K8Board, so it can't install updates.",
-      })
-    );
-    setup();
-    await host({ type: 'check-updates' });
-    const dlg = await screen.findByRole('dialog', { name: 'K8Board Update Available' }, SLOW);
-    expect(dlg).toHaveTextContent('development build');
-    expect(within(dlg).queryByRole('button', { name: 'Download and Install' })).toBeNull();
-    expect(within(dlg).getByRole('button', { name: 'View Release' })).toBeInTheDocument();
-  });
-
-  it('Windows: updates come from the Microsoft Store — no version check, no download, no release page', async () => {
-    postJson.mockResolvedValue(
-      state('store', {
-        latest: null,
-        canInstall: false,
-        managedBy: 'store',
-        installUnavailable: 'K8Board for Windows gets its updates from the Microsoft Store.',
-      })
-    );
-    const user = setup();
-    await host({ type: 'check-updates' });
-    const dlg = await screen.findByRole('dialog', { name: 'Updates come from the Microsoft Store' }, SLOW);
-    expect(dlg).toHaveTextContent('The Microsoft Store installs new versions automatically');
-    expect(dlg).not.toHaveTextContent(/GitHub|download the installer|is up to date/);
-    expect(within(dlg).queryByRole('button', { name: 'Download and Install' })).toBeNull();
-    expect(within(dlg).queryByRole('button', { name: 'View Release' })).toBeNull();
-    await user.click(within(dlg).getByRole('button', { name: 'Open Microsoft Store' }));
-    expect(window.open).toHaveBeenCalledWith('ms-windows-store://pdp/?productid=9N63V5DDVL9F', '_blank', 'noopener,noreferrer');
-  });
-
-  it('after a Windows update that did not complete, says the old version is untouched', async () => {
+  it('an update result from an older desktop shell is ignored: nothing opens', async () => {
     setup();
     await host({ type: 'update-result', status: 'failed', version: '1.4.0', from: '1.3.0' });
-    const dlg = await screen.findByRole('dialog', { name: 'Update failed' }, SLOW);
-    expect(dlg).toHaveTextContent(
-      'The update to K8Board v1.4.0 did not complete. Your existing K8Board installation (v1.3.0) has not been modified.'
-    );
-  });
-});
-
-describe('fmtBytes', () => {
-  it('formats sizes', () => {
-    expect(fmtBytes(512 * 1024)).toBe('512 KB');
-    expect(fmtBytes(49_388_749)).toBe('47.1 MB');
-    expect(fmtBytes(undefined)).toBe('—');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(postJson).not.toHaveBeenCalled();
   });
 });

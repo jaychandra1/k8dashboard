@@ -36,12 +36,18 @@ export default function AboutDialog() {
 
   if (!open) return null;
   const version = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '';
-  // Only the desktop app updates itself (the Help menu's Check for Updates).
-  const desktop = typeof window !== 'undefined' && !!window.k8boardHost;
+  // Only a desktop copy with a store behind it has an update check (Windows: the
+  // Microsoft Store; the Help menu's Check for Updates).
+  const canCheck = typeof window !== 'undefined' && !!window.k8boardHost?.updates;
   const close = () => setOpen(false);
   const checkUpdates = () => {
     close();
     window.dispatchEvent(new CustomEvent('kubepilot:host', { detail: { type: 'check-updates' } }));
+  };
+  // The same dialog as Help → Show Release Notes (components/UpdateDialogs).
+  const showNotes = () => {
+    close();
+    window.dispatchEvent(new CustomEvent('kubepilot:host', { detail: { type: 'show-release-notes' } }));
   };
 
   return (
@@ -53,7 +59,7 @@ export default function AboutDialog() {
       className="about-modal"
       footer={(
         <>
-          {desktop && <Button variant="secondary" icon="refresh" onClick={checkUpdates}>Check for Updates</Button>}
+          {canCheck && <Button variant="secondary" icon="refresh" onClick={checkUpdates}>Check for Updates</Button>}
           <Button variant="primary" onClick={close}>Close</Button>
         </>
       )}
@@ -62,6 +68,7 @@ export default function AboutDialog() {
         <img className="about-logo" src="/logo-mark.png" alt="" width="64" height="64" decoding="async" />
         <div className="about-name"><Brand /></div>
         {version && <div className="about-version">Version {version}</div>}
+        <button type="button" className="about-whats-new" onClick={showNotes}>What&apos;s new</button>
         <p className="about-tagline">Explore and operate your Kubernetes clusters, all in one window.</p>
         <nav className="about-links" aria-label="K8Board links">
           {ABOUT_LINKS.map((l) => (

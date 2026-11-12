@@ -11,9 +11,13 @@
 //     (`data-app-version="…"` or `<span class="version-badge">v…</span>`)
 // The UI reads it from client/package.json (via Vite) and the server exposes
 // it at /api/version, so this one file drives the version everywhere.
+//
+// A bump also names the release notes: the "next" entry of release-notes.json
+// (what Help → Show Release Notes shows) becomes the new version, dated today.
 import { readFileSync, writeFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
+import { RELEASE_NOTES_FILE, parseReleaseNotes, stampNextRelease } from '../lib/release-notes.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -106,6 +110,24 @@ for (const { rel, re, label } of textTargets) {
     writeFileSync(file, next);
     console.log(`✓ ${rel} (${label}) → ${version}`);
     changed++;
+  }
+}
+
+// --- release notes: on a bump, "next" becomes this version ------------------
+if (arg) {
+  const file = path.join(repo, RELEASE_NOTES_FILE);
+  const text = readIfPresent(file);
+  if (text !== null) {
+    const now = new Date();
+    const today = [now.getFullYear(), now.getMonth() + 1, now.getDate()].map((n) => String(n).padStart(2, '0')).join('-');
+    const { data, stamped } = stampNextRelease(JSON.parse(text), version, today);
+    if (stamped) {
+      writeFileSync(file, JSON.stringify(data, null, 2) + '\n');
+      console.log(`✓ ${RELEASE_NOTES_FILE}: "next" → ${version} (${today})`);
+      changed++;
+    } else if (!parseReleaseNotes(data).some((e) => e.version === version)) {
+      console.log(`! ${RELEASE_NOTES_FILE} has no notes for ${version}: Show Release Notes will list earlier versions only.`);
+    }
   }
 }
 

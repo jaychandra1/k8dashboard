@@ -257,28 +257,17 @@ App data lives in `~/.config/kubepilot` (token, assistant config, scan cache). O
 | Helm view empty | The cluster has no Helm-managed releases (v3 Secrets storage). |
 | "All namespaces" slow the first time | One request per namespace; results are cached. Pick a namespace for faster loads. |
 | Port 3001 in use | Set `PORT=<other>` (the desktop app picks a free port automatically). |
-| Check for Updates: "Unable to check for updates" (macOS, Linux) | K8Board could not reach `api.github.com` (offline, a proxy, or GitHub's anonymous rate limit of 60 requests/hour per IP — the dialog says when to retry). On Windows the check asks nothing of GitHub: see §1.11. |
+| Check for Updates: "Unable to check for updates" | K8Board's own backend didn't answer; choose **Try Again**. The check itself never fails this way: on Windows, if the Microsoft Store can't be reached, the dialog offers **Open Microsoft Store** instead (§1.11). |
 
 ### 1.11 Release notes and updates (desktop app)
 
-**Windows: updates come from the Microsoft Store.** K8Board for Windows is distributed through the Store, which installs new versions automatically. **Help → Check for Updates** makes no version check of its own and contacts nobody: it opens a dialog with **Open Microsoft Store**, which goes to K8Board's Store page (it shows **Update** when a new version is out). There is no *Show Release Notes* item on Windows; the Store page has *What's new in this version*. This applies to every Windows copy, including one installed from an older installer.
+**Help → Show Release Notes** (every platform; also **What's new** in Help → About K8Board) lists the features added in each version, the one you are running first. The notes are part of the app (`release-notes.json`, next to `VERSION`): nothing is fetched, so they open offline, and the dialog has no link out of the app. Versions newer than the one you run are not listed.
 
-**macOS and Linux** (not yet offered for download). The **Help** menu (after *Window*) has two items:
+**Windows: updates come from the Microsoft Store.** K8Board for Windows is distributed through the Store, which installs new versions automatically. **Help → Check for Updates** asks the Microsoft Store which version of K8Board it has (one request to the Store's public catalog, carrying K8Board's Store ID and nothing about you or your clusters) and says either that you are up to date or that a newer version is in the Store, with both version numbers and **Open Microsoft Store** (K8Board's Store page, which shows **Update**). K8Board downloads and installs nothing itself. If the Store can't be reached, the dialog simply offers **Open Microsoft Store**. This applies to every Windows copy, including one installed from an older installer.
 
-- **Show Release Notes** — the notes of the newest stable release on [jaychandra1/K8Board](https://github.com/jaychandra1/K8Board/releases), rendered in the app; **View on GitHub** opens the release in your browser.
-- **Check for Updates** — compares the running version (the `VERSION` file) with the newest stable GitHub release using semantic-version ordering. Drafts and prereleases (`-alpha`, `-beta`, `-rc`, …) are ignored. Nothing is downloaded until you choose **Download and Install**.
+**macOS and Linux** (not yet offered for download) have no store behind them, so they have no **Check for Updates** item and K8Board asks nobody. To update such a copy, install a newer version the way you installed that one.
 
-When you do, K8Board picks the one release file built for your OS, CPU and install type, downloads it to the OS cache folder (`%LOCALAPPDATA%\kubepilot-updater`, `~/Library/Caches/kubepilot-updater`, `~/.cache/kubepilot-updater`), and checks its **SHA-256** against both the digest GitHub reports for the file and the release's `SHA256SUMS.txt`. A file that doesn't match is deleted and never run. Then:
-
-| Installed as | How the update is installed |
-|---|---|
-| macOS app in a writable folder | The new `K8Board.app` is copied next to the old one and swapped in; the old one is restored if the swap fails. If the folder needs an administrator, macOS asks for one. Then **Restart Now** or **Later**. |
-| Linux AppImage | The AppImage file is replaced in place; then **Restart Now** or **Later**. |
-| Linux `.deb` | `pkexec dpkg -i` (polkit asks for an administrator password); then **Restart Now** or **Later**. |
-
-A development build (`npm run app`), an unpacked copy (`release/win-unpacked`), a macOS app still on its disk image, and other install types can check for updates but don't install them — the dialog links to the release page instead. Each step is logged on stdout (`update check started`, `update asset selected`, `update verified`, …) without tokens or headers.
-
-
+K8Board downloads and installs no update itself on any platform, and holds no address of a release server. Each check is logged on stdout (`update check started`, `update not available`, `update available in the Microsoft Store`).
 
 ### 1.12 AWS sign-in and expired sessions
 
@@ -454,23 +443,15 @@ The image is multi-stage: the client is built, production dependencies are insta
 - **npm packages and GitHub Actions** — Dependabot opens weekly PRs (root, `client/`, workflows). Actions are pinned to commit SHAs; merge the Dependabot PR rather than editing the SHA by hand.
 - After any bump: `npm ci --ignore-scripts && npm rebuild node-pty && npm test && npm run test:client && npm run lint`.
 
-### 3.5 What the in-app updater needs from a release
+### 3.5 Updates and release signing
 
-On macOS and Linux, Help → Check for Updates (§1.11) reads the **latest stable** release of `releaseRepository` in `package.json` (`jaychandra1/K8Board`); on Windows, updates come from the Microsoft Store and this doesn't apply. For it to offer an update:
+The app has no updater of its own: Windows copies are updated by the Microsoft Store (submit each version in Partner Center, see `docs/store/MICROSOFT-STORE.md`), and Help → Check for Updates only compares the running version with the Store's (§1.11). Nothing in the app reads the GitHub release, so its tag, asset names and notes matter only to people who download from the release page.
 
-- **Tag** `v<semver>` (the workflow enforces `v$(cat VERSION)`). A release that is a draft, marked *pre-release*, or tagged `-alpha`/`-beta`/`-rc`… is skipped.
-- **Assets** named `K8Board-<os>[-<arch>].<ext>` — exactly what `artifactName` in `package.json` produces: `K8Board-windows.exe`, `K8Board-macos.dmg`, `K8Board-linux.AppImage`, `K8Board-linux.deb`. Unsuffixed files are taken to be the one architecture the workflow builds per OS (Windows **x64**, macOS **arm64**, Linux **x64**). To ship another architecture, publish it with an `-x64` / `-arm64` suffix (e.g. `K8Board-windows-arm64.exe`); a suffixed file always wins over the unsuffixed one. An optional version segment (`K8Board-1.4.0-macos-arm64.dmg`) is accepted too.
-- **Checksums**: `SHA256SUMS.txt` (generated by the release job) listing every installer. GitHub's own per-asset SHA-256 digest is used as well; if both exist they must agree, and an installer with neither is refused.
-- Releases aren't code-signed today, so these checksums are the integrity check. Signing the Windows installer and notarizing the macOS app (§3.2) would add a publisher check on top; until then the SHA-256 protects against corrupted or swapped downloads, not against a compromised release repository.
+The release job still publishes `SHA256SUMS.txt` and its Ed25519 signature `SHA256SUMS.txt.sig` (`scripts/sign-release.mjs`, with the private key in the `release` environment and the public key in `lib/updater/keys.mjs`), so a downloaded installer can be checked. The workflow refuses to build without a listed key and to publish with a key that isn't listed.
 
-**Testing an update end to end without touching your own install:**
+**What's new.** Help → Show Release Notes reads `release-notes.json`. Write what is new under its `"next"` entry while you build it; `npm run version:sync <version>` gives that entry the version and the day's date, and a test fails when a version has no notes.
 
-1. Create a scratch public repo (e.g. `<you>/k8board-update-test`) and publish a release there with a **higher** version than the build you'll test, attaching the installer for your platform (named as above) and a matching `SHA256SUMS.txt` (`sha256sum K8Board-*.* > SHA256SUMS.txt`).
-2. Install an older packaged build on a test machine or VM (not your daily install).
-3. Start it with `K8BOARD_UPDATE_REPO=<you>/k8board-update-test`. Add `K8BOARD_UPDATE_DRY_RUN=1` to go through check → download → verify → "install" while the main process only logs what it would run.
-4. Without the dry-run flag, the full flow installs the test release; check that the app restarts on the new version (Windows reports the result on the next start).
-
-Automated tests (`test/updater.test.mjs`, `test/update-host.test.mjs`, `client/src/components/UpdateDialogs.test.jsx`) mock GitHub, downloads and installers; they never install anything.
+Automated tests (`test/updater.test.mjs`, `test/store-updates.test.mjs`, `test/release-notes.test.mjs`, `client/src/components/UpdateDialogs.test.jsx`) use a stand-in for the Microsoft Store; they contact nobody.
 
 ### 3.6 Hotfix flow
 

@@ -2,133 +2,89 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Modal from './ui/Modal';
 import Button from './ui/Button';
 import Loader from './Loader';
-import Markdown from './Markdown';
-import { useToast } from './Toast';
 import { getJson, postJson, errorMessage } from '../lib/api';
 
 import Brand from './ui/Brand';
 // Help → Show Release Notes / Check for Updates (the desktop app's native Help
-// menu). The Electron main process dispatches
+// menu, and Help → About K8Board). The Electron main process dispatches
 //   window.dispatchEvent(new CustomEvent('kubepilot:host', { detail }))
-// with detail = { type: 'show-release-notes' } | { type: 'check-updates' }
-//             | { type: 'update-result', status: 'installed' | 'failed', version, from }.
-// Everything else goes through the backend (/api/app/*, lib/updater/): it reads
-// GitHub Releases, downloads and verifies the installer, and asks the desktop
-// host to install it and restart.
+// with detail = { type: 'show-release-notes' } | { type: 'check-updates' }.
+// Everything else goes through the backend (/api/app/*, lib/updater/):
+//   - the release notes are the ones shipped with the app;
+//   - the update check asks the Microsoft Store (Windows), which is also who
+//     installs the update. K8Board downloads and installs nothing itself, and
+//     a copy with no store behind it has no update check.
+// Nothing here names or links to where releases are hosted.
 
-const POLL_MS = 400;
-const BUSY = new Set(['checking', 'downloading', 'verifying', 'installing']);
-// Phases where closing the dialog mustn't look like cancelling.
-const LOCKED = new Set(['downloading', 'verifying', 'installing', 'restarting']);
-
-export const fmtBytes = (n) => {
-  if (!Number.isFinite(n) || n < 0) return '—';
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-};
 export const fmtDate = (iso) => {
   const d = iso ? new Date(iso) : null;
-  return d && !Number.isNaN(d.getTime())
-    ? d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
-    : null;
+  if (!d || Number.isNaN(d.getTime())) return null;
+  // A date without a time ("2026-11-11") is that calendar day in every time zone.
+  const dayOnly = /^\d{4}-\d{2}-\d{2}$/.test(iso);
+  return d.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    ...(dayOnly ? { timeZone: 'UTC' } : {}),
+  });
 };
 const v = (version) => (version ? `v${String(version).replace(/^v/, '')}` : '');
-// External pages open in the system browser (the desktop host routes window.open there).
-const openExternal = (url) => {
-  if (/^https:\/\//.test(url || '')) window.open(url, '_blank', 'noopener,noreferrer');
-};
 // Windows: updates come from the Microsoft Store. K8Board's page there shows
-// Update when a new version is out (the desktop host allows exactly this
-// non-web link; electron/main.cjs has the same address).
+// Update when a new version is out (the desktop host routes window.open to the
+// system and allows exactly this non-web link; electron/main.cjs has the same address).
 export const MS_STORE_URL = 'ms-windows-store://pdp/?productid=9N63V5DDVL9F';
 const openStore = () => window.open(MS_STORE_URL, '_blank', 'noopener,noreferrer');
 
 export default function UpdateDialogs() {
-  const toast = useToast();
   const [notesOpen, setNotesOpen] = useState(false);
   const [updateOpen, setUpdateOpen] = useState(false);
-  const [result, setResult] = useState(null);
 
   useEffect(() => {
     const onHost = (e) => {
-      const d = e?.detail || {};
-      if (d.type === 'show-release-notes') setNotesOpen(true);
-      else if (d.type === 'check-updates') setUpdateOpen(true);
-      else if (d.type === 'update-result') {
-        if (d.status === 'installed')
-          toast.success(`K8Board was updated to ${v(d.version)}.`, { title: 'Update installed' });
-        else if (d.status === 'failed') setResult(d);
-      }
+      const type = e?.detail?.type;
+      if (type === 'show-release-notes') setNotesOpen(true);
+      else if (type === 'check-updates') setUpdateOpen(true);
     };
     window.addEventListener('kubepilot:host', onHost);
     return () => window.removeEventListener('kubepilot:host', onHost);
-  }, [toast]);
+  }, []);
 
   return (
     <>
       <ReleaseNotesDialog open={notesOpen} onClose={() => setNotesOpen(false)} />
-      <UpdateDialog
-        open={updateOpen}
-        onClose={() => setUpdateOpen(false)}
-        onShowNotes={() => setNotesOpen(true)}
-      />
-      <Modal
-        open={!!result}
-        onClose={() => setResult(null)}
-        title="Update failed"
-        icon="warning"
-        danger
-        size="sm"
-        footer={
-          <>
-            <Button onClick={() => setResult(null)}>Close</Button>
-            <Button
-              variant="primary"
-              icon="refresh"
-              onClick={() => {
-                setResult(null);
-                setUpdateOpen(true);
-              }}
-            >
-              Try Again
-            </Button>
-          </>
-        }
-      >
-        <p className="update-text">
-          The update to <Brand /> {v(result?.version)} did not complete. Your existing <Brand /> installation
-          {result?.from ? ` (${v(result.from)})` : ''} has not been modified.
-        </p>
-      </Modal>
+      <UpdateDialog open={updateOpen} onClose={() => setUpdateOpen(false)} />
     </>
   );
 }
 
 // ---- Release notes --------------------------------------------------------
+// What's new in each version, newest first: the notes shipped with this copy
+// (/api/app/release-notes reads release-notes.json). Nothing is fetched from
+// the internet and nothing links out.
 export function ReleaseNotesDialog({ open, onClose }) {
-  const [st, setSt] = useState({ loading: false, release: null, error: null });
+  const [st, setSt] = useState({ loading: false, notes: null, error: null });
   const seq = useRef(0);
-  const load = useCallback(async (fresh) => {
+  const load = useCallback(async () => {
     const n = ++seq.current;
-    setSt({ loading: true, release: null, error: null });
+    setSt({ loading: true, notes: null, error: null });
     try {
-      const r = await getJson('/api/app/release-notes', { params: fresh ? { fresh: '1' } : undefined });
-      if (n === seq.current) setSt({ loading: false, release: r.release, error: null });
+      const r = await getJson('/api/app/release-notes');
+      if (n === seq.current) setSt({ loading: false, notes: r, error: null });
     } catch (err) {
       if (n === seq.current)
         setSt({
           loading: false,
-          release: null,
+          notes: null,
           error: errorMessage(err, 'K8Board could not load the release notes.'),
         });
     }
   }, []);
   useEffect(() => {
-    if (open) load(false);
+    if (open) load();
   }, [open, load]);
 
-  const r = st.release;
-  const released = fmtDate(r?.publishedAt);
+  const releases = Array.isArray(st.notes?.releases) ? st.notes.releases : [];
+  const current = st.notes?.current;
   return (
     <Modal
       open={open}
@@ -141,178 +97,142 @@ export function ReleaseNotesDialog({ open, onClose }) {
         <>
           <Button onClick={onClose}>Close</Button>
           {st.error && (
-            <Button variant="primary" icon="refresh" onClick={() => load(true)}>
+            <Button variant="primary" icon="refresh" onClick={load}>
               Try Again
-            </Button>
-          )}
-          {r?.htmlUrl && (
-            <Button variant="primary" icon="externalLink" onClick={() => openExternal(r.htmlUrl)}>
-              View on GitHub
             </Button>
           )}
         </>
       }
     >
-      {st.loading && <Loader inline label="Loading the latest release notes…" />}
+      {st.loading && <Loader inline label="Loading the release notes…" />}
       {st.error && (
         <div className="update-alert" role="alert">
           <b>Unable to load release notes</b>
           <p>{st.error}</p>
         </div>
       )}
-      {r && (
-        <>
-          <div className="release-meta">
-            <span className="release-version">Version {r.version}</span>
-            {released && <span className="release-date">Released: {released}</span>}
-          </div>
-          <div className="release-notes-body">
-            {r.body ? (
-              <Markdown text={r.body} />
-            ) : (
-              <p className="update-muted">No release notes were published for this version.</p>
-            )}
-          </div>
-        </>
+      {st.notes && !releases.length && (
+        <p className="update-muted">No release notes came with this version of <Brand />.</p>
+      )}
+      {releases.length > 0 && (
+        <div className="release-notes-body">
+          {current && !releases.some((r) => r.current) && (
+            <p className="release-lead">
+              You have version {current}. These are the notes of the versions before it.
+            </p>
+          )}
+          {releases.map((r) => {
+            const released = fmtDate(r.date);
+            return (
+              <section
+                key={r.version}
+                className={`release${r.current ? ' is-current' : ''}`}
+                aria-label={`Version ${r.version}`}
+              >
+                <div className="release-meta">
+                  <h3 className="release-version">Version {r.version}</h3>
+                  {r.current && <span className="release-badge">This version</span>}
+                  {released && <span className="release-date">{released}</span>}
+                </div>
+                <ul className="release-highlights">
+                  {(r.highlights || []).map((h) => (
+                    <li key={h.title}>
+                      <span className="release-highlight-title">{h.title}</span>
+                      {h.text && <span className="release-highlight-text">{h.text}</span>}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            );
+          })}
+        </div>
       )}
     </Modal>
   );
 }
 
 // ---- Check for updates ----------------------------------------------------
-function failureView(err) {
-  const code = err?.code;
-  const stage = err?.stage;
-  if (code === 'no_asset_for_os' || code === 'no_asset_for_arch')
-    return { title: 'No compatible installer', action: 'release' };
-  if (code === 'verification_failed' || code === 'verification_unavailable')
-    return { title: 'Update verification failed', action: null };
-  if (code === 'unsupported') return { title: <><Brand /> {"can't install this update"}</>, action: 'release' };
-  if (stage === 'check' || !stage) return { title: 'Unable to check for updates', action: 'check' };
-  if (stage === 'download') return { title: 'Download failed', action: 'download' };
-  if (stage === 'restart') return { title: 'Restart failed', action: null };
-  return { title: 'Update failed', action: 'download' };
-}
-
-export function UpdateDialog({ open, onClose, onShowNotes }) {
-  const toast = useToast();
+// The backend's answer (POST /api/app/update/check → state.phase):
+//   up-to-date / available   the Microsoft Store was asked (Windows);
+//   store                    it couldn't be asked: its page has the answer;
+//   unavailable              this copy has no store behind it, so no check.
+// K8Board never downloads or installs an update: the Store does.
+export function UpdateDialog({ open, onClose }) {
   const [s, setS] = useState(null);
-  const [reqError, setReqError] = useState(null);
+  const [error, setError] = useState(null);
   const [pending, setPending] = useState(false);
+  const seq = useRef(0);
 
-  const call = useCallback(async (method, url, body) => {
+  const check = useCallback(async () => {
+    const n = ++seq.current;
+    setError(null);
     setPending(true);
+    // Keep who is being asked (the Microsoft Store on Windows) for the "Checking…" line.
+    setS((prev) => ({ phase: 'checking', managedBy: prev?.managedBy }));
     try {
-      const r = method === 'get' ? await getJson(url) : await postJson(url, body || {});
-      setS(r.state);
-      setReqError(null);
-      return r.state;
+      const r = await postJson('/api/app/update/check', {});
+      if (n === seq.current) setS(r.state);
     } catch (err) {
-      setReqError({
-        code: err?.code || 'error',
-        message: errorMessage(err, 'K8Board could not reach its update service.'),
-      });
-      return null;
+      if (n === seq.current) setError(errorMessage(err, 'K8Board could not check for updates.'));
     } finally {
-      setPending(false);
+      if (n === seq.current) setPending(false);
     }
   }, []);
 
-  const check = useCallback(() => {
-    setS({ phase: 'checking' });
-    return call('post', '/api/app/update/check');
-  }, [call]);
-
-  // On open: resume a download / install already in progress, else check now.
+  // On open: learn who delivers this copy's updates, then check.
   useEffect(() => {
     if (!open) return undefined;
     let live = true;
-    setReqError(null);
+    setError(null);
     setS({ phase: 'checking' });
     (async () => {
-      const cur = await call('get', '/api/app/update');
-      if (!live) return;
-      if (
-        !cur ||
-        !['downloading', 'verifying', 'installing', 'ready', 'installed', 'scheduled'].includes(cur.phase)
-      )
-        await check();
+      try {
+        const r = await getJson('/api/app/update');
+        if (live) setS({ phase: 'checking', managedBy: r?.state?.managedBy });
+      } catch {
+        /* the check below reports what is wrong */
+      }
+      if (live) check();
     })();
     return () => {
       live = false;
     };
-  }, [open, call, check]);
+  }, [open, check]);
 
-  // Poll while the backend is working.
   const phase = s?.phase;
-  useEffect(() => {
-    if (!open || !BUSY.has(phase) || phase === 'checking') return undefined;
-    const t = setInterval(() => {
-      getJson('/api/app/update')
-        .then((r) => setS(r.state))
-        .catch(() => {});
-    }, POLL_MS);
-    return () => clearInterval(t);
-  }, [open, phase]);
-
-  // A cancelled download closes the dialog.
-  useEffect(() => {
-    if (open && phase === 'cancelled') {
-      toast.info('The update download was cancelled.');
-      onClose();
-    }
-  }, [open, phase, toast, onClose]);
-
-  const latest = s?.latest;
   const current = s?.currentVersion;
-  const releaseUrl = latest?.htmlUrl;
-  const locked = LOCKED.has(phase) && !s?.dryRun;
-  const err = reqError ? { ...reqError, stage: 'check' } : phase === 'failed' ? s.error : null;
+  const latest = s?.latest;
+  // Windows: the Microsoft Store is who gets asked, and who installs the update.
+  const fromStore = s?.managedBy === 'store';
+  const storeButton = (
+    <Button variant="primary" icon="externalLink" onClick={openStore}>
+      Open Microsoft Store
+    </Button>
+  );
 
   let title = 'Check for Updates';
   let icon = 'refresh';
-  let body = <Loader inline label="Checking for updates…" />;
+  let body = <Loader inline label={fromStore ? 'Checking the Microsoft Store…' : 'Checking for updates…'} />;
   let footer = <Button onClick={onClose}>Cancel</Button>;
 
-  if (err) {
-    const view = failureView(err);
-    title = view.title;
+  if (error) {
+    title = 'Unable to check for updates';
     icon = 'warning';
     body = (
       <div className="update-alert" role="alert">
-        <p>{err.message}</p>
-        {(err.code === 'install_failed' || err.code === 'installer_launch_failed') && (
-          <p className="update-muted">Your existing <Brand /> installation has not been modified.</p>
-        )}
+        <p>{error}</p>
       </div>
     );
     footer = (
       <>
         <Button onClick={onClose}>Close</Button>
-        {view.action === 'check' && (
-          <Button variant="primary" icon="refresh" busy={pending} onClick={check}>
-            Try Again
-          </Button>
-        )}
-        {view.action === 'download' && (
-          <Button
-            variant="primary"
-            icon="refresh"
-            busy={pending}
-            onClick={() => call('post', '/api/app/update/download')}
-          >
-            Try Again
-          </Button>
-        )}
-        {view.action === 'release' && releaseUrl && (
-          <Button variant="primary" icon="externalLink" onClick={() => openExternal(releaseUrl)}>
-            View Release
-          </Button>
-        )}
+        <Button variant="primary" icon="refresh" busy={pending} onClick={check}>
+          Try Again
+        </Button>
       </>
     );
   } else if (phase === 'store') {
-    // Windows: no check of our own (nothing is asked of GitHub); the Store has the answer.
+    // The Store couldn't be asked for its version: its page has the answer.
     title = 'Updates come from the Microsoft Store';
     icon = 'download';
     body = (
@@ -328,18 +248,19 @@ export function UpdateDialog({ open, onClose, onShowNotes }) {
     footer = (
       <>
         <Button onClick={onClose}>Close</Button>
-        <Button variant="primary" icon="externalLink" onClick={openStore}>
-          Open Microsoft Store
-        </Button>
+        {storeButton}
       </>
     );
   } else if (phase === 'up-to-date') {
     title = <><Brand /> is up to date</>;
     icon = 'check';
     body = (
-      <p className="update-text">
-        You are running the latest version: <b>{v(current)}</b>
-      </p>
+      <>
+        <p className="update-text">
+          You are running the latest version: <b>{v(current)}</b>
+        </p>
+        {fromStore && <p className="update-muted">Checked with the Microsoft Store.</p>}
+      </>
     );
     footer = (
       <Button variant="primary" onClick={onClose}>
@@ -349,216 +270,57 @@ export function UpdateDialog({ open, onClose, onShowNotes }) {
   } else if (phase === 'available') {
     title = <><Brand /> Update Available</>;
     icon = 'download';
-    const released = fmtDate(latest?.publishedAt);
     body = (
       <>
-        <p className="update-text">A new version of <Brand /> is available.</p>
+        <p className="update-text">A new version of <Brand /> is available in the Microsoft Store.</p>
         <dl className="update-versions">
           <dt>Installed version</dt>
           <dd>{v(current)}</dd>
-          <dt>Latest version</dt>
-          <dd>
-            {v(latest?.version)}
-            {released ? <span className="update-muted"> · {released}</span> : null}
-          </dd>
+          <dt>Microsoft Store version</dt>
+          <dd>{v(latest?.version)}</dd>
         </dl>
-        {onShowNotes && (
-          <button type="button" className="link-btn update-notes-link" onClick={onShowNotes}>
-            What&apos;s new in {v(latest?.version)}
-          </button>
-        )}
-        {!s.canInstall && (
-          <p className="update-note" role="note">
-            {s.installUnavailable} You can download the installer from the release page.
-          </p>
-        )}
+        <p className="update-note" role="note">
+          The Microsoft Store installs it automatically. To get it now, open <Brand /> in the Store and
+          choose <b>Update</b>.
+        </p>
       </>
     );
-    footer = s.canInstall ? (
-      <>
-        <Button onClick={onClose}>Cancel</Button>
-        <Button
-          variant="primary"
-          icon="download"
-          busy={pending}
-          onClick={() => call('post', '/api/app/update/download')}
-        >
-          Download and Install
-        </Button>
-      </>
-    ) : (
+    footer = (
       <>
         <Button onClick={onClose}>Close</Button>
-        {releaseUrl && (
-          <Button variant="primary" icon="externalLink" onClick={() => openExternal(releaseUrl)}>
-            View Release
-          </Button>
-        )}
+        {storeButton}
       </>
     );
-  } else if (phase === 'downloading' || phase === 'verifying' || phase === 'installing') {
-    title = <>Updating <Brand /></>;
-    icon = 'download';
-    const total = s.progress?.total || s.asset?.size || 0;
-    const received = s.progress?.received || 0;
-    const pct = phase === 'downloading' && total ? Math.min(100, Math.floor((received / total) * 100)) : null;
-    const label =
-      phase === 'downloading'
-        ? `Downloading K8Board ${v(latest?.version)}…`
-        : phase === 'verifying'
-          ? 'Verifying update…'
-          : 'Installing update…';
-    body = (
-      <div className="update-progress-wrap">
-        <p className="update-text" aria-live="polite">
-          {label}
-        </p>
-        <div
-          className={`update-progress${pct === null ? ' indeterminate' : ''}`}
-          role="progressbar"
-          aria-label={label}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={pct ?? undefined}
-        >
-          <div className="update-progress-bar" style={pct === null ? undefined : { width: `${pct}%` }} />
-        </div>
-        <div className="update-progress-meta">
-          {phase === 'downloading' ? (
-            <>
-              <span>{pct ?? 0}%</span>
-              <span>
-                {fmtBytes(received)} / {total ? fmtBytes(total) : '…'}
-              </span>
-            </>
-          ) : (
-            <span>
-              {phase === 'verifying'
-                ? 'Checking the SHA-256 published with the release'
-                : 'This can take a minute'}
-            </span>
-          )}
-        </div>
-      </div>
-    );
-    footer =
-      phase === 'installing' ? (
-        <Button disabled>Installing…</Button>
-      ) : (
-        <Button onClick={() => call('post', '/api/app/update/cancel')}>Cancel</Button>
-      );
-  } else if (phase === 'ready') {
-    title = 'Ready to Install';
-    icon = 'download';
+  } else if (phase === 'unavailable') {
+    // No store delivers this copy, so there is nobody to ask.
+    title = 'Check for Updates';
+    icon = 'details';
     body = (
       <>
-        <p className="update-text"><Brand /> {v(latest?.version)} has been downloaded and verified.</p>
         <p className="update-text">
-          To install it, <Brand /> closes, installs the update and opens again automatically. Choose{' '}
-          <b>Later</b> to install it the next time you quit <Brand />.
+          You have <Brand /> <b>{v(current)}</b>.
+        </p>
+        <p className="update-note" role="note">
+          This copy of <Brand /> doesn&apos;t check for updates. To update it, install a newer version the
+          way you installed this one.
         </p>
       </>
     );
     footer = (
-      <>
-        <Button
-          busy={pending}
-          onClick={async () => {
-            const st = await call('post', '/api/app/update/install', { when: 'on-quit' });
-            if (st?.phase === 'scheduled') {
-              toast.info(`K8Board ${v(latest?.version)} will be installed when you quit K8Board.`);
-              onClose();
-            }
-          }}
-        >
-          Later
-        </Button>
-        <Button
-          variant="primary"
-          icon="refresh"
-          busy={pending}
-          onClick={() => call('post', '/api/app/update/install', { when: 'now' })}
-        >
-          Install and Restart
-        </Button>
-      </>
-    );
-  } else if (phase === 'scheduled') {
-    title = 'Update Scheduled';
-    icon = 'check';
-    body = (
-      <p className="update-text">
-        <Brand /> {v(latest?.version)} will be installed the next time you quit <Brand />.
-      </p>
-    );
-    footer = (
       <Button variant="primary" onClick={onClose}>
         OK
       </Button>
     );
-  } else if (phase === 'installed') {
-    title = 'Update Installed';
-    icon = 'check';
-    body = (
-      <>
-        <p className="update-text"><Brand /> {v(latest?.version)} has been installed successfully.</p>
-        <p className="update-text">Restart <Brand /> to complete the update.</p>
-        {s.dryRun && (
-          <p className="update-note" role="note">
-            Dry run: nothing was actually installed.
-          </p>
-        )}
-      </>
-    );
-    footer = (
-      <>
-        <Button onClick={onClose}>Later</Button>
-        <Button
-          variant="primary"
-          icon="refresh"
-          busy={pending}
-          onClick={() => call('post', '/api/app/update/restart')}
-        >
-          Restart Now
-        </Button>
-      </>
-    );
-  } else if (phase === 'restarting') {
-    title = s.dryRun ? 'Dry run complete' : <>Restarting <Brand /></>;
-    icon = 'refresh';
-    body = s.dryRun ? (
-      <p className="update-text">
-        Dry run: <Brand /> {v(latest?.version)} was verified, but nothing was installed and <Brand /> will not
-        restart.
-      </p>
-    ) : (
-      <Loader
-        inline
-        label={
-          s.installMode === 'on-restart'
-            ? 'K8Board is closing to install the update and will open again automatically…'
-            : 'Restarting K8Board…'
-        }
-      />
-    );
-    footer = s.dryRun ? (
-      <Button variant="primary" onClick={onClose}>
-        OK
-      </Button>
-    ) : null;
   }
 
   return (
     <Modal
       open={open}
-      onClose={locked ? () => {} : onClose}
+      onClose={onClose}
       title={title}
       icon={icon}
       size="sm"
       className="update-modal"
-      closeOnBackdrop={!locked}
-      closeOnEscape={!locked}
-      showClose={!locked}
       footer={footer}
     >
       {body}

@@ -386,6 +386,7 @@ export default function ResourceViewer({
               emptyState={<EmptyState icon={icon} title={`No ${label.toLowerCase()} found`} hint={emptyHint} />}
               initialSort={{ key: 'name', dir: 'asc' }}
               storageKey={`rv:${resourceType}`}
+              fixedColumns
             />
           </>
         )}

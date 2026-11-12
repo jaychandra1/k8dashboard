@@ -177,7 +177,6 @@ const net = require('net');
 const http = require('http');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
-const { createUpdateHost } = require('./update-host.cjs');
 const { registerReportPdf } = require('./report-pdf.cjs');
 const { createLogFile, diagnosticsReport } = require('./diagnostics.cjs');
 
@@ -205,10 +204,7 @@ let mainWindow = null;
 let clusters = { current: null, contexts: [], pins: [] };
 let clustersKey = ''; // JSON of `clusters` as last rendered into the menu
 
-// Help → Check for Updates: the desktop half of the updater (electron/update-host.cjs),
-// created once before the first backend start. Host events for the UI that
-// arrive before it has loaded are delivered once it has.
-let updateHost = null;
+// Host events for the UI that arrive before it has loaded are delivered once it has.
 let pendingHostEvents = [];
 const debug = (...args) => {
   if (process.env.K8BOARD_DEBUG || process.env.KUBEPILOT_DEBUG) console.debug('[K8Board]', ...args);
@@ -325,10 +321,7 @@ function backendEnv({ fixedPath, port, token }) {
   // the test-only synthetic-cluster fixture; the desktop app never offers it.
   for (const k of ['NODE_OPTIONS', 'NODE_EXTRA_CA_CERTS', 'ELECTRON_RUN_AS_NODE', 'HOST', 'PORT', ...everyName('DEMO')])
     delete env[k];
-  // The updater's trust anchor is the release key built into the app; the
-  // test-only override (lib/updater/keys.mjs) never reaches an installed build.
-  if (app.isPackaged) for (const k of everyName('UPDATE_TRUSTED_KEYS')) delete env[k];
-  for (const name of ['TOKEN', 'SECRET_KEY', 'SECRET_SCOPE', 'APP_EXEC', 'INSTALL_KIND', 'INSTALL_UNAVAILABLE', 'INSTALL_MANAGED_BY', 'UPDATE_DIR']) {
+  for (const name of ['TOKEN', 'SECRET_KEY', 'SECRET_SCOPE', 'APP_EXEC', 'INSTALL_MANAGED_BY']) {
     for (const k of everyName(name)) delete env[k];
   }
   env.PATH = fixedPath;
@@ -352,21 +345,12 @@ function backendEnv({ fixedPath, port, token }) {
   env.K8BOARD_APP_EXEC = process.windowsStore && process.env.LOCALAPPDATA
     ? path.join(process.env.LOCALAPPDATA, 'Microsoft', 'WindowsApps', 'k8board.exe')
     : process.execPath;
-  // How this copy is installed (so the backend picks the matching release
-  // asset) and where updates download — only ever what the host detected.
-  if (updateHost) {
-    if (updateHost.install.kind) env.K8BOARD_INSTALL_KIND = updateHost.install.kind;
-    else env.K8BOARD_INSTALL_UNAVAILABLE = updateHost.install.message;
-    if (updateHost.install.managedBy) env.K8BOARD_INSTALL_MANAGED_BY = updateHost.install.managedBy;
-  }
   // Windows: K8Board is distributed through the Microsoft Store, which delivers
   // its updates. Every Windows copy (a Store install or an older installer
-  // build) says so: Check for Updates asks nothing of GitHub and installs
-  // nothing; it points to K8Board's Store page.
+  // build) says so: Check for Updates asks the Store which version is current
+  // and points to K8Board's Store page. K8Board downloads and installs no
+  // update itself on any platform, and other platforms have no store to ask.
   if (process.platform === 'win32') env.K8BOARD_INSTALL_MANAGED_BY = 'store';
-  if (updateHost) {
-    env.K8BOARD_UPDATE_DIR = updateHost.dir;
-  }
   return env;
 }
 
@@ -449,12 +433,6 @@ function startServer({ fixedPath, port, token }) {
     app.quit();
     return;
   }
-
-  // Install / restart requests from the backend's updater (lib/updater/host.mjs).
-  const child = serverProcess;
-  child.on('message', (msg) => {
-    if (updateHost) updateHost.onMessage(msg, (reply) => { if (serverProcess === child) child.postMessage(reply); });
-  });
 
   serverProcess.stdout?.on('data', (d) => {
     process.stdout.write(`[server] ${d}`);
@@ -677,7 +655,6 @@ function isAppPage(event) {
 //          | { type: 'add-cluster', provider: 'aws' | 'azure' | 'gcp' }
 //          | { type: 'show-release-notes' } | { type: 'check-updates' }      (Help menu)
 //          | { type: 'show-about' }                                         (Help → About K8Board)
-//          | { type: 'update-result', status: 'installed' | 'failed', version, from }
 // Nothing here blocks startup; failures are logged at debug and ignored.
 function backendJson(method, apiPath, body) {
   return new Promise((resolve, reject) => {
@@ -815,17 +792,6 @@ async function boot() {
     console.warn(`[K8Board] port ${PREFERRED_PORT} is busy; backend will use ${backendPort}`);
   }
 
-  if (!updateHost) {
-    try {
-      updateHost = await createUpdateHost({ app, rootDir: serverRoot() });
-      // A Windows update installs after K8Board quits; report how it went.
-      const previous = updateHost.previousResult();
-      if (previous) notifyRendererWhenReady({ type: 'update-result', ...previous });
-    } catch (err) {
-      console.warn(`[K8Board] updater unavailable: ${err.message}`);
-    }
-  }
-
   startServer({ fixedPath: resolveUserPath(), port: backendPort, token: authToken });
   if (!serverProcess) return;
 
@@ -895,11 +861,6 @@ app.on('before-quit', () => {
   stopServer();
 });
 
-// Help → Check for Updates → "Later" (Windows): the verified installer runs as K8Board quits.
-app.on('will-quit', () => {
-  if (updateHost) updateHost.onWillQuit();
-});
-
 // Help → Export Diagnostics: versions, the shape of the settings and the end of
 // the log, masked for sharing (electron/diagnostics.cjs), saved where the user picks.
 async function exportDiagnostics() {
@@ -911,7 +872,7 @@ async function exportDiagnostics() {
     app: {
       version: app.getVersion(),
       packaged: app.isPackaged,
-      install: updateHost?.install?.kind || (app.isPackaged ? 'unknown' : 'development'),
+      install: !app.isPackaged ? 'development' : process.windowsStore ? 'store' : 'packaged',
       backend: serverProcess ? 'running' : 'stopped',
     },
     system: {
@@ -985,10 +946,12 @@ function buildMenu() {
     {
       label: 'Help',
       submenu: [
-        // Windows: the Microsoft Store has the release notes ("What's new") and
-        // the updates, so nothing here reads GitHub.
-        ...(process.platform === 'win32' ? [] : [{ label: 'Show Release Notes', click: () => notifyRendererWhenReady({ type: 'show-release-notes' }) }]),
-        { label: 'Check for Updates', click: () => notifyRendererWhenReady({ type: 'check-updates' }) },
+        // The notes are shipped with the app (release-notes.json): what's new in
+        // each version, on every platform, with nothing fetched.
+        { label: 'Show Release Notes', click: () => notifyRendererWhenReady({ type: 'show-release-notes' }) },
+        // Windows: the Microsoft Store delivers the updates and is who the check
+        // asks. Other platforms have no store to ask, so they have no such item.
+        ...(process.platform === 'win32' ? [{ label: 'Check for Updates', click: () => notifyRendererWhenReady({ type: 'check-updates' }) }] : []),
         { type: 'separator' },
         { label: 'Export Diagnostics…', click: () => { exportDiagnostics(); } },
         { label: 'Open Logs Folder', enabled: !!logFile, click: () => { if (logFile) shell.openPath(logFile.dir); } },

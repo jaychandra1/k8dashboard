@@ -326,7 +326,7 @@ function App() {
   //   window.dispatchEvent(new CustomEvent('kubepilot:host', { detail }))
   // with detail = { type: 'context-changed', context? } | { type: 'open-contexts' }
   //             | { type: 'add-cluster', provider: 'aws' | 'azure' | 'gcp' }.
-  // The Help menu's events (show-release-notes, check-updates, update-result)
+  // The Help menu's events (show-release-notes, check-updates)
   // are handled by <UpdateDialogs>; show-about by <AboutDialog>.
   const hostRef = useRef(null);
   hostRef.current = { afterSwitch, openContexts, openAws, openAzure, openGke };

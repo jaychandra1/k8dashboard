@@ -239,7 +239,7 @@ Features that need something extra:
 - AI assistant: an OpenAI-compatible endpoint the user configures in Preferences > AI Assistant.
 - Security Center image scanning: on first use, and only when the user starts a scan, K8Board downloads the open-source Trivy scanner (pinned version 0.76.2) from its official GitHub release and verifies its SHA-256 checksum before use. Trivy then downloads its public vulnerability database and pulls the images being scanned from their registries. Trivy's anonymous usage data and update checks are turned off.
 
-Updates: Help > Check for Updates never checks for, downloads or installs anything itself; it offers to open K8Board's Microsoft Store page, which delivers updates.
+Updates: Help > Check for Updates asks the Microsoft Store's public catalog which version of K8Board is current (one request naming the app's Store ID; no user or device data) and offers to open K8Board's Microsoft Store page, which delivers updates. K8Board never downloads or installs anything itself.
 
 Google GKE: optional. K8Board has no Google sign-in of its own; it uses the Google Cloud CLI (gcloud) if the user has installed it and signed in, to list their projects and GKE clusters. Without gcloud the dialog says so and nothing else happens.
 

@@ -6,8 +6,8 @@
 //
 // The Ed25519 private key (PKCS#8 PEM) comes from RELEASE_SIGNING_KEY. Both
 // modes fail unless that key matches one of RELEASE_PUBLIC_KEYS in
-// lib/updater/keys.mjs — a release the app wouldn't accept is never published —
-// and the signature is verified with the app's own code before it is kept.
+// lib/updater/keys.mjs — a release signed with an unlisted key is never
+// published — and the signature is verified before it is kept.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -37,7 +37,7 @@ try {
 if (privateKey.asymmetricKeyType !== 'ed25519') fail('RELEASE_SIGNING_KEY must be an Ed25519 key.');
 const pub = crypto.createPublicKey(privateKey).export({ type: 'spki', format: 'der' }).toString('base64');
 if (!RELEASE_PUBLIC_KEYS.includes(pub)) {
-  fail('RELEASE_SIGNING_KEY does not match any key in lib/updater/keys.mjs — the app would refuse this release.');
+  fail('RELEASE_SIGNING_KEY does not match any key in lib/updater/keys.mjs — nobody could verify this release.');
 }
 
 if (process.argv[2] === '--check') {

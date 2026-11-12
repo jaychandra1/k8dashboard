@@ -1,0 +1,88 @@
+{
+  "releases": [
+    {
+      "version": "1.8.8",
+      "date": "2026-11-12",
+      "highlights": [
+        {
+          "title": "Lists that hold still",
+          "text": "Columns in Pods and the other resource lists keep the same width while you scroll, sort or filter. A value too long for its column is shortened and shown in full when you point at it."
+        },
+        {
+          "title": "What's new, version by version",
+          "text": "Help → Show Release Notes lists the features added in each version of K8Board. The notes are part of the app, so they open at once and work offline."
+        },
+        {
+          "title": "Update check with the Microsoft Store",
+          "text": "On Windows, Check for Updates asks the Microsoft Store which version of K8Board is current and tells you whether yours is up to date."
+        }
+      ]
+    },
+    {
+      "version": "1.8.7",
+      "date": "2026-11-11",
+      "highlights": [
+        {
+          "title": "A calmer way to connect",
+          "text": "While K8Board starts and while it connects to a cluster, a turning Kubernetes wheel shows that work is in progress, with each step listed underneath."
+        },
+        {
+          "title": "Faster after you change something",
+          "text": "Scaling, restarting, deleting or applying a resource refreshes only the namespace you changed, so large clusters stay responsive, most of all in “All namespaces”."
+        }
+      ]
+    },
+    {
+      "version": "1.8.6",
+      "date": "2026-11-11",
+      "highlights": [
+        {
+          "title": "Google GKE clusters",
+          "text": "Add your Google Kubernetes Engine clusters from Preferences → Cloud Integrations. K8Board uses the Google Cloud CLI sign-in you already have."
+        },
+        {
+          "title": "One AWS sign-in per account",
+          "text": "Every AWS account keeps its own sign-in, even when several accounts share one access portal, so signing in to one account never opens another."
+        },
+        {
+          "title": "Simpler AWS setup",
+          "text": "Adding EKS clusters asks only for your access portal address. K8Board finds the region by itself."
+        },
+        {
+          "title": "Updates from the Microsoft Store",
+          "text": "On Windows, K8Board is installed and kept up to date by the Microsoft Store."
+        },
+        {
+          "title": "Tidier Preferences",
+          "text": "Theme sits with the Kubernetes settings, and Cloud Integrations shows Azure, AWS and Google side by side."
+        }
+      ]
+    },
+    {
+      "version": "1.8.5",
+      "date": "2026-11-09",
+      "highlights": [
+        {
+          "title": "A new Home screen",
+          "text": "Home lists your clusters and marks the one you connected to last. Nothing is contacted until you choose a cluster."
+        },
+        {
+          "title": "Clearer message for private clusters",
+          "text": "When a cluster can only be reached on a private network, K8Board says so plainly and asks you to connect to your VPN first."
+        },
+        {
+          "title": "A refreshed look",
+          "text": "A new typeface and tighter alignment on every screen."
+        },
+        {
+          "title": "About K8Board in the Help menu",
+          "text": "Version, license and links are under Help → About K8Board."
+        },
+        {
+          "title": "Small fixes",
+          "text": "The settings button closes Preferences when you click it again, and the Add cluster submenu stays open while you move to it."
+        }
+      ]
+    }
+  ]
+}

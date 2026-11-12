@@ -6,7 +6,7 @@ K8Board for Windows is distributed through the **Microsoft Store**; the website'
 |---|---|---|
 | File | `K8Board-windows.exe` (NSIS installer) | `K8Board-windows-store.msix` (MSIX) |
 | Signed by | Not signed at the OS level (SmartScreen shows "Unknown publisher") | **Microsoft**, after certification — no SmartScreen warning |
-| Updates | The Microsoft Store (Check for Updates points there; the installer build no longer updates itself) | The Microsoft Store |
+| Updates | The Microsoft Store (Check for Updates asks the Store for its version and points there; the installer build no longer updates itself) | The Microsoft Store |
 | Install folder | `%LOCALAPPDATA%\Programs\kubepilot` | `C:\Program Files\WindowsApps\…` (read-only; Windows refuses to start a tampered copy) |
 
 The release workflow builds both on every tagged release. The `.msix` is uploaded as the **`store-k8board-windows`** workflow artifact (not to the GitHub release — it only installs through the Store), and the optional `store` job submits it to Partner Center.
@@ -52,7 +52,8 @@ The release workflow builds both on every tagged release. The `.msix` is uploade
 
 ## 3. What's different in the Store edition
 
-- **Updates come from the Store.** Help → Check for Updates makes no version check of its own (nothing is asked of GitHub): it offers **Open Microsoft Store**, which opens K8Board's Store page. K8Board never installs anything over a Store install. There is no *Show Release Notes* item on Windows; fill in *What's new in this version* in each submission.
+- **Updates come from the Store.** Help → Check for Updates asks the Store's public catalog which version of K8Board it has (`lib/updater/store.mjs`: one request naming the Store ID, nothing else; the app has no other update source on any platform) and says "up to date" or "a newer version is in the Microsoft Store", with **Open Microsoft Store** (K8Board's Store page). If the catalog can't be read, the dialog only offers **Open Microsoft Store**. K8Board never installs anything over a Store install. The Store's own update API (`Windows.Services.Store`) isn't used: it answers only code inside the app package, and K8Board's backend runs outside it.
+- **Release notes come with the app.** Help → Show Release Notes reads `release-notes.json` (what's new per version, written for users). Write what is new under its `"next"` entry as you build it; `npm run version:sync <version>` gives that entry the new version and date. The same text is a good starting point for *What's new in this version* in each submission.
 - **Token helper alias.** The kubeconfig entries K8Board writes for EKS and AKS run K8Board itself as their token helper. Other programs can't start an exe under `WindowsApps` by path, so the Store package declares an app execution alias, `k8board.exe` (in `%LOCALAPPDATA%\Microsoft\WindowsApps`, which Windows puts on `PATH`). The Store edition writes that alias into kubeconfig, so `kubectl` works from any terminal, and keeps working across Store updates.
 - **Settings are shared.** `~/.config/kubepilot`, `~/.kube`, `~/.aws` and `~/.azure` are outside the package, so the Store and GitHub editions see the same clusters and settings. Uninstall the GitHub edition after switching, so kubeconfig entries don't point at two different copies.
 
@@ -85,7 +86,8 @@ An unsigned `.msix` installs only on a machine in Developer Mode. These steps ch
    - a pod terminal, the Helm terminal and an AI agent terminal open;
    - AWS/Azure sign-in completes in the browser;
    - `kubectl get ns` works from a separate terminal against an EKS/AKS context that K8Board added (this exercises the `k8board.exe` alias);
-   - Help → Check for Updates offers **Open Microsoft Store**.
+   - Help → Check for Updates says whether the Store has a newer version and offers **Open Microsoft Store**;
+   - Help → Show Release Notes lists this version's features first, with no link out of the app.
 4. Remove it: `Get-AppxPackage *K8Board* | Remove-AppxPackage`, then turn Developer Mode off again if you don't need it.
 
 ## 6. Store listing (draft)

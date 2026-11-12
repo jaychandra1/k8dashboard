@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import DataTable from './DataTable';
+import DataTable, { columnSizing } from './DataTable';
 
 const rows = [
   { name: 'beta', namespace: 'a', status: 'Running', age: 30 },
@@ -141,5 +141,94 @@ describe('DataTable', () => {
     const tbody = screen.getAllByRole('rowgroup')[1];
     const rendered = within(tbody).getAllByRole('row').filter((r) => !r.classList.contains('dt-spacer'));
     expect(rendered.length).toBeLessThan(500);
+  });
+});
+
+// A virtualised table renders only the rows near the viewport, and a browser
+// sizes columns by the cells it is given; fixedColumns takes the cells out of it.
+describe('DataTable column widths', () => {
+  const sized = [
+    { key: 'name', header: 'Name', sortable: true, ellipsis: true, width: 300, maxWidth: 460 },
+    { key: 'status', header: 'Status', sortable: true, width: 160, title: (r) => `status: ${r.status}` },
+    { key: 'age', header: 'Age', sortable: true, accessor: (r) => r.age, render: (r) => `${r.age}s`, align: 'right', width: 80, fill: true },
+  ];
+  const actions = () => [{ label: 'Open', onSelect: () => {} }];
+
+  it('by default a width is a hint: only ellipsis cells are capped (unchanged)', () => {
+    expect(columnSizing(sized)).toEqual([
+      { th: { width: 300, minWidth: undefined }, td: { maxWidth: 460 }, fixed: false },
+      { th: { width: 160, minWidth: undefined }, td: undefined, fixed: false },
+      { th: { width: '100%', minWidth: 80 }, td: undefined, fixed: false },
+    ]);
+  });
+
+  it('fixedColumns: a sized column is exactly its width, one may stretch, the fill column takes the rest', () => {
+    const [name, status, age] = columnSizing(sized, { fixed: true, selectable: true, actions: true });
+    // Every other column (160 + 80), the checkbox (50) and actions (50) columns, and room for the scrollbar (18).
+    const elastic = 'clamp(300px, calc(100cqw - 358px), 460px)';
+    expect(name).toEqual({ th: { width: elastic, minWidth: elastic, maxWidth: elastic }, td: { maxWidth: elastic }, fixed: true });
+    expect(status).toEqual({ th: { width: 160, minWidth: 160, maxWidth: 160 }, td: { maxWidth: 160 }, fixed: true });
+    expect(age).toEqual({ th: { width: '100%', minWidth: 80 }, td: { maxWidth: 80 }, fixed: true });
+    expect(columnSizing(sized, { fixed: true })[0].th.width).toBe('clamp(300px, calc(100cqw - 258px), 460px)');
+  });
+
+  it('fixedColumns: with `fit`, the column stretches only as far as its content needs', () => {
+    const fitting = [{ ...sized[0], fit: () => 0 }, sized[1], sized[2]];
+    const nameWidth = (fit) => columnSizing(fitting, { fixed: true, fit })[0].th.width;
+    expect(nameWidth(0)).toBe(300);
+    expect(nameWidth(280)).toBe(300);
+    expect(nameWidth(379.2)).toBe('clamp(300px, calc(100cqw - 258px), 380px)');
+    expect(nameWidth(900)).toBe('clamp(300px, calc(100cqw - 258px), 460px)');
+    expect(columnSizing(fitting, { fixed: true, fit: 280 })[0]).toEqual({
+      th: { width: 300, minWidth: 300, maxWidth: 300 },
+      td: { maxWidth: 300 },
+      fixed: true,
+    });
+  });
+
+  it('fixedColumns: a column with no width stays content-sized, and then nothing stretches', () => {
+    const [name, free] = columnSizing([sized[0], { key: 'note', header: 'Note' }, sized[2]], { fixed: true });
+    expect(name).toEqual({ th: { width: 300, minWidth: 300, maxWidth: 300 }, td: { maxWidth: 300 }, fixed: true });
+    expect(free).toEqual({ th: { minWidth: undefined }, td: undefined, fixed: false });
+  });
+
+  it('renders the same widths whatever the rows hold, however they are sorted', async () => {
+    const user = userEvent.setup();
+    const data = [
+      { name: 'short', namespace: 'a', status: 'Running', age: 1 },
+      { name: 'a-very-long-pod-name-that-would-widen-a-content-sized-column-0123456789', namespace: 'a', status: 'CreateContainerConfigError', age: 2 },
+    ];
+    const widths = () => screen.getAllByRole('columnheader').map((th) => [th.style.width, th.style.minWidth, th.style.maxWidth].join('/'));
+    const table = (rowsShown) => (
+      <DataTable columns={sized} rows={rowsShown} rowKey={rowKey} fixedColumns selected={new Set()} onToggleSelect={() => {}} rowActions={actions} />
+    );
+    const { container, rerender } = render(table(data));
+    expect(container.querySelector('.dt-wrap')).toHaveAttribute('data-fixed', 'true');
+    const before = widths();
+    // checkbox, name (stretches: a CSS expression), status, age, actions
+    expect(before[0]).toBe('50px/50px/50px');
+    expect(before[2]).toBe('160px/160px/160px');
+    expect(before[3]).toBe('100%/80px/');
+    expect(before[4]).toBe('50px/50px/50px');
+    const long = screen.getByRole('cell', { name: /^a-very-long-pod-name/ });
+    expect(long).toHaveClass('dt-fixed');
+    expect(long).toHaveAttribute('title', data[1].name);
+    // What is cut short is in the tooltip: here the column's own title().
+    const status = screen.getByRole('cell', { name: 'CreateContainerConfigError' });
+    expect(status).toHaveClass('dt-fixed');
+    expect(status.style.maxWidth).toBe('160px');
+    expect(status).toHaveAttribute('title', 'status: CreateContainerConfigError');
+    await user.click(screen.getByRole('button', { name: /Status/ }));
+    expect(widths()).toEqual(before);
+    rerender(table([data[0]]));
+    expect(widths()).toEqual(before);
+  });
+
+  it('without fixedColumns nothing is pinned', () => {
+    const { container } = render(<DataTable columns={sized} rows={rows} rowKey={rowKey} />);
+    expect(container.querySelector('.dt-wrap')).not.toHaveAttribute('data-fixed');
+    expect(container.querySelector('.dt-fixed')).toBeNull();
+    const status = screen.getAllByRole('columnheader')[1];
+    expect([status.style.width, status.style.minWidth, status.style.maxWidth]).toEqual(['160px', '', '']);
   });
 });

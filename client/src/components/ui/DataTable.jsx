@@ -23,8 +23,74 @@ import {announce, afterPaint } from '../../lib/a11y';
  *   caption="Pods in kube-system" emptyState={<EmptyState … />} loading refetching
  *   initialSort={{ key: 'name', dir: 'asc' }} storageKey="pods"
  * />
+ *
+ * Column widths. By default a column's `width` is a hint and the browser sizes
+ * columns by the cells it is given. A virtualised table renders only the rows
+ * near the viewport, so those widths change as rows scroll or sort into view:
+ * one long status just below the fold widens "Status" for every row above it.
+ * With `fixedColumns`, a column that names a `width` is exactly that wide
+ * whatever its cells hold (what doesn't fit is cut with an ellipsis and shown
+ * in the cell's tooltip), so the layout is the same for every row, sort order
+ * and scroll position:
+ *   { width: 160 }                  exactly 160px
+ *   { width: 300, maxWidth: 460 }   300px, growing to 460px while the table has spare room
+ *                                   (the first such column, when every column has a width).
+ *                                   With `fit: (rows) => px` it grows only as far as its
+ *                                   content needs: the widest it has needed in this table,
+ *                                   so short names leave no gap and a filter doesn't move it.
+ *   { width: 80, fill: true }       at least 80px, plus whatever room is left
+ * A column without a `width` is still sized by its content.
  */
 const SORT_ICON = { asc: 'chevronUp', desc: 'chevronDown' };
+// The checkbox and row-actions columns, in px (fixedColumns pins them too).
+const SELECT_COL = 50;
+const ACTIONS_COL = 50;
+// Room kept for the vertical scrollbar when a column stretches: the scroll
+// area's width (100cqw) counts the scrollbar, the table inside can't use it.
+const SCROLLBAR = 18;
+const pinned = (size) => ({ width: size, minWidth: size, maxWidth: size });
+
+/**
+ * How each column is sized: [{ th, td, fixed }] — the header cell's style, the
+ * body cells' style, and whether the column is independent of its content.
+ * (Table cells honour min-width / max-width, and a cell's max-width caps what
+ * its content may ask for: that is what pins a column in a content-sized table.)
+ */
+export function columnSizing(columns, { fixed = false, selectable = false, actions = false, fit = 0 } = {}) {
+  if (!fixed) {
+    return columns.map((col) => ({
+      // `fill`: this column takes the spare width (the others keep theirs).
+      th: { width: col.fill ? '100%' : col.width, minWidth: col.fill ? col.width : col.minWidth },
+      td: col.ellipsis ? { maxWidth: col.maxWidth || col.width || 280 } : undefined,
+      fixed: false,
+    }));
+  }
+  const sized = (col) => Number.isFinite(col.width);
+  // One column may stretch into spare room: only when every other width is
+  // known, so the room left for it can be worked out without measuring.
+  const elastic = columns.every(sized)
+    ? columns.find((c) => !c.fill && Number.isFinite(c.maxWidth) && c.maxWidth > c.width)
+    : null;
+  // How far it may stretch: to its maxWidth, or (col.fit) only as far as its content needs.
+  const upTo = !elastic
+    ? 0
+    : typeof elastic.fit === 'function'
+      ? Math.min(elastic.maxWidth, Math.ceil(fit) || 0)
+      : elastic.maxWidth;
+  const others = columns.reduce(
+    (sum, c) => sum + (c === elastic ? 0 : c.width || 0),
+    (selectable ? SELECT_COL : 0) + (actions ? ACTIONS_COL : 0) + SCROLLBAR
+  );
+  return columns.map((col) => {
+    if (!sized(col))
+      return { th: { minWidth: col.minWidth }, td: col.ellipsis ? { maxWidth: col.maxWidth || 280 } : undefined, fixed: false };
+    if (col.fill) return { th: { width: '100%', minWidth: col.width }, td: { maxWidth: col.width }, fixed: true };
+    // 100cqw: the width of the table's scroll area (.dt-wrap[data-fixed] is a size container).
+    const size =
+      col === elastic && upTo > col.width ? `clamp(${col.width}px, calc(100cqw - ${others}px), ${upTo}px)` : col.width;
+    return { th: pinned(size), td: { maxWidth: size }, fixed: true };
+  });
+}
 
 function defaultCompare(a, b) {
   if (a == null && b == null) return 0;
@@ -70,6 +136,7 @@ export default function DataTable({
   dense = false,
   overscan = 8,
   maxHeight,
+  fixedColumns = false,
 }) {
   const scrollRef = useRef(null);
   const rowEls = useRef(new Map());
@@ -181,6 +248,20 @@ export default function DataTable({
   useEffect(() => { if (selectAllRef.current) selectAllRef.current.indeterminate = someSelected; }, [someSelected]);
 
   const colCount = columns.length + (selectable ? 1 : 0) + (rowActions ? 1 : 0);
+  // A stretching column's content (col.fit): the most room it has needed in this
+  // table. It only ever grows, so narrowing the list with a filter moves nothing.
+  const fitCol = fixedColumns ? columns.find((c) => typeof c.fit === 'function') : null;
+  const fitNow = useMemo(() => (fitCol ? Math.ceil(fitCol.fit(rows)) || 0 : 0), [fitCol, rows]);
+  const [fitMark, setFitMark] = useState({ key: storageKey, px: 0 });
+  if (fitMark.key !== storageKey) setFitMark({ key: storageKey, px: fitNow });
+  else if (fitNow > fitMark.px) setFitMark({ key: storageKey, px: fitNow });
+  const fit = fitMark.key === storageKey ? Math.max(fitMark.px, fitNow) : fitNow;
+  const sizing = useMemo(
+    () => columnSizing(columns, { fixed: fixedColumns, selectable, actions: !!rowActions, fit }),
+    [columns, fixedColumns, selectable, rowActions, fit]
+  );
+  const selectStyle = fixedColumns ? pinned(SELECT_COL) : undefined;
+  const actionsStyle = fixedColumns ? pinned(ACTIONS_COL) : undefined;
   const showSkeleton = loading && rows.length === 0;
   const showEmpty = !loading && rows.length === 0;
 
@@ -190,6 +271,7 @@ export default function DataTable({
       className={`dt-wrap resource-table-wrap ${className}`.trim()}
       data-refetching={refetching || undefined}
       data-dense={dense || undefined}
+      data-fixed={fixedColumns || undefined}
       style={maxHeight ? { maxHeight } : undefined}
       aria-busy={loading || refetching || undefined}
     >
@@ -203,7 +285,7 @@ export default function DataTable({
         <thead>
           <tr>
             {selectable && (
-              <th scope="col" className="ck-col dt-ck">
+              <th scope="col" className="ck-col dt-ck" style={selectStyle}>
                 <input
                   ref={selectAllRef}
                   type="checkbox"
@@ -215,7 +297,7 @@ export default function DataTable({
                 />
               </th>
             )}
-            {columns.map((col) => {
+            {columns.map((col, ci) => {
               const active = sort?.key === col.key;
               const ariaSort = col.ariaSort || (active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : (col.sortable ? 'none' : undefined));
               return (
@@ -223,8 +305,7 @@ export default function DataTable({
                   key={col.key}
                   scope="col"
                   aria-sort={ariaSort}
-                  // `fill`: this column takes the spare width (the others keep theirs).
-                  style={{ width: col.fill ? '100%' : col.width, minWidth: col.fill ? col.width : col.minWidth, textAlign: col.align }}
+                  style={{ ...sizing[ci].th, textAlign: col.align }}
                   className={`dt-th${col.align ? ` dt-align-${col.align}` : ''}${col.className ? ` ${col.className}` : ''}`}
                 >
                   {col.sortable ? (
@@ -238,7 +319,7 @@ export default function DataTable({
                 </th>
               );
             })}
-            {rowActions && <th scope="col" className="dt-actions-col"><span className="sr-only">Actions</span></th>}
+            {rowActions && <th scope="col" className="dt-actions-col" style={actionsStyle}><span className="sr-only">Actions</span></th>}
           </tr>
         </thead>
         <tbody>
@@ -272,7 +353,7 @@ export default function DataTable({
                 onContextMenu={(e) => onContext(e, row)}
               >
                 {selectable && (
-                  <td className="ck-col dt-ck">
+                  <td className="ck-col dt-ck" style={selectStyle}>
                     <input
                       type="checkbox"
                       className="ck"
@@ -283,22 +364,24 @@ export default function DataTable({
                     />
                   </td>
                 )}
-                {columns.map((col) => {
+                {columns.map((col, ci) => {
                   const content = col.render ? col.render(row, index) : (col.accessor ? col.accessor(row) : row?.[col.key]);
                   const text = typeof content === 'string' || typeof content === 'number' ? String(content) : undefined;
+                  // A cell that can be cut short says what it holds in its tooltip.
+                  const clips = col.ellipsis || sizing[ci].fixed;
                   return (
                     <td
                       key={col.key}
-                      className={`dt-td${col.ellipsis ? ' dt-ellipsis' : ''}${col.align ? ` dt-align-${col.align}` : ''}${col.mono ? ' dt-mono' : ''}${col.className ? ` ${col.className}` : ''}`}
-                      style={col.ellipsis ? { maxWidth: col.maxWidth || col.width || 280 } : undefined}
-                      title={col.ellipsis ? (col.title ? col.title(row) : text) : undefined}
+                      className={`dt-td${col.ellipsis ? ' dt-ellipsis' : ''}${sizing[ci].fixed ? ' dt-fixed' : ''}${col.align ? ` dt-align-${col.align}` : ''}${col.mono ? ' dt-mono' : ''}${col.className ? ` ${col.className}` : ''}`}
+                      style={sizing[ci].td}
+                      title={clips ? (col.title ? col.title(row) : text) : undefined}
                     >
                       {content ?? '—'}
                     </td>
                   );
                 })}
                 {rowActions && (
-                  <td className="dt-actions">
+                  <td className="dt-actions" style={actionsStyle}>
                     <Button
                       variant="ghost" size="sm" iconOnly icon="more"
                       ariaLabel={`Actions for ${name}`}

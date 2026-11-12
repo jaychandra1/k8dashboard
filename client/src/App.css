@@ -4198,6 +4198,16 @@ button.sec-tr.row.sel { background: var(--accent-tint); }
 .dt-row[data-tone='bad'] td:first-child { background-image: linear-gradient(to right, var(--red) 3px, transparent 3px); }
 .dt-row[data-tone='warn'] td:first-child { background-image: linear-gradient(to right, var(--yellow) 3px, transparent 3px); }
 .dt-ellipsis { overflow: hidden; text-overflow: ellipsis; max-width: 280px; }
+/* fixedColumns: a sized column is exactly its width whatever its cells hold, so
+   the layout doesn't move as rows scroll or sort into view. What doesn't fit is
+   cut with an ellipsis; the scroll area is a size container so one column can
+   take the spare room (100cqw in its width, see columnSizing in DataTable.jsx). */
+.dt-wrap[data-fixed] { container-type: inline-size; }
+.dt-fixed { overflow: hidden; text-overflow: ellipsis; }
+.dt-fixed .resource-name-cell { display: flex; max-width: 100%; }
+.dt-fixed .ui-badge { max-width: 100%; vertical-align: middle; }
+.dt-fixed .ui-badge-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
+.dt-fixed .drawer-chip { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
 .dt-mono { font-family: var(--mono); font-size: 0.71875rem; }
 .dt-align-right { text-align: right; }
 .dt-align-center { text-align: center; }
@@ -4830,24 +4840,24 @@ h3.sec-drawer-section:first-child { margin-top: 0; }
 }
 .update-versions dt { font-size: 0.75rem; color: var(--text-muted); }
 .update-versions dd { margin: 0; font-family: var(--mono); font-size: 0.8125rem; font-weight: 650; color: var(--text); }
-.update-notes-link { background: none; border: 0; padding: 0; color: var(--link); cursor: pointer; font: inherit; font-size: 0.78125rem; }
-.update-notes-link:hover { text-decoration: underline; }
 
-.update-progress-wrap { display: flex; flex-direction: column; gap: 8px; }
-.update-progress-wrap .update-text { margin: 0; color: var(--text); font-weight: 550; }
-.update-progress { position: relative; height: 8px; border-radius: 999px; background: var(--bg-surface-2); overflow: hidden; }
-.update-progress-bar { height: 100%; width: 0; border-radius: inherit; background: var(--accent); transition: width 0.25s ease; }
-.update-progress.indeterminate .update-progress-bar { width: 35%; animation: update-indeterminate 1.1s ease-in-out infinite; }
-@keyframes update-indeterminate { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
-@media (prefers-reduced-motion: reduce) { .update-progress.indeterminate .update-progress-bar { animation: none; width: 100%; opacity: 0.45; } }
-.update-progress-meta { display: flex; justify-content: space-between; gap: 12px; font-family: var(--mono); font-size: 0.71875rem; color: var(--text-muted); }
-
-.release-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
-.release-version { font-size: 1rem; font-weight: 700; color: var(--text); }
-.release-date { font-size: 0.75rem; color: var(--text-muted); }
-.release-notes-body { max-height: min(56vh, 520px); overflow: auto; padding-right: 6px; font-size: 0.8125rem; line-height: 1.6; color: var(--text-secondary); }
-/* The release body opens with "# K8Board x.y.z" (rendered as h3), which the header above already shows. */
-.release-notes-body .md > h3.md-h:first-child { display: none; }
+/* Release notes: one block per version, newest first; the running version leads. */
+.release-notes-body { max-height: min(60vh, 560px); overflow: auto; padding-right: 8px; }
+.release-lead { margin: 0 0 12px; font-size: 0.78125rem; line-height: 1.5; color: var(--text-muted); }
+.release { padding: 16px 0; border-top: 1px solid var(--border); }
+.release:first-of-type { padding-top: 2px; border-top: 0; }
+.release:last-of-type { padding-bottom: 2px; }
+.release-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 10px; }
+.release-version { margin: 0; font-size: 0.9375rem; font-weight: 700; letter-spacing: -0.01em; color: var(--text); font-variant-numeric: tabular-nums; }
+.release.is-current .release-version { font-size: 1.0625rem; }
+.release-badge { padding: 1px 8px; border-radius: 999px; background: var(--accent-tint); border: 1px solid var(--accent-tint-strong); font-size: 0.6875rem; font-weight: 650; color: var(--text); }
+.release-date { margin-left: auto; font-size: 0.75rem; color: var(--text-muted); }
+.release-highlights { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.release-highlights li { position: relative; padding-left: 16px; font-size: 0.8125rem; line-height: 1.55; }
+.release-highlights li::before { content: ""; position: absolute; left: 2px; top: 0.62em; width: 5px; height: 5px; border-radius: 50%; background: var(--text-muted); opacity: 0.7; }
+.release.is-current .release-highlights li::before { background: var(--link); opacity: 1; }
+.release-highlight-title { display: block; font-weight: 650; color: var(--text); }
+.release-highlight-text { display: block; color: var(--text-secondary); }
 
 /* Helm page: a bottom-panel tab with its own close button (the Helm terminal). */
 .bottom-tab-group { display: inline-flex; align-items: center; }
@@ -5113,6 +5123,9 @@ h3.sec-drawer-section:first-child { margin-top: 0; }
 .about-logo { display: block; width: 64px; height: 64px; margin-bottom: 12px; }
 .about-name { font-size: 1.375rem; font-weight: 700; letter-spacing: -0.02em; color: var(--text); }
 .about-version { margin-top: 2px; font-size: 0.8125rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.about-whats-new { margin-top: 4px; padding: 0; border: 0; background: none; color: var(--link); cursor: pointer; font: inherit; font-size: 0.78125rem; }
+.about-whats-new:hover { text-decoration: underline; }
+.about-whats-new:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: 3px; }
 .about-tagline { margin: 12px 0 0; max-width: 34ch; font-size: 0.875rem; line-height: 1.5; color: var(--text-secondary); }
 .about-links { display: flex; gap: 6px; margin-top: 16px; }
 .about-link {
