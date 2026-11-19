@@ -4,7 +4,9 @@
 //     into PDF bytes, for the Security Center's "Download report → PDF";
 //   - the title bar (Windows, where the app draws it): a description of the
 //     application menu, "this item was chosen", and the bar's two colours so
-//     the caption buttons match the theme (electron/window-chrome.cjs).
+//     the caption buttons match the theme (electron/window-chrome.cjs);
+//   - focusWindow: bring the window to the front when a sign-in the user
+//     finished in the browser is over.
 // Nothing else is exposed.
 //
 // This preload runs sandboxed (webPreferences.sandbox stays true), so only
@@ -27,4 +29,6 @@ contextBridge.exposeInMainWorld('k8boardHost', Object.freeze({
   menuClick: (id) => ipcRenderer.invoke('k8board:menu-click', String(id)),
   /** The title bar's colours, "#rrggbb" each, for the caption buttons drawn over it. */
   chrome: (color, symbolColor) => ipcRenderer.send('k8board:chrome', { color: String(color), symbolColor: String(symbolColor) }),
+  /** Bring the app's window to the front (a sign-in finished in the browser). */
+  focusWindow: () => ipcRenderer.send('k8board:focus'),
 }));

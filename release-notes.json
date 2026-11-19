@@ -1,6 +1,19 @@
 {
   "releases": [
     {
+      "version": "next",
+      "highlights": [
+        {
+          "title": "AWS sign-in tidies up after itself",
+          "text": "Signing in to AWS now happens in a small browser window that closes by itself when you are done, together with the page that opened it, and K8Board comes back to the front."
+        },
+        {
+          "title": "Works with access to one namespace",
+          "text": "If you were given access to a namespace or two rather than the whole cluster, add the namespace by name once and work in it as usual. What you are not allowed to see says “No access” instead of showing an error."
+        }
+      ]
+    },
+    {
       "version": "1.8.9",
       "date": "2026-11-19",
       "highlights": [

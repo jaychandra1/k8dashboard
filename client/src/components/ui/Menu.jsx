@@ -1,4 +1,5 @@
 import { afterPaint } from '../../lib/a11y';
+import { floatingBounds } from '../../lib/viewport';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Icon from '../Icons';
@@ -48,8 +49,11 @@ function MenuList({ items, onClose, onSelectDone, x, y, level = 0, anchorRect, f
       if (!flip && left + rect.width > window.innerWidth - 8) { left = anchorRect.left - rect.width - 2; setFlip(true); }
     }
     if (left + rect.width > window.innerWidth - 8) left = window.innerWidth - rect.width - 8;
-    if (top + rect.height > window.innerHeight - 8) top = Math.max(8, (anchorRect ? window.innerHeight - 8 : y) - rect.height);
-    setPos({ left: Math.max(8, left), top: Math.max(8, top) });
+    // Never above `minTop`: on Windows that is the title bar, whose window
+    // buttons are painted over anything under them.
+    const minTop = floatingBounds().top;
+    if (top + rect.height > window.innerHeight - 8) top = Math.max(minTop, (anchorRect ? window.innerHeight - 8 : y) - rect.height);
+    setPos({ left: Math.max(8, left), top: Math.max(minTop, top) });
     if (!anchorRect) setFlip(left + rect.width + SUB_W > window.innerWidth - 8);
   }, [x, y, anchorRect, flip]);
 

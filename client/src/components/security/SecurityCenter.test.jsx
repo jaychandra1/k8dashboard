@@ -19,17 +19,20 @@ const image = {
 describe('SecurityCenter', () => {
   beforeEach(() => { getJson.mockReset(); });
 
-  it('shows an RBAC error state when the vulnerability reports are forbidden', async () => {
+  it('says so, without alarm, when the user may not read the vulnerability reports', async () => {
     getJson.mockImplementation(async (url) => {
       if (url.endsWith('/security/status')) return { installed: true };
       if (url.endsWith('/security/vulnerabilities')) throw new ApiError({ status: 403, code: 'forbidden', message: 'vulnerabilityreports is forbidden' });
       return {};
     });
     render(<SecurityCenter view="overview" namespaces={['all', 'web']} />);
-    const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent("Your RBAC role can't read vulnerability reports");
-    expect(alert).toHaveTextContent('HTTP 403');
-    expect(within(alert).getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    // A refusal is an answer, not a failure: a status (not an alert), no HTTP code.
+    const box = (await screen.findByText("Your RBAC role can't read vulnerability reports")).closest('.ui-error');
+    expect(box).toHaveAttribute('role', 'status');
+    expect(box).toHaveAttribute('data-denied', 'true');
+    expect(box).not.toHaveTextContent('HTTP 403');
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(within(box).getByRole('button', { name: 'Check again' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 1, name: 'Security' })).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Namespace' })).toBeInTheDocument();
   });

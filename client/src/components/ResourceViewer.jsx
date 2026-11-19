@@ -20,7 +20,8 @@ import useRequest from '../hooks/useRequest';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import useTabStripScroll from '../hooks/useTabStripScroll';
 import { getJson, postJson, del, p, errorMessage } from '../lib/api';
-import { byKey, labelFor, isClusterScoped } from '../lib/kinds';
+import { byKey, labelFor, isClusterScoped, pluralKey } from '../lib/kinds';
+import { useNamespaceAccess, AddNamespaceForm, RESTRICTED_HINT } from './shell/NamespaceAccess';
 import { eventsLink, navigateVia } from './resources/links';
 
 // Kinds whose events (with those of what they own) the Events page can show.
@@ -285,10 +286,37 @@ export default function ResourceViewer({
 
   const tabId = (key) => `${uid}-tab-${key}`;
   const total = totalCount ?? resources.length;
-  const nsLabel = namespace === 'all' ? 'all namespaces' : `namespace ${namespace}`;
+  // A user with a Role in a namespace or two: what they may not list is an
+  // answer, not a failure. No banner for it, and an empty list says why.
+  const access = useNamespaceAccess();
+  const failures = (partialErrors || []).filter((e) => !e.forbidden);
+  const clusterScoped = isClusterScoped(resourceType);
+  const plural = pluralKey(resourceType);
+  const deniedIn = new Set((partialErrors || []).filter((e) => e.forbidden && (e.kind === plural || e.kind === '*')).map((e) => e.namespace || ''));
+  const asked = selectedNamespaces.includes('all') ? namespaces.filter((n) => n && n !== 'all') : selectedNamespaces;
+  const noAccess = clusterScoped ? deniedIn.has('') : asked.length > 0 && asked.every((n) => deniedIn.has(n));
+  const needsNamespace = access.restricted && !clusterScoped && asked.length === 0;
+
+  const nsLabel = namespace === 'all' ? (access.restricted ? 'your namespaces' : 'all namespaces') : `namespace ${namespace}`;
   const emptyHint = q
     ? `No ${label.toLowerCase()} match “${q}” in ${nsLabel}. Clear the search or pick another namespace.`
     : `No ${label.toLowerCase()} in ${nsLabel}. Try selecting another namespace.`;
+  const emptyState = needsNamespace ? (
+    <EmptyState
+      icon="namespace"
+      title="Add your namespace"
+      hint={RESTRICTED_HINT}
+      action={<AddNamespaceForm autoFocus onAdded={(ns) => onNamespaceChange?.([ns])} />}
+    />
+  ) : noAccess && !q ? (
+    <EmptyState
+      icon="shield"
+      title={`No access to ${label.toLowerCase()}`}
+      hint={`Your sign-in isn’t allowed to list ${label.toLowerCase()}${clusterScoped ? ' on this cluster' : ` in ${nsLabel}`}. Ask your cluster administrator if you need it.`}
+    />
+  ) : (
+    <EmptyState icon={icon} title={`No ${label.toLowerCase()} found`} hint={emptyHint} />
+  );
 
   const scaleError = actionModal?.type === 'scale' ? validateReplicas(actionModal.replicas) : null;
   const scaleErrId = `${uid}-scale-err`;
@@ -347,11 +375,11 @@ export default function ResourceViewer({
         </div>
       </div>
 
-      {partialErrors?.length > 0 && (
+      {failures.length > 0 && (
         <div className="partial-banner" role="status">
           <Icon name="warning" size={14} />
           <span>
-            Some kinds could not be loaded: {partialErrors.map((e) => `${e.kind}${e.error ? ` (${e.error})` : ''}`).join('; ')}
+            Some kinds could not be loaded: {failures.map((e) => `${e.kind}${e.error ? ` (${e.error})` : ''}`).join('; ')}
           </span>
         </div>
       )}
@@ -383,7 +411,7 @@ export default function ResourceViewer({
               getRowTone={getRowTone}
               loading={loading}
               refetching={refetching}
-              emptyState={<EmptyState icon={icon} title={`No ${label.toLowerCase()} found`} hint={emptyHint} />}
+              emptyState={emptyState}
               initialSort={{ key: 'name', dir: 'asc' }}
               storageKey={`rv:${resourceType}`}
             />

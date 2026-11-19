@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, act, waitFor, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { _resetHistoryIndex } from './hooks/useHashRoute';
@@ -396,5 +396,38 @@ describe('App routing', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Command palette' })).toBeNull());
     await user.keyboard('?');
     expect(screen.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeInTheDocument();
+  });
+});
+
+// A user who was given a Role in a namespace or two and nothing cluster-wide.
+describe('App: a sign-in that sees part of a cluster', () => {
+  const saved = {};
+  beforeEach(async () => {
+    _resetHistoryIndex(); window.location.hash = ''; localStorage.clear(); sessionStorage.clear();
+    const { getJson } = await import('./lib/api');
+    getJson.mockClear();
+    saved.namespaces = responses['/api/namespaces'];
+    // They may not list namespaces: the list is the one they added.
+    responses['/api/namespaces'] = { namespaces: ['qaenv'], details: [], restricted: true };
+    responses['/api/resources/qaenv'] = {
+      pods: [{ name: 'orders-api-1', namespace: 'qaenv', status: 'Running' }], services: [],
+      partial: true, errors: [{ kind: 'services', error: 'no permission', forbidden: true }, { kind: 'jobs', error: 'no permission', forbidden: true }],
+    };
+  });
+  afterEach(() => {
+    responses['/api/namespaces'] = saved.namespaces;
+    delete responses['/api/resources/qaenv'];
+  });
+
+  it('"all namespaces" is their namespace, and what they may not list is not announced as a failure', async () => {
+    renderApp();
+    await connectFromHome();
+    await go('#/pod');
+    await waitFor(() => expect(screen.getByTestId('rv')).toHaveAttribute('data-count', '1'));
+    await settle();
+    expect(await clusterCalls()).toContain('/api/resources/qaenv');
+    expect(screen.queryByText(/Some resources could not be loaded/)).toBeNull();
+    expect(screen.queryByText(/Partial results/)).toBeNull();
+    expect(screen.queryByText(/Failed to fetch namespaces/)).toBeNull();
   });
 });

@@ -24,7 +24,9 @@ export function fanOutMode(view) {
  * The shared "all namespaces" fan-out with useRequest-style cancellation: a
  * new run id (abort) on context switch AND on namespace/type change, a bounded
  * concurrency pool, per-namespace RBAC failures tolerated, and `partial` /
- * `errors` from the backend surfaced as `partialErrors`.
+ * `errors` from the backend surfaced as `partialErrors`
+ * ({ kind, namespace, error, forbidden? } — `forbidden`: the user isn't
+ * allowed to list that kind there, which is an answer and not a failure).
  *
  *   const { allResources, partialErrors, loading, refetching, error, refetch, active } =
  *     useResourceFanOut({ enabled: authOk, contextKey, view, selectedNamespaces, allNamespaces });
@@ -67,19 +69,21 @@ export default function useResourceFanOut({ enabled = true, contextKey = '', vie
             merged[k].push(...v);
           });
           if (data?.partial && Array.isArray(data.errors)) {
-            data.errors.forEach((e) => errors.push({ kind: e.kind, error: e.error, namespace: ns }));
+            data.errors.forEach((e) => errors.push({ kind: e.kind, error: e.error, namespace: ns, ...(e.forbidden ? { forbidden: true } : {}) }));
           }
         } catch (err) {
           if (isAbortError(err)) throw err;
           // Skip a namespace that fails (e.g. RBAC) rather than failing all.
           failedNamespaces += 1;
-          errors.push({ kind: '*', namespace: ns, error: errorMessage(err) });
+          errors.push({ kind: '*', namespace: ns, error: errorMessage(err), ...(err?.code === 'forbidden' ? { forbidden: true } : {}) });
         }
       }
     };
     await Promise.all(Array.from({ length: Math.min(CONCURRENCY, list.length) }, worker));
     if (signal.aborted) throw new ApiError({ code: 'aborted', message: 'Request aborted' });
     if (list.length && failedNamespaces === list.length) {
+      // Not allowed anywhere it was asked: an answer (the view says "no access"), not a failure.
+      if (errors.every((e) => e.forbidden)) return { items: merged, errors };
       throw new ApiError({ status: 0, code: 'fanout_failed', message: errors[0]?.error || 'Failed to fetch resources' });
     }
     return { items: merged, errors };

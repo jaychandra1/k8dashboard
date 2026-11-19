@@ -18,7 +18,8 @@ import { ALL } from './routes';
  * the shell (App) and the views; every view receives `refreshSignal` (number,
  * bumps on manual/auto refresh — refetch in place, keep data on screen).
  *
- *   Cluster (Dashboard) { configStatus, context, refreshSignal, onSummaryLoaded(contextName), onOpen(viewKey) — all namespaces }
+ *   Cluster (Dashboard) { configStatus, context, refreshSignal, onSummaryLoaded(contextName), onOpen(viewKey) — all namespaces,
+ *                         onOpenNamespace(name) — the Pods of one namespace (a user with access to part of the cluster) }
  *   Nodes               { focusNode, onFocusHandled, onNavigate, refreshSignal }
  *   Namespaces          { onNavigate, refreshSignal }
  *   Topology            { namespaces, selectedNamespaces, onNavigate, refreshSignal }
@@ -57,7 +58,7 @@ export default function ViewOutlet({
     case 'home':
       return home || null;
     case 'cluster':
-      return <Cluster configStatus={configStatus} context={configStatus.currentContext} refreshSignal={refreshSignal} onSummaryLoaded={onClusterSummary} onOpen={onOpenClusterWide} />;
+      return <Cluster configStatus={configStatus} context={configStatus.currentContext} refreshSignal={refreshSignal} onSummaryLoaded={onClusterSummary} onOpen={onOpenClusterWide} onOpenNamespace={(ns) => navigate('pod', [], { ns })} />;
     case 'nodes':
       return <Nodes focusNode={focusNode} onFocusHandled={onFocusHandled} onNavigate={nav} refreshSignal={refreshSignal} />;
     case 'namespaces':

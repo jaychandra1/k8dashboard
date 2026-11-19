@@ -1544,8 +1544,8 @@ span.xlink.resource-name-cell { color: var(--accent); }
   top: calc(100% + 6px);
   right: 0;
   min-width: 230px;
-  max-height: 340px;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
   background: var(--bg-elevated);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
@@ -4499,7 +4499,63 @@ button.nav-section-title:focus-visible, a.nav-item:focus-visible { outline: 2px 
 .namespace-tag-remove { background: transparent; border: none; padding: 0 2px; color: inherit; font: inherit; min-width: 18px; min-height: 18px; display: inline-grid; place-items: center; }
 .namespace-tag-remove:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; border-radius: 3px; }
 .namespace-option.focused { background: var(--bg-hover); color: var(--text); }
-.namespace-multi-select-dropdown:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+.namespace-options { max-height: 300px; overflow-y: auto; border-radius: var(--radius-xs); }
+.namespace-options:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+
+/* A user who may not list namespaces adds theirs by name (shell/NamespaceAccess.jsx). */
+.namespace-multi-select-dropdown[data-restricted] { width: 300px; }
+.namespace-add-panel { margin-top: 6px; padding: 10px 6px 4px; border-top: 1px solid var(--border); }
+.namespace-add-hint { margin: 0 0 8px; font-size: 0.75rem; line-height: 1.45; color: var(--text-muted); }
+.ns-add { display: flex; flex-direction: column; gap: 6px; width: 320px; max-width: 100%; text-align: left; }
+.ns-add[data-compact] { width: auto; }
+.ns-add-row { display: flex; align-items: center; gap: 8px; }
+.ns-add-input {
+  flex: 1; min-width: 0; height: 32px; padding: 0 10px;
+  background: var(--bg-elevated); color: var(--text);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  font: inherit; font-size: 0.8125rem;
+}
+.ns-add[data-compact] .ns-add-input { height: 28px; background: var(--bg-surface); }
+.ns-add-input::placeholder { color: var(--text-muted); }
+.ns-add-input:focus { outline: none; border-color: var(--accent); }
+.ns-add-input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.ns-add-input[aria-invalid='true'] { border-color: var(--red); }
+.ns-add-error { margin: 0; font-size: 0.75rem; line-height: 1.45; color: var(--red); }
+.ns-restricted-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 0 22px 12px; padding: 9px 12px;
+  background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font-size: 0.7813rem; color: var(--text-secondary);
+}
+.ns-restricted-bar > .icon { color: var(--text-muted); flex-shrink: 0; }
+.ns-restricted-bar > span { flex: 1; min-width: 220px; }
+.ns-restricted-bar .ns-add { flex: 0 0 300px; }
+
+/* The Dashboard of a sign-in that sees part of the cluster. */
+.limited-access {
+  max-width: 560px; padding: 28px;
+  background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius);
+}
+.limited-access-icon { display: inline-grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--accent-tint); color: var(--accent); margin-bottom: 14px; }
+.limited-access h2 { margin: 0 0 6px; font-size: 1.0625rem; font-weight: 650; color: var(--text); }
+.limited-access-text { margin: 0; font-size: 0.8125rem; line-height: 1.55; color: var(--text-secondary); }
+.limited-access-block { margin-top: 22px; }
+.limited-access-block h3 { margin: 0 0 8px; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; color: var(--text-muted); }
+.limited-access-hint { margin: 0 0 10px; font-size: 0.7813rem; line-height: 1.5; color: var(--text-muted); }
+.limited-access-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.limited-access-ns {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 12px;
+  background: var(--bg-elevated); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font: inherit; font-size: 0.8125rem; font-weight: 550; text-align: left; cursor: pointer;
+}
+.limited-access-ns:hover { border-color: var(--border-strong); background: var(--bg-hover); }
+.limited-access-ns:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.limited-access-ns > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.limited-access-ns > .icon { color: var(--text-muted); flex-shrink: 0; }
+
+/* "You aren't allowed to" is an answer, not a failure (ui/ErrorState.jsx). */
+.ui-error[data-denied] { background: var(--bg-surface); border-color: var(--border); }
+.ui-error[data-denied] .ui-error-icon { color: var(--text-muted); }
 
 /* Toasts: separate polite / assertive groups */
 .toast-group { display: flex; flex-direction: column; gap: 10px; }

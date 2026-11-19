@@ -276,7 +276,7 @@ K8Board downloads and installs no update itself on any platform, and holds no ad
 
 **When a session has ended**, the startup dialog shows the cluster (provider, account, role, when it ended) with **Sign in with AWS**:
 
-- In the desktop app this opens your AWS access portal in your browser; approve the request and K8Board reconnects by itself — nothing to type. (It uses a one-time `http://127.0.0.1:<port>/oauth/callback` redirect, the AWS CLI's default flow.)
+- In the desktop app this opens a K8Board page in your browser with one button, **Continue to AWS**. AWS then opens in a small window: approve the request there and K8Board reconnects by itself — nothing to type. The small window and the page both close on their own, and K8Board comes back to the front. (A browser lets a page close only a window that the page itself opened, which is why AWS opens in its own window. If your browser blocks pop-up windows, AWS opens in the same tab instead, and that tab stays open afterwards. The sign-in uses a one-time `http://127.0.0.1:<port>/oauth/callback` redirect, the AWS CLI's default flow.)
 - **Use a sign-in code instead** shows a code to confirm on the AWS page — the right choice if the browser can't reach this machine, and what a K8Board *server* always uses.
 - Nothing starts on its own: you can instead pick any other cluster from the list (grouped by provider — AWS, Azure, GKE, on-prem…), or use **Add cluster** for AWS EKS, Azure AKS, Google GKE or a kubeconfig file (on-prem, kind…).
 
@@ -302,7 +302,39 @@ K8Board downloads and installs no update itself on any platform, and holds no ad
 
 **Your own AWS CLI profiles.** K8Board splits only the sign-ins it created. A cluster whose AWS profile uses a session you made with `aws configure sso`, or the older format (`sso_start_url` / `sso_region` inside the profile), keeps signing in the way you set it up, so several accounts can still share that sign-in. Its card under *AWS sign-ins* says so and offers **Use one sign-in per account**: the profiles of its clusters then move to their own account's session (account, role, region, comments and other settings are kept; your session stays in the file), each account asks for one sign-in, and the AWS CLI no longer shares its sign-in with those profiles. Before K8Board first changes `~/.aws/config` it saves a copy next to it (`config.k8board-backup-<time>`). Tools from before late 2022 (AWS CLI v1, old SDKs) don't understand `sso-session`; current AWS CLI v2, SDKs and Terraform do.
 
-### 1.13 Google GKE clusters
+### 1.13 Access to part of a cluster (a Role in one namespace)
+
+Many people are given a `Role` in one or two namespaces and nothing cluster-wide: QA may read pods and restart deployments in `qaenv`, and that is all. K8Board works with that as it is; the cluster needs no extra permission for it.
+
+**As that user.** After you connect, the Dashboard says *You have access to part of this cluster* instead of a summary (you can't see nodes or every namespace). Such a sign-in usually can't list the cluster's namespaces either, and Kubernetes has no way to ask "which namespaces are mine?", so you tell K8Board once:
+
+- Type the namespace's name under **Add your namespace** and choose **Add**. K8Board asks the cluster what you may do there; a name you have nothing in (a typo, another team's namespace) is refused, with the reason under the field.
+- The namespace is remembered for that cluster. It is in the namespace picker of every list from then on (*All my namespaces* means the ones you added), you can add more from the picker, and **Namespaces** lists them with *Remove from my namespaces* in each row's menu.
+- If your kubeconfig context names a namespace, that one is there without adding it.
+
+In your namespace, the kinds your Role covers list and work as usual. A kind it doesn't cover says **No access to services** (for example) and who to ask; an action it doesn't cover answers in one sentence, such as *You don't have permission to scale deployments in namespace qaenv.* Pages about the whole cluster (Nodes, Events when your Role has no `events`) say **No access** the same way. None of this is an error, and nothing needs retrying.
+
+**As the administrator.** A Role like this is enough for K8Board:
+
+```yaml
+rules:
+- apiGroups: [""]
+  resources: ["pods", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["pods/log"]
+  verbs: ["get"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "watch"]
+```
+
+Add verbs for what the user should change (`patch` on `deployments` is what **Restart** needs: it sends the same one-annotation patch as `kubectl rollout restart`). Two optional additions make more of the app useful:
+
+- `events` (`get`, `list`, `watch`) in the namespace, for the Events page and "View events";
+- a `ClusterRole` with `get`, `list` on `namespaces`, bound to the group, if you want the user to see the namespace list instead of typing a name. They then see every namespace's *name*; a namespace they have no Role in shows **No access**.
+
+### 1.14 Google GKE clusters
 
 *Add cluster → Google GKE* (Home, the cluster menu, Preferences → Cloud Integrations, or the **Clusters** menu) finds your GKE clusters and adds the ones you choose to your kubeconfig.
 

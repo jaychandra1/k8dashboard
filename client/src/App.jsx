@@ -31,6 +31,7 @@ import Home from './components/Home';
 import Preferences from './components/Preferences';
 import { CONNECT_STEPS } from './components/shell/useContexts';
 import useNamespaces from './components/shell/useNamespaces';
+import { NamespaceAccessProvider } from './components/shell/NamespaceAccess';
 import useResourceFanOut from './components/shell/useResourceFanOut';
 import useNavDrawer from './components/shell/useNavDrawer';
 import ShortcutsSheet from './components/shell/ShortcutsSheet';
@@ -199,6 +200,11 @@ function App() {
 
   const ns = useNamespaces({ enabled: tokenOk && authOk, contextKey, toast });
   const namespaces = ns.namespaces;
+  // A user who may not list namespaces adds theirs by name (shell/NamespaceAccess).
+  const nsAccess = useMemo(
+    () => ({ restricted: ns.restricted, namespaces, add: ns.add, remove: ns.remove }),
+    [ns.restricted, namespaces, ns.add, ns.remove],
+  );
 
   const fanOut = useResourceFanOut({ enabled: tokenOk && authOk, contextKey, view, selectedNamespaces, allNamespaces: namespaces });
   const { allResources, partialErrors } = fanOut;
@@ -208,18 +214,21 @@ function App() {
     return resources.find((r) => r.name === selectedKey.name && (r.namespace || '') === (selectedKey.namespace || '')) || null;
   }, [selectedKey, resources]);
 
-  // Surface backend `partial: true` results without blocking the view.
-  const partialKey = partialErrors.map((e) => `${e.kind}:${e.namespace || ''}`).join('|');
+  // Surface backend `partial: true` results without blocking the view. What
+  // the user simply isn't allowed to list is not a failure: the view itself
+  // says "no access" (ResourceViewer), and nothing is announced.
+  const failures = useMemo(() => partialErrors.filter((e) => !e.forbidden), [partialErrors]);
+  const partialKey = failures.map((e) => `${e.kind}:${e.namespace || ''}`).join('|');
   useEffect(() => {
     if (!partialKey) return;
-    const kinds = Array.from(new Set(partialErrors.filter((e) => e.kind !== '*').map((e) => byPlural[e.kind]?.label || e.kind)));
-    const nsFailed = Array.from(new Set(partialErrors.filter((e) => e.kind === '*').map((e) => e.namespace)));
+    const kinds = Array.from(new Set(failures.filter((e) => e.kind !== '*').map((e) => byPlural[e.kind]?.label || e.kind)));
+    const nsFailed = Array.from(new Set(failures.filter((e) => e.kind === '*').map((e) => e.namespace)));
     const parts = [];
     if (kinds.length) parts.push(kinds.join(', '));
     if (nsFailed.length) parts.push(`namespace${nsFailed.length > 1 ? 's' : ''} ${nsFailed.join(', ')}`);
     toast.warning(`Some resources could not be loaded: ${parts.join('; ')}`, { title: 'Partial results' });
-  // partialKey summarises partialErrors; toast is stable
-  }, [partialKey, partialErrors, toast]);
+  // partialKey summarises the failures; toast is stable
+  }, [partialKey, failures, toast]);
 
   // Optional integrations (Argo CD) on the active cluster.
   const argo = useRequest(
@@ -549,6 +558,7 @@ function App() {
                 />
               )}
               <ErrorBoundary resetKey={view} title="This view crashed">
+                <NamespaceAccessProvider value={nsAccess}>
                 <ViewOutlet
                   view={view}
                   route={route}
@@ -591,6 +601,7 @@ function App() {
                   nav={nav}
                   onClusterSummary={onClusterSummary}
                 />
+                </NamespaceAccessProvider>
               </ErrorBoundary>
             </main>
             <ErrorBoundary title="The agent panel crashed">

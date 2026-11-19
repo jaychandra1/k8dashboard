@@ -8,6 +8,8 @@ import { getJson, p } from '../lib/api';
 import { podPhaseBucket, BUCKET_TONE, BUCKET_LABEL } from '../lib/status';
 import { fmtMem, pct } from '../lib/format';
 import { labelFor } from '../lib/kinds';
+import Button from './ui/Button';
+import { useNamespaceAccess, AddNamespaceForm } from './shell/NamespaceAccess';
 
 /** Fold the summary's `{ Running: n, … }` phase counts into the shared buckets. */
 export function bucketPhases(phases) {
@@ -183,13 +185,78 @@ function CapacityBar({ label, icon, used, total, unit, tone }) {
   );
 }
 
+/**
+ * The Dashboard of a sign-in that may see part of the cluster only (a Role in
+ * a namespace or two, nothing cluster-wide): where they can work, and — when
+ * they may not even list namespaces — a place to add theirs by name.
+ */
+function LimitedAccess({ title, version, refetching, onOpenNamespace, onBrowse }) {
+  const { restricted, namespaces } = useNamespaceAccess();
+  return (
+    <div className="dashboard">
+      <div className="dashboard-header">
+        <h1>
+          <Icon name="cluster" size={19} />
+          {title}
+          {version && version !== 'unknown' && <span className="cluster-version-badge">{version}</span>}
+        </h1>
+        <span className="resource-refreshing" aria-live="polite" role="status">{refetching ? 'Refreshing…' : ''}</span>
+      </div>
+      <div className="dashboard-body">
+        <section className="limited-access" aria-labelledby="limited-access-title">
+          <span className="limited-access-icon" aria-hidden="true"><Icon name="shield" size={22} /></span>
+          <h2 id="limited-access-title">You have access to part of this cluster</h2>
+          <p className="limited-access-text">
+            This sign-in can’t see the cluster as a whole (its nodes, or every namespace), so there is no summary to show
+            here. You work in the namespaces you were given access to.
+          </p>
+          {restricted ? (
+            <>
+              {namespaces.length > 0 && (
+                <div className="limited-access-block">
+                  <h3>Your namespaces</h3>
+                  <ul className="limited-access-list">
+                    {namespaces.map((ns) => (
+                      <li key={ns}>
+                        <button type="button" className="limited-access-ns" onClick={() => onOpenNamespace?.(ns)} aria-label={`Open namespace ${ns}`}>
+                          <Icon name="namespace" size={15} />
+                          <span>{ns}</span>
+                          <Icon name="chevronRight" size={14} />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <div className="limited-access-block">
+                <h3>{namespaces.length ? 'Add another namespace' : 'Add your namespace'}</h3>
+                <p className="limited-access-hint">
+                  Type its name as your administrator gave it to you. K8Board checks that you have access there and
+                  remembers it for this cluster.
+                </p>
+                <AddNamespaceForm autoFocus={namespaces.length === 0} onAdded={(ns) => onOpenNamespace?.(ns)} />
+              </div>
+            </>
+          ) : (
+            <div className="limited-access-block">
+              <Button variant="primary" icon="namespace" onClick={() => onBrowse?.('namespaces')}>Browse namespaces</Button>
+            </div>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
+
 // The Dashboard: the whole cluster at a glance (every namespace) — nodes,
 // pods, capacity and workloads. `onOpen(viewKey)` opens a list across all
 // namespaces (the counts here are cluster-wide).
 // `onSummaryLoaded(contextName)` fires on every successful summary fetch with
 // the context the payload belongs to; the shell uses it to end the
 // context-switch loading screen once the new cluster's data is on screen.
-export default function Cluster({ refreshSignal = 0, context, onSummaryLoaded, onOpen }) {
+// `onOpenNamespace(name)` opens one namespace's Pods: what the Dashboard of a
+// sign-in that sees only part of the cluster offers instead of a summary.
+export default function Cluster({ refreshSignal = 0, context, onSummaryLoaded, onOpen, onOpenNamespace }) {
   useDocumentTitle('Dashboard');
   const { data, error, loading, refetching, refetch } = useRequest(
     ({ signal }) => getJson(p('api', 'cluster', 'summary'), { signal }),
@@ -242,6 +309,12 @@ export default function Cluster({ refreshSignal = 0, context, onSummaryLoaded, o
         <LoadingScreen context={context || undefined} />
       </div>
     );
+  }
+
+  // A sign-in with a Role in a namespace or two sees nothing cluster-wide:
+  // there is no summary, and that is not an error.
+  if (data?.limited) {
+    return <LimitedAccess title={title} version={data.serverVersion} refetching={refetching} onOpenNamespace={onOpenNamespace} onBrowse={onOpen} />;
   }
 
   return (

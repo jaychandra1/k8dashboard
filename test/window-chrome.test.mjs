@@ -118,14 +118,16 @@ describe('the page side of the title bar', () => {
     const clicked = [];
     const overlays = [];
     const win = window === undefined ? { isDestroyed: () => false, webContents: {}, setTitleBarOverlay: (o) => overlays.push(o) } : window;
+    const appCalls = [];
     chrome.registerWindowChrome({
       ipcMain: { handle: (ch, fn) => { handlers[ch] = fn; }, on: (ch, fn) => { listeners[ch] = fn; } },
       Menu: { getApplicationMenu: () => menu(clicked) },
+      app: { focus: (o) => appCalls.push(o) },
       getWindow: () => win,
       isAllowedSender: () => allowed,
       platform,
     });
-    return { handlers, listeners, clicked, overlays };
+    return { handlers, listeners, clicked, overlays, appCalls };
   }
 
   test("only the app's own page is answered, and only where the bar exists", () => {
@@ -161,6 +163,95 @@ describe('the page side of the title bar', () => {
   });
 });
 
+// A sign-in the user finished in the browser is over: the app comes back to
+// the front. What works was measured on Windows with another app's window in
+// front (focus(), show() and moveTop() left ours behind it).
+describe('bringing the window to the front', () => {
+  // A stand-in BrowserWindow that records what was asked of it.
+  function fakeWindow({ minimized = false, visible = true, focused = false, destroyed = false } = {}) {
+    const calls = [];
+    const state = { minimized, visible };
+    return {
+      calls,
+      isDestroyed: () => destroyed,
+      isMinimized: () => state.minimized,
+      isVisible: () => state.visible,
+      isFocused: () => focused,
+      minimize: () => { calls.push('minimize'); state.minimized = true; },
+      restore: () => { calls.push('restore'); state.minimized = false; },
+      show: () => { calls.push('show'); state.visible = true; },
+      moveTop: () => calls.push('moveTop'),
+      focus: () => calls.push('focus'),
+    };
+  }
+  const app = () => { const calls = []; return { calls, focus: (o) => calls.push(o) }; };
+
+  test('Windows: a window behind another app is minimised and restored (the one thing Windows honours), then focused', () => {
+    const behind = fakeWindow();
+    assert.equal(chrome.bringToFront(behind, { platform: 'win32' }), true);
+    assert.deepEqual(behind.calls, ['minimize', 'restore', 'focus']);
+    // Already minimised: restoring is enough.
+    const min = fakeWindow({ minimized: true });
+    chrome.bringToFront(min, { platform: 'win32' });
+    assert.deepEqual(min.calls, ['restore', 'focus']);
+    // Already in front: it is not made to blink.
+    const front = fakeWindow({ focused: true });
+    chrome.bringToFront(front, { platform: 'win32' });
+    assert.deepEqual(front.calls, ['focus']);
+    // Hidden: shown first.
+    const hidden = fakeWindow({ visible: false });
+    chrome.bringToFront(hidden, { platform: 'win32' });
+    assert.deepEqual(hidden.calls, ['show', 'minimize', 'restore', 'focus']);
+  });
+
+  test('macOS: the app takes the foreground; Linux: the window is raised. Neither is minimised', () => {
+    const a = app();
+    const mac = fakeWindow();
+    chrome.bringToFront(mac, { app: a, platform: 'darwin' });
+    assert.deepEqual(mac.calls, ['focus']);
+    assert.deepEqual(a.calls, [{ steal: true }]);
+    const linux = fakeWindow();
+    chrome.bringToFront(linux, { app: app(), platform: 'linux' });
+    assert.deepEqual(linux.calls, ['moveTop', 'focus']);
+    const minMac = fakeWindow({ minimized: true });
+    chrome.bringToFront(minMac, { app: app(), platform: 'darwin' });
+    assert.deepEqual(minMac.calls, ['restore', 'focus']);
+  });
+
+  test('no window, a window that is gone, or one that throws: nothing happens', () => {
+    assert.equal(chrome.bringToFront(null), false);
+    assert.equal(chrome.bringToFront(undefined, { platform: 'win32' }), false);
+    const gone = fakeWindow({ destroyed: true });
+    assert.equal(chrome.bringToFront(gone, { platform: 'win32' }), false);
+    assert.deepEqual(gone.calls, []);
+    const closing = { ...fakeWindow(), isMinimized: () => { throw new Error('Object has been destroyed'); } };
+    assert.equal(chrome.bringToFront(closing, { platform: 'win32' }), false);
+  });
+
+  test("only the app's own page may ask, on every platform", () => {
+    for (const platform of ['win32', 'darwin', 'linux']) {
+      const win = fakeWindow();
+      const handlers = {};
+      const listeners = {};
+      let allowed = false;
+      chrome.registerWindowChrome({
+        ipcMain: { handle: (ch, fn) => { handlers[ch] = fn; }, on: (ch, fn) => { listeners[ch] = fn; } },
+        Menu: { getApplicationMenu: () => null },
+        app: app(),
+        getWindow: () => win,
+        isAllowedSender: () => allowed,
+        platform,
+      });
+      listeners[chrome.FOCUS_CHANNEL]({});
+      assert.deepEqual(win.calls, [], `${platform}: another page is ignored`);
+      allowed = true;
+      listeners[chrome.FOCUS_CHANNEL]({});
+      assert.equal(win.calls.at(-1), 'focus', platform);
+    }
+    assert.equal(chrome.FOCUS_CHANNEL, 'k8board:focus');
+  });
+});
+
 describe('the desktop shell uses it', () => {
   const main = fs.readFileSync(path.join(ROOT_DIR, 'electron', 'main.cjs'), 'utf8');
   const preload = fs.readFileSync(path.join(ROOT_DIR, 'electron', 'preload.cjs'), 'utf8');
@@ -168,7 +259,7 @@ describe('the desktop shell uses it', () => {
   test('the window takes its title bar from it, hides the native menu row there, and answers the page', () => {
     assert.match(main, /\.\.\.titleBarOptions\(\),/);
     assert.match(main, /if \(usesTitleBar\(\)\) \{\s*mainWindow\.setAutoHideMenuBar\(false\);\s*mainWindow\.setMenuBarVisibility\(false\);/);
-    assert.match(main, /registerWindowChrome\(\{ ipcMain, Menu, getWindow: \(\) => mainWindow, isAllowedSender: isAppPage \}\);/);
+    assert.match(main, /registerWindowChrome\(\{ ipcMain, Menu, app, getWindow: \(\) => mainWindow, isAllowedSender: isAppPage \}\);/);
     // The application menu is still set: its shortcuts (Ctrl+R, Ctrl+Shift+R, F11…) keep working.
     assert.match(main, /Menu\.setApplicationMenu\(buildMenu\(\)\);/);
     assert.match(main, /'is-electron', 'is-win'/);
@@ -180,9 +271,11 @@ describe('the desktop shell uses it', () => {
   });
 
   test('the preload exposes the bar and nothing wider', () => {
-    for (const channel of [chrome.MENU_CHANNEL, chrome.MENU_CLICK_CHANNEL, chrome.CHROME_CHANNEL]) assert.ok(preload.includes(`'${channel}'`), channel);
+    for (const channel of [chrome.MENU_CHANNEL, chrome.MENU_CLICK_CHANNEL, chrome.CHROME_CHANNEL, chrome.FOCUS_CHANNEL]) assert.ok(preload.includes(`'${channel}'`), channel);
     const exposed = [...preload.matchAll(/^ {2}(\w+):/gm)].map((m) => m[1]);
-    assert.deepEqual(exposed, ['reportPdf', 'updates', 'titleBar', 'menu', 'menuClick', 'chrome']);
+    assert.deepEqual(exposed, ['reportPdf', 'updates', 'titleBar', 'menu', 'menuClick', 'chrome', 'focusWindow']);
+    // focusWindow takes nothing from the page: it can only raise the app's own window.
+    assert.match(preload, /focusWindow: \(\) => ipcRenderer\.send\('k8board:focus'\),/);
     assert.doesNotMatch(preload, /require\('(fs|child_process|path|os)'\)|ipcRenderer\.(on|sendSync)\b/);
   });
 });

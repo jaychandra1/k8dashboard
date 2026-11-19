@@ -13,6 +13,8 @@
 const MENU_CHANNEL = 'k8board:menu';
 const MENU_CLICK_CHANNEL = 'k8board:menu-click';
 const CHROME_CHANNEL = 'k8board:chrome';
+/** The page asks for the window to come to the front (every platform). */
+const FOCUS_CHANNEL = 'k8board:focus';
 /** Height of the bar in px; client/src/App.css `.titlebar` uses the same. */
 const TITLE_BAR_HEIGHT = 36;
 const COLOR = /^#[0-9a-f]{6}$/i;
@@ -107,15 +109,48 @@ function overlayColors(value) {
 }
 
 /**
- * The page's side of the title bar. Only the app's own page is answered
- * (isAllowedSender), and only on a platform that has the bar.
+ * Bring the window in front of whatever is there: the browser, when a sign-in
+ * the user finished in it is over. What an app may do differs:
+ *   Windows ignores focus(), show() and moveTop() from an app that is not the
+ *   one in front (measured with another app's window in front: ours stayed
+ *   behind it). "Always on top" raises the window but leaves the keyboard with
+ *   the other app. Restoring a minimised window is what Windows honours: it
+ *   comes up in front and has the keyboard, in the state it was in (maximised
+ *   stays maximised). So a window that is behind is minimised and restored.
+ *   macOS brings an app forward from the background only when it "steals".
+ * Returns whether there was a window to raise.
  */
-function registerWindowChrome({ ipcMain, Menu, getWindow, isAllowedSender, platform = process.platform }) {
+function bringToFront(win, { app, platform = process.platform } = {}) {
+  if (!win || win.isDestroyed()) return false;
+  try {
+    if (!win.isVisible()) win.show();
+    if (win.isMinimized()) win.restore();
+    else if (platform === 'win32' && !win.isFocused()) {
+      win.minimize();
+      win.restore();
+    }
+    if (platform === 'darwin') app?.focus?.({ steal: true });
+    else if (platform !== 'win32') win.moveTop();
+    win.focus();
+    return true;
+  } catch {
+    return false; // the window is going away
+  }
+}
+
+/**
+ * The page's side of the window. Only the app's own page is answered
+ * (isAllowedSender); the title bar only on a platform that has it.
+ */
+function registerWindowChrome({ ipcMain, Menu, app, getWindow, isAllowedSender, platform = process.platform }) {
   const active = usesTitleBar(platform);
   const window = () => {
     const w = getWindow();
     return w && !w.isDestroyed() ? w : null;
   };
+  ipcMain.on(FOCUS_CHANNEL, (event) => {
+    if (isAllowedSender(event)) bringToFront(window(), { app, platform });
+  });
   ipcMain.handle(MENU_CHANNEL, (event) => {
     if (!active || !isAllowedSender(event)) return [];
     return describeMenu(Menu.getApplicationMenu());
@@ -140,6 +175,7 @@ module.exports = {
   MENU_CHANNEL,
   MENU_CLICK_CHANNEL,
   CHROME_CHANNEL,
+  FOCUS_CHANNEL,
   TITLE_BAR_HEIGHT,
   usesTitleBar,
   titleBarOptions,
@@ -148,5 +184,6 @@ module.exports = {
   findMenuItem,
   clickMenuItem,
   overlayColors,
+  bringToFront,
   registerWindowChrome,
 };

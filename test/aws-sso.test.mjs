@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+import vm from 'node:vm';
 import {
   normalizeStartUrl,
   sessionNameFor,
@@ -37,6 +38,9 @@ import {
   signOutSession,
   REGISTERED_REDIRECT_URI,
   resultPage,
+  startPage,
+  START_SCRIPT,
+  CLOSE_SCRIPT,
 } from '../lib/aws-sso.mjs';
 import { getSSOTokenFilepath } from '@smithy/shared-ini-file-loader';
 
@@ -146,16 +150,17 @@ describe('PKCE, authorize URL and the loopback callback', () => {
     );
   });
 
-  test('result page: after a successful sign-in it tries to close its tab, and only that script may run', async () => {
-    const { CLOSE_SCRIPT } = await import('../lib/aws-sso.mjs');
+  test('result page: it closes its window (the small one a script opened), and only that script may run', async () => {
     assert.match(CLOSE_SCRIPT, /window\.close\(\)/);
     const ok = resultPage(true);
     assert.equal(ok.split('<script>').length - 1, 1);
     assert.ok(ok.includes(`<script>${CLOSE_SCRIPT}</script>`));
-    // The text promises nothing a browser may refuse.
-    assert.match(ok, /You can close this tab\./);
-    // A failed sign-in stays open: the reason is on it.
-    assert.equal(resultPage(false, 'User denied').includes('<script'), false);
+    // The text promises nothing a browser may refuse (a tab that went through AWS's pages stays).
+    assert.match(ok, /You can close this window if it stays open\./);
+    // A failed sign-in closes the small window too; where it can't, the reason is on the page.
+    const failed = resultPage(false, 'User denied');
+    assert.ok(failed.includes(`<script>${CLOSE_SCRIPT}</script>`));
+    assert.match(failed, /User denied/);
 
     const cb = await startCallbackServer({ state: 'close-state', timeoutMs: 10_000 });
     await get(`${cb.redirectUri}?code=c&state=close-state`);
@@ -195,6 +200,221 @@ describe('PKCE, authorize URL and the loopback callback', () => {
     const cancelled = await startCallbackServer({ state: 's3' });
     cancelled.close();
     await assert.rejects(cancelled.result, (e) => e.code === 'cancelled');
+  });
+});
+
+// The browser closes only a window a script opened, or a tab that has shown
+// one page. So K8Board opens its own page, and that page opens AWS in a small
+// window: both can close when the sign-in is over.
+describe('the sign-in page (nothing is left open in the browser)', () => {
+  const AWS_URL = 'https://oidc.us-east-1.amazonaws.com/authorize?response_type=code&client_id=cid&state=st';
+  const withPage = (over = {}) =>
+    startCallbackServer({ state: 'st', timeoutMs: 10_000, authorizeUrl: (redirectUri) => `${AWS_URL}&redirect_uri=${encodeURIComponent(redirectUri)}`, ...over });
+  const getJson = async (url) => {
+    const r = await get(url);
+    return { ...r, json: JSON.parse(r.body) };
+  };
+  const statusOf = (cb) => cb.signInUrl.replace('/oauth/start/', '/oauth/status/');
+  const gone = (url) => assert.rejects(get(url), /ECONNREFUSED|socket hang up|ECONNRESET/);
+
+  test('it is served at an address only K8Board knows, and names AWS only in an attribute', async () => {
+    const cb = await withPage();
+    assert.match(cb.signInUrl, new RegExp(`^http://127\\.0\\.0\\.1:${cb.port}/oauth/start/[\\w-]{32}$`));
+    assert.equal(cb.authorizeUrl, `${AWS_URL}&redirect_uri=${encodeURIComponent(cb.redirectUri)}`);
+    // A guessed key, the bare path, another method: nothing.
+    for (const wrong of ['/oauth/start', '/oauth/start/', '/oauth/start/nope', `${new URL(cb.signInUrl).pathname}x`, '/oauth/status/nope'])
+      assert.equal((await get(`http://127.0.0.1:${cb.port}${wrong}`)).status, 404, wrong);
+
+    const page = await get(cb.signInUrl);
+    assert.equal(page.status, 200);
+    assert.equal(page.body, startPage({ authorizeUrl: cb.authorizeUrl, statusPath: new URL(statusOf(cb)).pathname }));
+    assert.ok(page.body.includes(`data-url="${cb.authorizeUrl.replace(/&/g, '&amp;')}"`));
+    assert.ok(page.body.includes('data-step="start"'));
+    // Nothing about the environment is shown: the visible text has no address in it.
+    const visible = page.body.replace(/<style>[\s\S]*?<\/style>|<script>[\s\S]*?<\/script>/g, '').replace(/<[^>]+>/g, ' ');
+    assert.doesNotMatch(visible, /amazonaws|https?:|127\.0\.0\.1|client_id/);
+    assert.match(visible, /Sign in to AWS[\s\S]*Continue to AWS/);
+    // One script, the fixed one, allowed by its hash; it may ask this server only.
+    assert.equal(page.body.split('<script>').length - 1, 1);
+    assert.ok(page.body.includes(`<script>${START_SCRIPT}</script>`));
+    const csp = page.headers['content-security-policy'];
+    assert.ok(csp.includes(`script-src 'sha256-${crypto.createHash('sha256').update(START_SCRIPT).digest('base64')}'`), csp);
+    assert.match(csp, /default-src 'none'/);
+    assert.match(csp, /connect-src 'self'/);
+    assert.doesNotMatch(csp, /script-src[^;]*unsafe/);
+    assert.equal(page.headers['cache-control'], 'no-store');
+    assert.equal(page.headers['referrer-policy'], 'no-referrer');
+    // No opener policy: the small window must stay "opened by a script".
+    assert.equal(page.headers['cross-origin-opener-policy'], undefined);
+    cb.close();
+    await gone(cb.signInUrl);
+  });
+
+  test('without an AWS address there is no sign-in page', async () => {
+    const cb = await startCallbackServer({ state: 'plain' });
+    assert.equal(cb.signInUrl, undefined);
+    assert.equal((await get(`http://127.0.0.1:${cb.port}/oauth/start/anything`)).status, 404);
+    cb.close();
+  });
+
+  test('approved: the page is told, and the server stays until both pages have what they need', async () => {
+    const cb = await withPage();
+    await get(cb.signInUrl); // the browser opened the sign-in page
+    const first = await getJson(statusOf(cb));
+    assert.deepEqual(first.json, { status: 'pending' });
+    assert.match(first.headers['content-type'], /application\/json/);
+    assert.equal(first.headers['cache-control'], 'no-store');
+
+    assert.equal((await get(`${cb.redirectUri}?code=the-code&state=st`)).status, 303);
+    assert.deepEqual(await cb.result, { code: 'the-code' });
+    cb.close(); // the app has its code: the pages still get theirs
+    // The small window lands on the result page…
+    const done = await get(`http://127.0.0.1:${cb.port}/oauth/complete`);
+    assert.match(done.body, /signed in to AWS/);
+    // …and the sign-in page has not asked yet: still listening.
+    await new Promise((r) => setTimeout(r, 60));
+    assert.deepEqual((await getJson(statusOf(cb))).json, { status: 'done' });
+    await new Promise((r) => setTimeout(r, 60));
+    await gone(statusOf(cb));
+  });
+
+  test('approved, the other way round: told first, then the result page', async () => {
+    const cb = await withPage();
+    await get(cb.signInUrl);
+    await get(`${cb.redirectUri}?code=c&state=st`);
+    assert.deepEqual((await getJson(statusOf(cb))).json, { status: 'done' });
+    await new Promise((r) => setTimeout(r, 60));
+    assert.equal((await get(`http://127.0.0.1:${cb.port}/oauth/complete`)).status, 200);
+    await new Promise((r) => setTimeout(r, 60));
+    await gone(cb.signInUrl);
+  });
+
+  test('denied on AWS: the page gets the reason; a sign-in page that went away is not waited for beyond the linger', async () => {
+    const cb = await withPage({ lingerMs: 150 });
+    await get(cb.signInUrl);
+    await get(`${cb.redirectUri}?error=access_denied&error_description=User%20denied%20the%20request&state=st`);
+    await assert.rejects(cb.result, (e) => e.code === 'denied');
+    assert.deepEqual((await getJson(statusOf(cb))).json, { status: 'failed', detail: 'User denied the request' });
+    // The result page was never fetched (the small window was closed): the linger ends it.
+    await new Promise((r) => setTimeout(r, 260));
+    await gone(statusOf(cb));
+  });
+
+  test('cancelled in K8Board: the server is gone, which is how the page knows', async () => {
+    const cb = await withPage();
+    await get(cb.signInUrl);
+    cb.close();
+    await assert.rejects(cb.result, (e) => e.code === 'cancelled');
+    await gone(statusOf(cb));
+  });
+
+  // The page's script, run against a stand-in page: what it opens, shows and closes.
+  function runPage({ popup = { closed: false, close() { this.closed = true; } }, statuses = [{ status: 'pending' }] } = {}) {
+    const attrs = { 'data-step': 'start', 'data-status': '/oauth/status/key' };
+    const clicks = {};
+    const texts = {};
+    const timers = [];
+    const calls = { open: [], assign: [], closed: 0, fetched: [] };
+    const els = {
+      go: { getAttribute: (n) => (n === 'data-url' ? AWS_URL : null), addEventListener: (t, fn) => { clicks.go = fn; } },
+      again: { addEventListener: (t, fn) => { clicks.again = fn; } },
+      why: { set textContent(v) { texts.why = v; } },
+    };
+    const queue = [...statuses];
+    vm.runInNewContext(START_SCRIPT, {
+      window: {
+        screenX: 100, screenY: 50, outerWidth: 1280, outerHeight: 800,
+        open: (...a) => { calls.open.push(a); return popup; },
+        close: () => { calls.closed++; },
+      },
+      document: { body: { getAttribute: (n) => attrs[n], setAttribute: (n, v) => { attrs[n] = v; } }, getElementById: (id) => els[id] },
+      location: { assign: (u) => calls.assign.push(u) },
+      fetch: async (u, o) => {
+        calls.fetched.push([u, o]);
+        const next = queue.length > 1 ? queue.shift() : queue[0]; // the last one repeats
+        if (next === 'down') throw new TypeError('Failed to fetch');
+        return { ok: true, json: async () => next };
+      },
+      setTimeout: (fn, ms) => { timers.push({ fn, ms }); },
+    });
+    const settle = async () => { for (let i = 0; i < 4; i++) await new Promise((r) => setImmediate(r)); };
+    /** Let the page react, then run the timers it has set; returns their delays. */
+    const tick = async () => {
+      await settle();
+      const due = timers.splice(0);
+      for (const t of due) t.fn();
+      await settle();
+      return due.map((t) => t.ms);
+    };
+    return { attrs, texts, calls, clicks, popup, timers, tick, settle };
+  }
+
+  test('script: the click opens AWS in a small window, centred on the browser; the page then waits', async () => {
+    const p = runPage();
+    await p.settle();
+    assert.deepEqual(p.calls.open, [], 'nothing opens before the click');
+    assert.equal(p.calls.fetched[0][0], '/oauth/status/key');
+    assert.equal(p.calls.fetched[0][1].cache, 'no-store');
+    p.clicks.go();
+    assert.deepEqual(p.calls.open, [[AWS_URL, 'k8board-aws-sign-in', 'popup,width=520,height=720,left=480,top=90']]);
+    assert.equal(p.attrs['data-step'], 'waiting');
+    assert.deepEqual(p.calls.assign, []);
+    // "Open the AWS window again" reuses the same window name.
+    p.clicks.again();
+    assert.equal(p.calls.open.length, 2);
+    assert.equal(p.calls.open[1][1], 'k8board-aws-sign-in');
+    assert.equal(p.calls.closed, 0);
+  });
+
+  test('script: a browser that blocks the window gets AWS in this tab instead', async () => {
+    const p = runPage({ popup: null });
+    p.clicks.go();
+    assert.deepEqual(p.calls.assign, [AWS_URL]);
+    assert.equal(p.attrs['data-step'], 'start');
+  });
+
+  test('script: approved → says so, then closes the small window and this tab', async () => {
+    const p = runPage({ statuses: [{ status: 'pending' }, { status: 'pending' }, { status: 'done' }] });
+    p.clicks.go();
+    assert.deepEqual(await p.tick(), [700]);
+    assert.deepEqual(await p.tick(), [700]);
+    assert.equal(p.attrs['data-step'], 'done');
+    // The small window is given time to show its own page and close itself.
+    assert.equal(p.popup.closed, false);
+    assert.equal(p.calls.closed, 0);
+    assert.deepEqual(await p.tick(), [1200]);
+    assert.equal(p.popup.closed, true);
+    assert.equal(p.calls.closed, 1);
+    assert.equal(p.timers.length, 0, 'no more polling');
+    p.clicks.go();
+    assert.equal(p.calls.open.length, 1, 'over: nothing opens again');
+  });
+
+  test('script: denied → shows the reason (as text), then closes', async () => {
+    const p = runPage({ statuses: [{ status: 'failed', detail: '<b>User denied</b> the request' }] });
+    await p.settle();
+    assert.equal(p.attrs['data-step'], 'failed');
+    assert.equal(p.texts.why, '<b>User denied</b> the request');
+    assert.doesNotMatch(START_SCRIPT, /innerHTML|document\.write|eval\(/);
+    assert.deepEqual(await p.tick(), [4000]);
+    assert.equal(p.calls.closed, 1);
+  });
+
+  test('script: the server gone (cancelled or timed out in K8Board) → the AWS window is closed at once, then this tab', async () => {
+    const p = runPage({ statuses: ['down'] });
+    p.clicks.go();
+    await p.settle(); // the first request failed: one (or two) is not the end
+    assert.equal(p.attrs['data-step'], 'waiting');
+    assert.equal(p.popup.closed, false);
+    assert.deepEqual(await p.tick(), [700]); // the second
+    assert.equal(p.attrs['data-step'], 'waiting');
+    assert.deepEqual(await p.tick(), [700]); // the third: it is over
+    assert.equal(p.attrs['data-step'], 'ended');
+    assert.equal(p.popup.closed, true);
+    assert.equal(p.calls.closed, 0);
+    assert.deepEqual(await p.tick(), [4000]);
+    assert.equal(p.calls.closed, 1);
+    assert.equal(p.calls.fetched.length, 3);
   });
 });
 
@@ -250,6 +470,10 @@ describe('sign-in manager', () => {
     });
     const auth = new URL(snap.authUrl);
     const redirect = auth.searchParams.get('redirect_uri');
+    // What the app opens in the browser is K8Board's own sign-in page, on the
+    // callback's port; AWS's address is what that page opens.
+    assert.match(snap.signInUrl, new RegExp(`^http://127\\.0\\.0\\.1:${new URL(redirect).port}/oauth/start/[\\w-]{32}$`));
+    assert.ok((await get(snap.signInUrl)).body.includes(`data-url="${snap.authUrl.replace(/&/g, '&amp;')}"`));
     await get(`${redirect}?code=auth-code&state=${encodeURIComponent(auth.searchParams.get('state'))}`);
     for (let i = 0; i < 50 && login.snapshot().status === 'pending'; i++)
       await new Promise((r) => setTimeout(r, 10));

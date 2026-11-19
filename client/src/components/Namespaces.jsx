@@ -8,10 +8,12 @@ import EmptyState from './ui/EmptyState';
 import ErrorState from './ui/ErrorState';
 import useRequest from '../hooks/useRequest';
 import useDocumentTitle from '../hooks/useDocumentTitle';
-import { getJson, p } from '../lib/api';
+import { getJson, p, errorMessage } from '../lib/api';
 import { formatAge, pluralize } from '../lib/format';
 import { statusTone } from '../lib/status';
 import { XLink, nsLink, navigateVia } from './resources/links';
+import { useToast } from './Toast';
+import { useNamespaceAccess, AddNamespaceForm, RESTRICTED_HINT } from './shell/NamespaceAccess';
 
 export default function Namespaces({ onSelectNamespace, refreshSignal = 0, onNavigate }) {
   useDocumentTitle('Namespaces');
@@ -20,7 +22,24 @@ export default function Namespaces({ onSelectNamespace, refreshSignal = 0, onNav
     ({ signal }) => getJson(p('api', 'namespaces'), { signal }),
     { deps: [refreshSignal], dedupeKey: 'namespaces:list' },
   );
-  const items = useMemo(() => data?.details || (data?.namespaces || []).map((n) => ({ name: n, status: 'Active' })), [data]);
+  // A user who may not list namespaces sees the ones they added (and can add
+  // or remove them here): that list lives in the shell, not in this request.
+  const access = useNamespaceAccess();
+  const toast = useToast();
+  const restricted = access.restricted || data?.restricted === true;
+  const items = useMemo(
+    () => (restricted
+      ? access.namespaces.map((n) => ({ name: n, status: 'Active' }))
+      : data?.details || (data?.namespaces || []).map((n) => ({ name: n, status: 'Active' }))),
+    [data, restricted, access.namespaces],
+  );
+  const removeFromList = restricted && access.remove
+    ? (ns) => [{
+      label: 'Remove from my namespaces',
+      icon: 'delete',
+      onSelect: () => access.remove(ns.name).catch((e) => toast.error(errorMessage(e, 'The namespace could not be removed.'), { title: 'Namespaces' })),
+    }]
+    : undefined;
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return needle ? items.filter((n) => n.name.toLowerCase().includes(needle)) : items;
@@ -82,8 +101,16 @@ export default function Namespaces({ onSelectNamespace, refreshSignal = 0, onNav
         </div>
       </div>
 
+      {restricted && (
+        <div className="ns-restricted-bar">
+          <Icon name="shield" size={15} />
+          <span>{RESTRICTED_HINT}</span>
+          <AddNamespaceForm compact />
+        </div>
+      )}
+
       <div className="resource-table-wrapper">
-        {error && items.length === 0 ? (
+        {error && items.length === 0 && !restricted ? (
           <ErrorState error={error} title="Couldn't load namespaces" onRetry={refetch} busy={refetching} />
         ) : (
           <DataTable
@@ -93,10 +120,11 @@ export default function Namespaces({ onSelectNamespace, refreshSignal = 0, onNav
             rowKey={(ns) => ns.name}
             rowName={(ns) => ns.name}
             onRowActivate={select}
+            rowActions={removeFromList}
             getRowTone={(ns) => (statusTone('namespace', ns.status) === 'bad' ? 'bad' : undefined)}
             loading={loading}
             refetching={refetching}
-            emptyState={<EmptyState icon="namespace" title="No namespaces found" hint={search ? `Nothing matches “${search}”.` : 'The cluster reported no namespaces.'} />}
+            emptyState={<EmptyState icon="namespace" title={restricted && !search ? 'No namespaces added yet' : 'No namespaces found'} hint={search ? `Nothing matches “${search}”.` : restricted ? 'Add the namespace you were given access to, above.' : 'The cluster reported no namespaces.'} />}
             initialSort={{ key: 'name', dir: 'asc' }}
             storageKey="namespaces"
           />

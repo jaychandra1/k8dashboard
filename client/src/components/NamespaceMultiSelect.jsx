@@ -2,6 +2,7 @@ import { afterPaint } from '../lib/a11y';
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import useClickOutside from '../hooks/useClickOutside';
 import Icon from './Icons';
+import { useNamespaceAccess, AddNamespaceForm, RESTRICTED_HINT } from './shell/NamespaceAccess';
 
 const ALL = 'all';
 
@@ -15,6 +16,10 @@ const ALL = 'all';
  * Trigger: `<button aria-haspopup="listbox" aria-expanded>`; options are
  * `role="option" aria-selected` with checkbox visuals. Keyboard: ↑/↓/Home/End
  * move, Space/Enter toggle, Escape closes, typing jumps to a namespace.
+ *
+ * A user who may not list namespaces (shell/NamespaceAccess: `restricted`)
+ * gets, under the list, a field to add theirs by name; "all" then means all
+ * the namespaces they added.
  */
 export default function NamespaceMultiSelect({ namespaces = [], selected = [ALL], onChange, label = 'Namespaces' }) {
   const id = useId();
@@ -24,6 +29,7 @@ export default function NamespaceMultiSelect({ namespaces = [], selected = [ALL]
   const listRef = useRef(null);
   const triggerRef = useRef(null);
   const typeahead = useRef({ buf: '', t: null });
+  const { restricted } = useNamespaceAccess();
 
   const realNamespaces = useMemo(() => namespaces.filter((ns) => ns && ns !== ALL), [namespaces]);
   const isAllSelected = selected.includes(ALL) || selected.length === 0;
@@ -32,11 +38,16 @@ export default function NamespaceMultiSelect({ namespaces = [], selected = [ALL]
   const close = useCallback(() => setOpen(false), []);
   useClickOutside(containerRef, close, open);
 
+  // With nothing to choose yet, a restricted user lands in the "add" field instead.
+  const nothingYet = restricted && realNamespaces.length === 0;
   useEffect(() => {
     if (!open) return undefined;
     setActive(0);
+    if (nothingYet) return undefined;
     const cancelRaf = afterPaint(() => listRef.current?.focus({ preventScroll: true }));
     return () => cancelRaf();
+    // Only when it opens: adding the first namespace must not move the focus.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   useEffect(() => {
@@ -62,8 +73,12 @@ export default function NamespaceMultiSelect({ namespaces = [], selected = [ALL]
     onChange(next.length === 0 ? [ALL] : next);
   };
 
+  const allLabel = restricted ? 'All my namespaces' : 'All namespaces';
   const summaryLabel = () => {
-    if (isAllSelected) return 'All namespaces';
+    if (nothingYet) return 'Add a namespace';
+    // One namespace is all there is: say its name.
+    if (isAllSelected && restricted && realNamespaces.length === 1) return realNamespaces[0];
+    if (isAllSelected) return allLabel;
     if (selected.length === 1) return selected[0];
     return `${selected.length} namespaces`;
   };
@@ -82,7 +97,8 @@ export default function NamespaceMultiSelect({ namespaces = [], selected = [ALL]
       case 'End': e.preventDefault(); setActive(options.length - 1); break;
       case ' ': case 'Enter': e.preventDefault(); toggleAt(active); break;
       case 'Escape': e.preventDefault(); e.stopPropagation(); closeAndFocus(); break;
-      case 'Tab': setOpen(false); break;
+      // Tab leaves the list: to the "add" field when there is one.
+      case 'Tab': if (!restricted || e.shiftKey) setOpen(false); break;
       default: {
         if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
           const ta = typeahead.current;
@@ -91,7 +107,7 @@ export default function NamespaceMultiSelect({ namespaces = [], selected = [ALL]
           ta.t = setTimeout(() => { ta.buf = ''; }, 500);
           const start = active + 1;
           const order = [...options.slice(start), ...options.slice(0, start)];
-          const hit = order.find((o) => (o === ALL ? 'all namespaces' : o).toLowerCase().startsWith(ta.buf));
+          const hit = order.find((o) => (o === ALL ? allLabel : o).toLowerCase().startsWith(ta.buf));
           if (hit) setActive(options.indexOf(hit));
         }
       }
@@ -140,10 +156,11 @@ export default function NamespaceMultiSelect({ namespaces = [], selected = [ALL]
       </div>
 
       {open && (
+        <div className="namespace-multi-select-dropdown" data-restricted={restricted || undefined}>
         <div
           ref={listRef}
           id={listId}
-          className="namespace-multi-select-dropdown"
+          className="namespace-options"
           role="listbox"
           aria-multiselectable="true"
           aria-label={label}
@@ -164,10 +181,24 @@ export default function NamespaceMultiSelect({ namespaces = [], selected = [ALL]
                 onClick={() => toggleAt(i)}
               >
                 <input type="checkbox" checked={isChecked(i)} readOnly tabIndex={-1} aria-hidden="true" />
-                {i === 0 ? 'All namespaces' : opt}
+                {i === 0 ? allLabel : opt}
               </div>
             </React.Fragment>
           ))}
+        </div>
+        {restricted && (
+          <div
+            className="namespace-add-panel"
+            onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeAndFocus(); } }}
+          >
+            <p className="namespace-add-hint">{RESTRICTED_HINT}</p>
+            <AddNamespaceForm
+              compact
+              autoFocus={nothingYet}
+              onAdded={(ns) => onChange(isAllSelected ? [ns] : Array.from(new Set([...selected, ns])))}
+            />
+          </div>
+        )}
         </div>
       )}
     </div>

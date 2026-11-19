@@ -54,6 +54,7 @@ import { localShellAllowed, pinnedKubeconfig, helmShellEnv, helmShellCommand, he
 import { childEnv, holdAppSecrets } from './lib/child-env.mjs';
 import { scrubResponseForAgent } from './lib/agent-scrub.mjs';
 import { endpointKind, networkFailure, shortReason, unreachableMessage } from './lib/cluster-network.mjs';
+import { isForbidden, namespaceAccess, knownNamespaces, withKnownNamespace, withoutKnownNamespace, MAX_KNOWN_NAMESPACES } from './lib/kube-access.mjs';
 import { providerOfServer } from './lib/cloud-provider.mjs';
 import { formatResource } from './lib/resource-format.mjs';
 import { capacityTotals, nodeUsage } from './lib/capacity.mjs';
@@ -319,7 +320,7 @@ const agentView = (req, resource, kind) => {
 // terminals, app settings and updates.
 const UI_ONLY_PREFIXES = [
   '/api/mcp', '/api/config/load', '/api/config/reload', '/api/config/contexts', '/api/config/disconnect', '/api/azure', '/api/aws', '/api/gke', '/api/assistant',
-  '/api/security/scan', '/api/ai-agents/launch-external', '/api/app', '/api/settings',
+  '/api/security/scan', '/api/ai-agents/launch-external', '/api/app', '/api/settings', '/api/namespaces/known',
 ];
 app.use(UI_ONLY_PREFIXES, (req, res, next) => (isMcpSource(req)
   ? res.status(403).json({ error: 'This action is not available to MCP clients', code: 'mcp_forbidden' })
@@ -953,6 +954,7 @@ app.post('/api/config/contexts/remove', async (req, res) => {
     }
 
     forgetRecent(context);
+    writeSettings({ knownNamespaces: withoutKnownNamespace(readSettings(), context) });
 
     // The live config: reload, and keep (or move) the selected cluster.
     if (staying.length === 0) {
@@ -1960,16 +1962,25 @@ app.get('/api/namespaces', async (req, res) => {
     }
 
     const api = kubeConfig.makeApiClient(k8s.CoreV1Api);
-    const response = await api.listNamespace();
-    const items = response.items;
-    const namespaces = items.map(ns => ns.metadata.name);
-    const details = items.map(ns => ({
-      name: ns.metadata.name,
-      status: ns.status?.phase || 'Active',
-      createdAt: ns.metadata.creationTimestamp,
-      labels: ns.metadata.labels || {}
-    }));
-    const result = { namespaces, details };
+    let result;
+    try {
+      const response = await api.listNamespace();
+      const items = response.items;
+      const namespaces = items.map(ns => ns.metadata.name);
+      const details = items.map(ns => ({
+        name: ns.metadata.name,
+        status: ns.status?.phase || 'Active',
+        createdAt: ns.metadata.creationTimestamp,
+        labels: ns.metadata.labels || {}
+      }));
+      result = { namespaces, details };
+    } catch (error) {
+      if (!isForbidden(error)) throw error;
+      // Not an error: this user was given a Role in a namespace or two and may
+      // not list namespaces. `restricted` tells the UI to let them name theirs.
+      const namespaces = namedNamespaces();
+      result = { namespaces, details: namespaces.map((name) => ({ name, status: 'Active', createdAt: null, labels: {} })), restricted: true };
+    }
 
     setCache(cacheKey, result, CACHE_TTL.namespaces);
     res.set('X-Cache', 'MISS');
@@ -1977,6 +1988,58 @@ app.get('/api/namespaces', async (req, res) => {
   } catch (error) {
     fail(res, error);
   }
+});
+
+// The namespaces a user who may not list them works in (lib/kube-access.mjs):
+// the ones they named for this cluster, and the one its kubeconfig context names.
+const kubeconfigNamespace = () => { try { return kubeConfig?.getContextObject(currentContext)?.namespace || null; } catch { return null; } };
+const namedNamespaces = () => knownNamespaces(readSettings(), currentContext, kubeconfigNamespace());
+const forgetNamespaceList = () => cache.invalidate((prefix) => prefix !== 'namespaces' && prefix !== 'cluster-summary');
+
+// Add one by name. No API lists "the namespaces I may use", so the name is
+// checked instead: the cluster is asked what this user may do there
+// (SelfSubjectRulesReview, which every signed-in user may ask). Nothing at all
+// → refused, so a typo doesn't end up in the list. When the cluster can't tell
+// (a webhook authoriser, or the review itself fails) the name is accepted.
+app.post('/api/namespaces/known', async (req, res) => {
+  try {
+    if (!kubeConfig || !currentContext) return res.status(400).json({ error: 'No kubeconfig loaded' });
+    const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+    if (!isDnsLabel(name)) return bad(res, 'name', 'A namespace name has lowercase letters, digits and "-" only, e.g. qa-env.');
+    const context = currentContext;
+    if (namedNamespaces().length >= MAX_KNOWN_NAMESPACES && !namedNamespaces().includes(name))
+      return res.status(409).json({ error: `You can keep up to ${MAX_KNOWN_NAMESPACES} namespaces for one cluster. Remove one first.`, code: 'too_many' });
+
+    let access = null;
+    try {
+      const review = await kubeConfig.makeApiClient(k8s.AuthorizationV1Api)
+        .createSelfSubjectRulesReview({ body: { apiVersion: 'authorization.k8s.io/v1', kind: 'SelfSubjectRulesReview', spec: { namespace: name } } }, requestOptions(8000));
+      access = namespaceAccess(review?.status);
+    } catch (error) {
+      if (needsClusterSignIn(error)) throw error;
+      log.info('namespace access could not be checked', { reason: shortReason(error) });
+    }
+    if (context !== currentContext) return res.status(409).json({ error: 'The cluster changed while this was checked. Try again.', code: 'context_changed' });
+    if (access && !access.any && !access.incomplete) {
+      return res.status(403).json({
+        error: `You have no access to a namespace named "${name}" on this cluster. Check the name, or ask your cluster administrator.`,
+        code: 'no_access', field: 'name',
+      });
+    }
+    writeSettings({ knownNamespaces: withKnownNamespace(readSettings(), context, name) });
+    forgetNamespaceList();
+    res.json({ namespaces: namedNamespaces(), added: name, verified: !!access?.any, canList: access?.list || [] });
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+app.delete('/api/namespaces/known/:name', (req, res) => {
+  if (!kubeConfig || !currentContext) return res.status(400).json({ error: 'No kubeconfig loaded' });
+  if (!isDnsLabel(req.params.name)) return bad(res, 'name');
+  writeSettings({ knownNamespaces: withoutKnownNamespace(readSettings(), currentContext, req.params.name) });
+  forgetNamespaceList();
+  res.json({ namespaces: namedNamespaces(), removed: req.params.name });
 });
 
 // Fan-out helper: run several named list calls in parallel. A subset failing
@@ -1989,7 +2052,7 @@ const fanOut = async (calls) => {
   settled.forEach((r, i) => {
     const key = entries[i][0];
     if (r.status === 'fulfilled') items[key] = r.value?.items || [];
-    else { items[key] = []; errors.push({ kind: key, error: shortReason(r.reason) }); }
+    else { items[key] = []; errors.push({ kind: key, error: shortReason(r.reason), ...(isForbidden(r.reason) ? { forbidden: true } : {}) }); }
   });
   if (errors.length && errors.length === entries.length) throw settled[0].reason;
   return { items, errors };
@@ -4226,7 +4289,7 @@ app.get('/api/cluster/summary', async (req, res) => {
       const raw = await fetchNodes();
       raw.forEach(reserved.addNode);
       nodes = raw.map(formatNode);
-    } catch (e) { errors.push({ kind: 'nodes', error: shortReason(e) }); }
+    } catch (e) { errors.push({ kind: 'nodes', error: shortReason(e), forbidden: isForbidden(e) }); }
     const nodeSummary = {
       total: nodes.length,
       ready: nodes.filter(n => n.status === 'Ready').length,
@@ -4274,15 +4337,25 @@ app.get('/api/cluster/summary', async (req, res) => {
         _continue = resp.metadata?._continue;
         if (!_continue) break;
       }
-    } catch (e) { errors.push({ kind: 'pods', error: shortReason(e) }); }
+    } catch (e) { errors.push({ kind: 'pods', error: shortReason(e), forbidden: isForbidden(e) }); }
 
     // Namespace count
     let namespaceCount = 0;
     try {
       const resp = await kubeConfig.makeApiClient(k8s.CoreV1Api).listNamespace({}, requestOptions(8000));
       namespaceCount = (resp.items || []).length;
-    } catch (e) { errors.push({ kind: 'namespaces', error: shortReason(e) }); }
+    } catch (e) { errors.push({ kind: 'namespaces', error: shortReason(e), forbidden: isForbidden(e) }); }
 
+    // Neither the nodes nor the cluster's pods are this user's to see (a Role
+    // in a namespace or two; they may or may not list namespaces): that is not
+    // a failure. The Dashboard shows where they can work instead of a summary.
+    const notAllowed = (kind) => errors.some((e) => e.kind === kind && e.forbidden);
+    if (notAllowed('nodes') && notAllowed('pods')) {
+      const limited = { currentContext, serverVersion, platform, limited: true };
+      setCache(cacheKey, limited, 5000);
+      res.set('X-Cache', 'MISS');
+      return res.json(limited);
+    }
     // Everything failed → the cluster is unreachable/unauthorized: report it.
     if (errors.length === 3) return res.status(502).json({ error: errors[0].error, code: 'upstream_error', errors });
 

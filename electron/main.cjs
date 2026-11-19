@@ -754,7 +754,7 @@ if (!gotLock) {
 
     Menu.setApplicationMenu(buildMenu());
     registerReportPdf({ ipcMain, BrowserWindow, session, isAllowedSender: isAppPage });
-    registerWindowChrome({ ipcMain, Menu, getWindow: () => mainWindow, isAllowedSender: isAppPage });
+    registerWindowChrome({ ipcMain, Menu, app, getWindow: () => mainWindow, isAllowedSender: isAppPage });
     boot();
 
     app.on('activate', () => {
