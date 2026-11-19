@@ -6,10 +6,10 @@
 // Each definition is a <DataTable> column; `render(row, index, ctx)` receives
 // the view context (metrics map, navigation) as a third argument.
 //
-// Every column names its width: the lists use <DataTable fixedColumns>, so a
-// column is exactly that wide whatever the rows hold and the table doesn't
-// move as rows scroll or sort into view. A width covers the column's header
-// (HEADER_ROOM below is checked by columns.test.jsx) and its usual values;
+// Every column names its width: in a <DataTable> a column is exactly that
+// wide whatever the rows hold, so the table doesn't move as rows scroll or
+// sort into view. A width covers the column's header (HEADER_ROOM, in
+// ui/tableColumns.js, is checked by columns.test.jsx) and its usual values;
 // longer values are cut with an ellipsis and shown in the cell's tooltip.
 // The name takes spare room when a name needs it (width → maxWidth, nameRoom);
 // the last column takes the rest.
@@ -19,14 +19,11 @@ import Tooltip from '../ui/Tooltip';
 import { formatAge, formatAgeSeconds, fmtCpu, fmtMem } from '../../lib/format';
 import { statusTone } from '../../lib/status';
 import { XLink, nsLink, nodeLink } from './links';
+import { HEADER_ROOM, nameRoom } from '../ui/tableColumns';
 
-/** The least a sortable column needs for its header: padding, the label in capitals, the sort arrow. */
-export const HEADER_ROOM = (label) => 48 + Math.ceil(String(label).length * 8.5);
+export { HEADER_ROOM, nameRoom };
 
 const ageCol = { key: 'age', header: 'Age', sortable: true, accessor: (r) => (r.createdAt ? Date.parse(r.createdAt) : null), render: (r) => formatAge(r.createdAt), align: 'right', mono: true, width: 80 };
-
-/** The room the longest name needs, in px: its text (about 6.6px a character), the icon and the cell padding. */
-export const nameRoom = (rows) => 56 + Math.ceil(6.6 * rows.reduce((n, r) => Math.max(n, r?.name?.length || 0), 0));
 
 const nameCol = {
   // 300px shows a 36-character name in full. When the list has longer names and

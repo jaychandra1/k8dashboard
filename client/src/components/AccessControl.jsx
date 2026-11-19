@@ -3,6 +3,7 @@ import Icon from './Icons';
 import ResourceDrawer from './ResourceDrawer';
 import YamlViewer from './YamlViewer';
 import DataTable from './ui/DataTable';
+import { nameRoom } from './ui/tableColumns';
 import SearchBox from './ui/SearchBox';
 import Button from './ui/Button';
 import BottomPanel, { PanelFullscreenToggle } from './ui/BottomPanel';
@@ -50,7 +51,7 @@ export default function AccessControl({ refreshSignal = 0, onNavigate }) {
 
   const ALL_COLUMNS = useMemo(() => ({
     name: {
-      key: 'name', header: 'Name', sortable: true, ellipsis: true, width: 300,
+      key: 'name', header: 'Name', sortable: true, ellipsis: true, width: 300, maxWidth: 460, fit: nameRoom,
       render: (r) => <span className="resource-name-cell"><Icon name="accessControl" size={15} className="rn-icon" /><span className="rn-text">{r.name}</span></span>,
       title: (r) => r.name,
     },
@@ -61,11 +62,11 @@ export default function AccessControl({ refreshSignal = 0, onNavigate }) {
         : <span className="drawer-dim">cluster</span>),
       title: (r) => r.namespace,
     },
-    secrets: { key: 'secrets', header: 'Secrets', sortable: true, align: 'right', mono: true, width: 90, accessor: (r) => r.secrets ?? 0, render: (r) => r.secrets ?? 0 },
-    rules: { key: 'rules', header: 'Rules', sortable: true, align: 'right', mono: true, width: 80, accessor: (r) => r.rules ?? 0, render: (r) => r.rules ?? 0 },
-    subjects: { key: 'subjects', header: 'Subjects', sortable: true, align: 'right', mono: true, width: 90, accessor: (r) => r.subjects ?? 0, render: (r) => r.subjects ?? 0 },
-    roleRef: { key: 'roleRef', header: 'Role', sortable: true, ellipsis: true, width: 220, render: (r) => r.roleRef || '—', title: (r) => r.roleRef },
-    age: { key: 'age', header: 'Age', sortable: true, align: 'right', mono: true, width: 80, accessor: (r) => (r.createdAt ? Date.parse(r.createdAt) : null), render: (r) => formatAge(r.createdAt) },
+    secrets: { key: 'secrets', header: 'Secrets', sortable: true, align: 'right', mono: true, width: 108, accessor: (r) => r.secrets ?? 0, render: (r) => r.secrets ?? 0 },
+    rules: { key: 'rules', header: 'Rules', sortable: true, align: 'right', mono: true, width: 92, accessor: (r) => r.rules ?? 0, render: (r) => r.rules ?? 0 },
+    subjects: { key: 'subjects', header: 'Subjects', sortable: true, align: 'right', mono: true, width: 116, accessor: (r) => r.subjects ?? 0, render: (r) => r.subjects ?? 0 },
+    roleRef: { key: 'roleRef', header: 'Role', sortable: true, ellipsis: true, width: 240, render: (r) => r.roleRef || '—', title: (r) => r.roleRef },
+    age: { key: 'age', header: 'Age', sortable: true, align: 'right', mono: true, width: 80, fill: true, accessor: (r) => (r.createdAt ? Date.parse(r.createdAt) : null), render: (r) => formatAge(r.createdAt) },
   }), [onNavigate]);
   const columns = useMemo(() => active.cols.map((c) => ALL_COLUMNS[c]), [active, ALL_COLUMNS]);
 

@@ -96,13 +96,13 @@ contexts:
     assert.equal(del.status, 403);
   });
 
-  test('UI-only routes refuse the MCP token: MCP settings, kubeconfig, cloud, assistant, updates, settings', async () => {
+  test('UI-only routes refuse the MCP token: MCP settings, kubeconfig, cloud, assistant, updates', async () => {
     const checks = [
       ['GET', '/api/mcp/info'], ['POST', '/api/mcp/config', { allowWrite: true }], ['POST', '/api/mcp/token'],
       ['POST', '/api/config/load', { path: '/etc/passwd' }], ['POST', '/api/config/reload'],
       ['GET', '/api/aws/profiles'], ['POST', '/api/azure/login'], ['GET', '/api/assistant/status'],
       ['POST', '/api/security/scan'], ['POST', '/api/ai-agents/launch-external', { agentId: 'claude' }],
-      ['GET', '/api/app/update'], ['GET', '/api/settings/pins'],
+      ['GET', '/api/app/update'], ['GET', '/api/app/release-notes'],
     ];
     for (const [method, p, body] of checks) {
       const r = method === 'GET' ? await as(mcpToken, p) : await post(mcpToken, p, body);
@@ -110,7 +110,7 @@ contexts:
       assert.equal((await r.json()).code, 'mcp_forbidden', `${method} ${p}`);
     }
     // …while the UI token still reaches them.
-    assert.equal((await as(TOKEN, '/api/settings/pins')).status, 200);
+    assert.equal((await as(TOKEN, '/api/app/update')).status, 200);
   });
 
   test('the MCP token never opens a terminal', async () => {

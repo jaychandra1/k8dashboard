@@ -16,13 +16,13 @@ const contextsInfo = [
 const recent = [{ name: 'dev-env-cluster', at: Date.now() - 2 * 3600e3 }, { name: 'tr-prod-cashierbackend', at: Date.now() - 26 * 3600e3 }];
 
 const setup = (props = {}) => {
-  const h = { onConnect: vi.fn(), onTogglePin: vi.fn(), onRemove: vi.fn(), onAddAws: vi.fn(), onAddAzure: vi.fn(), onAddLocal: vi.fn(), onOpenPreferences: vi.fn(), onOpenDashboard: vi.fn(), onDisconnect: vi.fn() };
-  render(<Home contexts={contexts} contextsInfo={contextsInfo} lastConnected="dev-env-cluster" recent={recent} pins={['tr-prod-cashierbackend']} {...h} {...props} />);
+  const h = { onConnect: vi.fn(), onRemove: vi.fn(), onAddAws: vi.fn(), onAddAzure: vi.fn(), onAddLocal: vi.fn(), onOpenPreferences: vi.fn(), onOpenDashboard: vi.fn(), onDisconnect: vi.fn() };
+  render(<Home contexts={contexts} contextsInfo={contextsInfo} lastConnected="dev-env-cluster" recent={recent} {...h} {...props} />);
   return { ...h, user: userEvent.setup() };
 };
 
 describe('Home', () => {
-  it('welcomes back, lists every cluster (pinned, recent, then by name) and tags the last connected one in the list', async () => {
+  it('welcomes back, lists every cluster (most recently used first, then by name) and tags the last connected one in the list', async () => {
     const { user, onConnect } = setup();
     expect(screen.getByRole('heading', { name: 'Welcome back' })).toBeInTheDocument();
     expect(screen.getByText('Choose a cluster to connect. Nothing is contacted until you do.')).toBeInTheDocument();
@@ -31,8 +31,8 @@ describe('Home', () => {
     expect(screen.queryByRole('region', { name: 'Last connected' })).toBeNull();
     const list = screen.getByRole('list', { name: 'Clusters in your kubeconfig' });
     const rows = within(list).getAllByRole('listitem');
-    expect(rows.map((r) => r.querySelector('.home-row-name').textContent)).toEqual(['tr-prod-cashierbackend', 'dev-env-cluster', 'kind-local', 'pixdora-tech']);
-    const last = rows[1];
+    expect(rows.map((r) => r.querySelector('.home-row-name').textContent)).toEqual(['dev-env-cluster', 'tr-prod-cashierbackend', 'kind-local', 'pixdora-tech']);
+    const last = rows[0];
     expect(last).toHaveTextContent('Recently connected');
     expect(last).toHaveTextContent('AWS EKS · last used 2h ago');
     expect(rows.filter((r) => /Recently connected/.test(r.textContent))).toHaveLength(1);
@@ -59,13 +59,12 @@ describe('Home', () => {
     expect(row('kind-local')).toHaveTextContent('Local');
   });
 
-  it('search, pin and remove', async () => {
-    const { user, onTogglePin, onRemove } = setup();
+  it('search and remove; there is no pinning', async () => {
+    const { user, onRemove } = setup();
+    expect(screen.queryByRole('button', { name: /pin/i })).toBeNull();
     await user.type(screen.getByRole('searchbox', { name: 'Search clusters' }), 'pix');
     const list = screen.getByRole('list', { name: 'Clusters in your kubeconfig' });
     expect(within(list).getAllByRole('listitem')).toHaveLength(1);
-    await user.click(within(list).getByRole('button', { name: 'Pin pixdora-tech' }));
-    expect(onTogglePin).toHaveBeenCalledWith('pixdora-tech');
     await user.click(within(list).getByRole('button', { name: 'Remove pixdora-tech' }));
     expect(onRemove).toHaveBeenCalledWith('pixdora-tech');
     await user.clear(screen.getByRole('searchbox', { name: 'Search clusters' }));
@@ -102,7 +101,8 @@ describe('Home', () => {
   });
 
   it('pure helpers', () => {
-    expect(orderClusters(['b', 'a', 'c'], { pins: ['c'], recent: [{ name: 'b', at: 1 }] })).toEqual(['c', 'b', 'a']);
+    expect(orderClusters(['b', 'a', 'c'], { recent: [{ name: 'c', at: 2 }, { name: 'b', at: 1 }] })).toEqual(['c', 'b', 'a']);
+    expect(orderClusters(['b', 'a', 'c'], { pins: ['c'] })).toEqual(['a', 'b', 'c']); // pins are no longer a thing
     expect(orderClusters(['b', 'a'], { q: 'A' })).toEqual(['a']);
     expect(clusterBadges(undefined)).toEqual([]);
     expect(clusterBadges({ signIn: { state: 'renewable' } })).toEqual([]);

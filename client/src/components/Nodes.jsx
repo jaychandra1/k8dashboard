@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useState } from 'react';
 import Icon from './Icons';
 import MetricsChart from './MetricsChart';
 import DataTable from './ui/DataTable';
+import { nameRoom } from './ui/tableColumns';
 import Badge from './ui/Badge';
 import Button from './ui/Button';
 import BottomPanel, { PanelFullscreenToggle } from './ui/BottomPanel';
@@ -75,19 +76,19 @@ export default function Nodes({ onSelectPod, focusNode, onFocusHandled, refreshS
   };
 
   const nodeColumns = useMemo(() => [
-    { key: 'name', header: 'Name', sortable: true, ellipsis: true, width: 260, render: (n) => <span className="resource-name-cell"><Icon name="nodes" size={15} className="rn-icon" /><span className="rn-text">{n.name}</span></span>, title: (n) => n.name },
-    { key: 'status', header: 'Status', sortable: true, width: 120, render: (n) => <Badge status={n.status} kind="node" /> },
-    { key: 'roles', header: 'Roles', sortable: true, width: 140, render: (n) => n.roles || '—' },
-    { key: 'version', header: 'Version', sortable: true, mono: true, width: 130, render: (n) => n.version || '—' },
-    { key: 'internalIp', header: 'Internal IP', sortable: true, mono: true, width: 140, render: (n) => n.internalIp || '—' },
+    { key: 'name', header: 'Name', sortable: true, ellipsis: true, width: 260, maxWidth: 420, fit: nameRoom, render: (n) => <span className="resource-name-cell"><Icon name="nodes" size={15} className="rn-icon" /><span className="rn-text">{n.name}</span></span>, title: (n) => n.name },
+    { key: 'status', header: 'Status', sortable: true, width: 130, render: (n) => <Badge status={n.status} kind="node" /> },
+    { key: 'roles', header: 'Roles', sortable: true, ellipsis: true, width: 150, render: (n) => n.roles || '—' },
+    { key: 'version', header: 'Version', sortable: true, mono: true, ellipsis: true, width: 170, render: (n) => n.version || '—' },
+    { key: 'internalIp', header: 'Internal IP', sortable: true, mono: true, width: 144, render: (n) => n.internalIp || '—' },
     { key: 'cpuCapacity', header: 'CPU', sortable: true, align: 'right', mono: true, width: 80, accessor: (n) => parseQuantity(n.cpuCapacity) || 0, render: (n) => n.cpuCapacity || '—' },
     { key: 'memoryCapacity', header: 'Memory', sortable: true, align: 'right', mono: true, width: 100, accessor: (n) => parseQuantity(n.memoryCapacity) || 0, render: (n) => fmtQty(n.memoryCapacity) },
-    { key: 'age', header: 'Age', sortable: true, align: 'right', mono: true, width: 80, accessor: (n) => (n.createdAt ? Date.parse(n.createdAt) : null), render: (n) => formatAge(n.createdAt) },
+    { key: 'age', header: 'Age', sortable: true, align: 'right', mono: true, width: 80, fill: true, accessor: (n) => (n.createdAt ? Date.parse(n.createdAt) : null), render: (n) => formatAge(n.createdAt) },
   ], []);
 
   const podColumns = useMemo(() => [
     {
-      key: 'name', header: 'Name', sortable: true, ellipsis: true, width: 300,
+      key: 'name', header: 'Name', sortable: true, ellipsis: true, width: 300, maxWidth: 460, fit: nameRoom,
       render: (pod) => (
         <XLink className="xlink resource-name-cell" link={resourceLink('pod', pod.namespace, pod.name)} onNavigate={onSelectPod ? () => onSelectPod(pod) : onNavigate} title={`Open pod ${pod.name}`}>
           <Icon name="pod" size={15} className="rn-icon" /><span className="rn-text">{pod.name}</span>
@@ -96,10 +97,10 @@ export default function Nodes({ onSelectPod, focusNode, onFocusHandled, refreshS
       title: (pod) => pod.name,
     },
     { key: 'namespace', header: 'Namespace', sortable: true, ellipsis: true, width: 170, render: (pod) => <XLink link={nsLink(pod.namespace)} onNavigate={onNavigate} title={`Filter to ${pod.namespace}`}>{pod.namespace}</XLink>, title: (pod) => pod.namespace },
-    { key: 'ready', header: 'Ready', sortable: true, mono: true, width: 80, render: (pod) => pod.ready || '—' },
-    { key: 'status', header: 'Status', sortable: true, width: 140, render: (pod) => <Badge status={pod.status} kind="pod" /> },
-    { key: 'restarts', header: 'Restarts', sortable: true, align: 'right', mono: true, width: 90, accessor: (pod) => pod.restarts ?? 0, render: (pod) => pod.restarts ?? 0 },
-    { key: 'age', header: 'Age', sortable: true, align: 'right', mono: true, width: 80, accessor: (pod) => (pod.createdAt ? Date.parse(pod.createdAt) : null), render: (pod) => formatAge(pod.createdAt) },
+    { key: 'ready', header: 'Ready', sortable: true, mono: true, width: 92, render: (pod) => pod.ready || '—' },
+    { key: 'status', header: 'Status', sortable: true, width: 160, render: (pod) => <Badge status={pod.status} kind="pod" /> },
+    { key: 'restarts', header: 'Restarts', sortable: true, align: 'right', mono: true, width: 116, accessor: (pod) => pod.restarts ?? 0, render: (pod) => pod.restarts ?? 0 },
+    { key: 'age', header: 'Age', sortable: true, align: 'right', mono: true, width: 80, fill: true, accessor: (pod) => (pod.createdAt ? Date.parse(pod.createdAt) : null), render: (pod) => formatAge(pod.createdAt) },
   ], [onSelectPod, onNavigate]);
 
   const selectNode = (node, tab = 'details') => { setSelectedName(node.name); setActiveTab(tab); };

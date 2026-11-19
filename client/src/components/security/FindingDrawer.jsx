@@ -219,12 +219,12 @@ function ImageDetail({ d, onNavigate }) {
           caption={`Vulnerabilities in ${displayImage(d.image)}`}
           dense
           columns={[
-            { key: 'id', header: 'ID', sortable: true, render: (v) => (v.link ? <a href={v.link} target="_blank" rel="noreferrer" className="sec-cve">{v.id}<span className="sr-only"> (opens in a new tab)</span></a> : v.id) },
-            { key: 'severity', header: 'Severity', sortable: true, accessor: (v) => ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN'].indexOf(v.severity), render: (v) => <SevPill s={v.severity} /> },
+            { key: 'id', header: 'ID', sortable: true, ellipsis: true, width: 140, render: (v) => (v.link ? <a href={v.link} target="_blank" rel="noreferrer" className="sec-cve">{v.id}<span className="sr-only"> (opens in a new tab)</span></a> : v.id) },
+            { key: 'severity', header: 'Severity', sortable: true, width: 116, accessor: (v) => ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN'].indexOf(v.severity), render: (v) => <SevPill s={v.severity} /> },
             { key: 'pkg', header: 'Package', sortable: true, ellipsis: true, width: 160, mono: true },
-            { key: 'fixedVersion', header: 'Fixed in', mono: true, render: (v) => v.fixedVersion || <em className="sec-dim">—</em> },
+            { key: 'fixedVersion', header: 'Fixed in', mono: true, ellipsis: true, width: 130, render: (v) => v.fixedVersion || <em className="sec-dim">—</em> },
             { key: 'installedVersion', header: 'Installed', ellipsis: true, width: 120, mono: true },
-            { key: 'title', header: 'Title', ellipsis: true, width: 260, render: (v) => v.title || '' },
+            { key: 'title', header: 'Title', ellipsis: true, width: 220, fill: true, render: (v) => v.title || '' },
           ]}
           rows={shown}
           rowKey={(v) => `${v.id}|${v.pkg}|${v.installedVersion}`}

@@ -1,6 +1,6 @@
 // Removing a cluster (POST /api/config/contexts/remove): the preview says
 // exactly what goes, entries other clusters use are kept, a backup is made,
-// the selected cluster moves on, pins follow, and the AWS profile goes only
+// the selected cluster moves on, and the AWS profile goes only
 // on request when nothing else uses it. Plus the pure helper.
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -77,7 +77,6 @@ describe('POST /api/config/contexts/remove', () => {
     srv = await startServer({ env: { KUBEPILOT_DEMO: '', KUBECONFIG: kubeconfig } });
     fs.mkdirSync(path.join(srv.home, '.aws'), { recursive: true });
     fs.writeFileSync(path.join(srv.home, '.aws', 'config'), AWS_CONFIG);
-    await srv.authed('/api/settings/pins', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pins: ['prod', 'dev'] }) });
   });
   after(async () => {
     await srv?.stop();
@@ -101,7 +100,7 @@ describe('POST /api/config/contexts/remove', () => {
     assert.ok(kube().contexts.some((c) => c.name === 'prod'), 'nothing removed');
   });
 
-  test('removing prod: its entries go, the shared cluster entry stays, a backup is kept, the pin goes', async () => {
+  test('removing prod: its entries go, the shared cluster entry stays, a backup is kept', async () => {
     const { status, body } = await post({ context: 'prod' });
     assert.equal(status, 200);
     assert.equal(body.removed, true);
@@ -112,7 +111,6 @@ describe('POST /api/config/contexts/remove', () => {
     const backup = path.join(dir, body.backup);
     assert.match(body.backup, /^config\.k8board-backup-\d{8}-\d{6}$/);
     assert.match(fs.readFileSync(backup, 'utf8'), /name: prod\n/);
-    assert.deepEqual((await getJson('/api/settings/pins')).pins, ['dev']);
     assert.deepEqual((await getJson('/api/config/context')).contexts, ['dev', 'staging']);
     assert.ok(aws().sections.has('profile:prod'), 'AWS profile kept by default');
   });

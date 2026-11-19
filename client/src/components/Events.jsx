@@ -115,7 +115,7 @@ export default function Events({
   const columns = useMemo(() => [
     // Message takes the width the fixed columns leave (and wraps), so Count
     // and Age stay on screen at 1280px.
-    { key: 'message', header: 'Message', minWidth: 260, className: 'event-message', render: (e) => e.message || '—' },
+    { key: 'message', header: 'Message', width: 240, fill: true, className: 'event-message', title: () => undefined, render: (e) => e.message || '—' },
     { key: 'namespace', header: 'Namespace', sortable: true, ellipsis: true, width: 150, render: (e) => (e.namespace ? <XLink link={onNamespaceChange ? eventsNsLink(e.namespace) : nsLink(e.namespace)} onNavigate={onNavigate} title={`Filter to ${e.namespace}`}>{e.namespace}</XLink> : '—'), title: (e) => e.namespace },
     { key: 'type', header: 'Type', sortable: true, width: 110, render: (e) => <Badge status={e.type || 'Normal'} kind="event" /> },
     { key: 'reason', header: 'Reason', sortable: true, width: 160, ellipsis: true, render: (e) => e.reason || '—', title: (e) => e.reason },
@@ -124,7 +124,7 @@ export default function Events({
       render: (e) => { const link = objectLink(e.involvedObject, e.namespace); return link ? <XLink link={link} onNavigate={onNavigate} title={`Open ${e.involvedObject}`}>{e.involvedObject}</XLink> : (e.involvedObject || '—'); },
       title: (e) => e.involvedObject,
     },
-    { key: 'count', header: 'Count', sortable: true, align: 'right', mono: true, width: 80, accessor: (e) => e.count ?? 0, render: (e) => e.count ?? '—' },
+    { key: 'count', header: 'Count', sortable: true, align: 'right', mono: true, width: 92, accessor: (e) => e.count ?? 0, render: (e) => e.count ?? '—' },
     { key: 'age', header: 'Age', sortable: true, align: 'right', mono: true, width: 80, accessor: (e) => (e.age == null ? null : e.age), render: (e) => (e.age == null ? '—' : formatAgeSeconds(e.age)) },
   ], [onNavigate, onNamespaceChange]);
 

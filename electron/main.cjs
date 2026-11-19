@@ -178,6 +178,7 @@ const http = require('http');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 const { registerReportPdf } = require('./report-pdf.cjs');
+const { registerWindowChrome, titleBarOptions, usesTitleBar } = require('./window-chrome.cjs');
 const { createLogFile, diagnosticsReport } = require('./diagnostics.cjs');
 
 // The app's own log (backend output and main-process events), in the OS log
@@ -200,15 +201,8 @@ let azureSealing = false;    // the token helper was verified to open sealed sec
 let serverProcess = null;
 let mainWindow = null;
 
-// Native "Clusters" menu state (mirrors the in-app top-bar cluster switcher).
-let clusters = { current: null, contexts: [], pins: [] };
-let clustersKey = ''; // JSON of `clusters` as last rendered into the menu
-
 // Host events for the UI that arrive before it has loaded are delivered once it has.
 let pendingHostEvents = [];
-const debug = (...args) => {
-  if (process.env.K8BOARD_DEBUG || process.env.KUBEPILOT_DEBUG) console.debug('[K8Board]', ...args);
-};
 
 // --- 1. PATH repair -------------------------------------------------------
 // Ask the user's login shell for its PATH, then union with the usual GUI-app
@@ -566,11 +560,14 @@ function createWindow() {
     minWidth: 960,
     minHeight: 600,
     title: 'K8Board',
-    // Match the app's dark surface — no separate gray macOS title bar. On
-    // macOS `hiddenInset` floats the traffic lights over the (black) content;
-    // the frontend adds a draggable top strip via the `is-electron` class.
+    // Match the app's dark surface — no separate gray title bar. On macOS
+    // `hiddenInset` floats the traffic lights over the (black) content and the
+    // frontend adds a draggable top strip (`is-electron`). On Windows the app
+    // draws the title bar itself, menus included, and Windows draws the caption
+    // buttons over its right end (electron/window-chrome.cjs). Linux keeps the
+    // native title bar and menu.
     backgroundColor: '#000000',
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    ...titleBarOptions(),
     trafficLightPosition: { x: 18, y: 15 },
     show: false,
     webPreferences: {
@@ -586,27 +583,28 @@ function createWindow() {
     },
   });
 
+  // Windows: the menus are in the app's own title bar, so the native menu row
+  // stays hidden (the application menu is still set: its shortcuts work).
+  if (usesTitleBar()) {
+    mainWindow.setAutoHideMenuBar(false);
+    mainWindow.setMenuBarVisibility(false);
+  }
+
   const wc = mainWindow.webContents;
 
   // Tag the document so the frontend can expose a draggable region
-  // (`.is-electron`) and, on macOS only, clear the traffic lights (`.is-mac`).
-  const docClasses = process.platform === 'darwin' ? "'is-electron', 'is-mac'" : "'is-electron'";
+  // (`.is-electron`), clear the traffic lights on macOS (`.is-mac`) and leave
+  // room for the caption buttons on Windows (`.is-win`).
+  const docClasses = process.platform === 'darwin' ? "'is-electron', 'is-mac'" : usesTitleBar() ? "'is-electron', 'is-win'" : "'is-electron'";
   wc.on('did-finish-load', () => {
     wc.executeJavaScript(`document.documentElement.classList.add(${docClasses})`).catch(() => {});
-    // First fill of the native Clusters menu once the UI (not loading.html) is up.
+    // The UI (not loading.html) is up: deliver what the menus asked for meanwhile.
     if (isBackendUrl(wc.getURL())) {
-      refreshClustersMenu();
       const queued = pendingHostEvents;
       pendingHostEvents = [];
       queued.forEach(notifyRenderer);
     }
   });
-
-  // Keep the native Clusters menu in sync: refresh when the window gains focus,
-  // after a switch, and when the UI finishes loading. Deliberately NO periodic
-  // rebuild — Menu.setApplicationMenu can steal keyboard focus from the
-  // renderer on Windows, which interrupted typing in dialogs.
-  mainWindow.on('focus', () => { refreshClustersMenu(); });
 
   // Only the backend origin may be navigated to inside the window. The
   // loading page is loaded by us via loadFile (which doesn't trigger these
@@ -637,65 +635,22 @@ function createWindow() {
   });
 }
 
-// Report PDFs (electron/report-pdf.cjs): only the app's own page — the main
-// window's top frame on the backend origin — may ask for one.
+// Report PDFs (electron/report-pdf.cjs) and the title bar (electron/window-chrome.cjs):
+// only the app's own page — the main window's top frame on the backend origin — is answered.
 function isAppPage(event) {
   const wc = mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null;
   const frame = event?.senderFrame;
   return !!wc && event.sender === wc && !!frame && frame === wc.mainFrame && isBackendUrl(frame.url);
 }
 
-// --- Native "Clusters" menu -----------------------------------------------
-// Apart from the report-PDF call, the main process has no IPC. It reads the same backend the renderer
-// uses (with the token it generated) and tells the renderer what happened via
-// a DOM event the app listens for:
+// --- Menus → the page -------------------------------------------------------
+// A menu item that belongs to the page (switch cluster, add a cluster, release
+// notes, About…) tells it with a DOM event the app listens for:
 //   window.dispatchEvent(new CustomEvent('kubepilot:host', { detail }))
-//   detail = { type: 'context-changed', context }
-//          | { type: 'open-contexts' }
+//   detail = { type: 'open-contexts' }                                      (Clusters → Switch Cluster…)
 //          | { type: 'add-cluster', provider: 'aws' | 'azure' | 'gcp' }
 //          | { type: 'show-release-notes' } | { type: 'check-updates' }      (Help menu)
 //          | { type: 'show-about' }                                         (Help → About K8Board)
-// Nothing here blocks startup; failures are logged at debug and ignored.
-function backendJson(method, apiPath, body) {
-  return new Promise((resolve, reject) => {
-    if (!backendOrigin || !authToken) return reject(new Error('backend not ready'));
-    const payload = body === undefined ? null : JSON.stringify(body);
-    const req = http.request(
-      `${backendOrigin}${apiPath}`,
-      {
-        method,
-        headers: {
-          Host: `127.0.0.1:${backendPort}`,
-          Authorization: `Bearer ${authToken}`,
-          Accept: 'application/json',
-          ...(payload ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } : {}),
-        },
-      },
-      (res) => {
-        let data = '';
-        res.setEncoding('utf8');
-        res.on('data', (c) => {
-          if (data.length < 1_000_000) data += c;
-        });
-        res.on('end', () => {
-          let parsed = null;
-          try {
-            parsed = data ? JSON.parse(data) : null;
-          } catch {
-            /* non-JSON body */
-          }
-          if (res.statusCode >= 200 && res.statusCode < 300) resolve(parsed);
-          else reject(new Error(`${method} ${apiPath} → ${res.statusCode}${parsed && parsed.error ? `: ${parsed.error}` : ''}`));
-        });
-      }
-    );
-    req.on('error', reject);
-    req.setTimeout(4000, () => req.destroy(new Error(`${method} ${apiPath} timed out`)));
-    if (payload) req.write(payload);
-    req.end();
-  });
-}
-
 function notifyRenderer(detail) {
   const wc = mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null;
   if (!wc || !isBackendUrl(wc.getURL())) return;
@@ -711,58 +666,14 @@ function notifyRendererWhenReady(detail) {
   else pendingHostEvents = [...pendingHostEvents.filter((d) => d.type !== detail.type), detail];
 }
 
-async function refreshClustersMenu({ force = false } = {}) {
-  if (!backendOrigin || !authToken) return;
-  try {
-    const [status, pins] = await Promise.all([backendJson('GET', '/api/config/status'), backendJson('GET', '/api/settings/pins')]);
-    const str = (v) => typeof v === 'string';
-    const next = {
-      current: status && str(status.currentContext) ? status.currentContext : null,
-      contexts: status && Array.isArray(status.contexts) ? status.contexts.filter(str) : [],
-      pins: pins && Array.isArray(pins.pins) ? pins.pins.filter(str) : [],
-    };
-    const key = JSON.stringify(next);
-    if (!force && key === clustersKey) return;
-    clusters = next;
-    clustersKey = key;
-    Menu.setApplicationMenu(buildMenu());
-  } catch (err) {
-    debug('Clusters menu refresh skipped:', err.message);
-  }
-}
-
-async function switchClusterFromMenu(contextName) {
-  if (contextName === clusters.current) return;
-  try {
-    await backendJson('POST', '/api/config/context', { contextName });
-    // The renderer runs its normal post-switch path (route reset, config
-    // status + auth re-check, toast) without POSTing again.
-    notifyRenderer({ type: 'context-changed', context: contextName });
-  } catch (err) {
-    debug('context switch from menu failed:', err.message);
-  }
-  // Force a rebuild so the radio check reflects the backend's actual context
-  // (also reverts it when the switch failed).
-  await refreshClustersMenu({ force: true });
-}
-
-// `&` is a mnemonic marker in Windows/Linux menu labels.
-const menuLabel = (s) => String(s).replace(/&/g, '&&');
-
+// The clusters themselves are not listed here: a kubeconfig can hold dozens.
+// "Switch Cluster…" opens the app's searchable Switch cluster window.
 function clustersMenu() {
-  const { current, contexts, pins } = clusters;
-  const known = new Set(contexts);
-  // Same rule as the in-app switcher: pins that still exist (plus the active one).
-  const pinned = pins.filter((c) => known.has(c) || c === current);
-  const items = pinned.length
-    ? pinned.map((ctx) => ({ label: menuLabel(ctx), type: 'radio', checked: ctx === current, click: () => switchClusterFromMenu(ctx) }))
-    : [{ label: 'No pinned clusters', enabled: false }];
   return {
     label: 'Clusters',
     submenu: [
-      ...items,
+      { label: 'Switch Cluster…', click: () => notifyRenderer({ type: 'open-contexts' }) },
       { type: 'separator' },
-      { label: 'All contexts…', click: () => notifyRenderer({ type: 'open-contexts' }) },
       { label: 'Add AWS EKS cluster…', click: () => notifyRenderer({ type: 'add-cluster', provider: 'aws' }) },
       { label: 'Add Azure AKS cluster…', click: () => notifyRenderer({ type: 'add-cluster', provider: 'azure' }) },
       { label: 'Add Google GKE cluster…', click: () => notifyRenderer({ type: 'add-cluster', provider: 'gcp' }) },
@@ -843,6 +754,7 @@ if (!gotLock) {
 
     Menu.setApplicationMenu(buildMenu());
     registerReportPdf({ ipcMain, BrowserWindow, session, isAllowedSender: isAppPage });
+    registerWindowChrome({ ipcMain, Menu, getWindow: () => mainWindow, isAllowedSender: isAppPage });
     boot();
 
     app.on('activate', () => {

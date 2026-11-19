@@ -1,6 +1,32 @@
 {
   "releases": [
     {
+      "version": "1.8.9",
+      "date": "2026-11-19",
+      "highlights": [
+        {
+          "title": "A slimmer window",
+          "text": "On Windows the menus (View, Clusters, Window, Help) now sit in the title bar itself, next to the app icon, so the separate menu row is gone and there is more room for your clusters."
+        },
+        {
+          "title": "One window to switch cluster",
+          "text": "The cluster button in the top bar opens a searchable Switch cluster window that works the same with 4 clusters or 40. Add, remove and disconnect are there too, and cancelling an “add” brings you back to it."
+        },
+        {
+          "title": "Steady columns everywhere",
+          "text": "Events, Nodes, Namespaces, Helm, Access Control, Security and Argo CD tables keep their column widths while you scroll, sort or filter, like the resource lists."
+        },
+        {
+          "title": "One typeface throughout",
+          "text": "Numbers, versions and names on the Dashboard and in tables use the same typeface as the rest of the app."
+        },
+        {
+          "title": "Reload stays where you are",
+          "text": "Reloading the window (Ctrl+R or Ctrl+Shift+R) keeps you in the same cluster, on the same page, instead of going back to the list of clusters."
+        }
+      ]
+    },
+    {
       "version": "1.8.8",
       "date": "2026-11-12",
       "highlights": [

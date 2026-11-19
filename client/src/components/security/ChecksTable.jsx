@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import DataTable from '../ui/DataTable';
+import { nameRoom } from '../ui/tableColumns';
 import EmptyState from '../ui/EmptyState';
 import { sevTotal, SevMini } from './severity';
 
@@ -17,10 +18,10 @@ export default function ChecksTable({ data, ns, q = '', onSelect, selected, labe
     <DataTable
       caption={label === 'role' ? 'RBAC risk findings' : 'Resource best-practice findings'}
       columns={[
-        { key: 'name', header: label === 'role' ? 'Role Name' : 'Name', sortable: true, ellipsis: true, width: 320, render: (r) => <span className="sec-strong">{r.name}</span> },
-        { key: 'kind', header: 'Kind', sortable: true, render: (r) => <span className="sec-kind">{r.kind}</span> },
-        { key: 'namespace', header: 'Namespace', sortable: true, render: (r) => <span className="sec-dim">{r.namespace || '—'}</span> },
-        { key: 'summary', header: 'Vulnerabilities', sortable: true, accessor: (r) => sevTotal(r.summary), render: (r) => <SevMini summary={r.summary} /> },
+        { key: 'name', header: label === 'role' ? 'Role Name' : 'Name', sortable: true, ellipsis: true, width: 320, maxWidth: 480, fit: nameRoom, render: (r) => <span className="sec-strong">{r.name}</span> },
+        { key: 'kind', header: 'Kind', sortable: true, ellipsis: true, width: 190, render: (r) => <span className="sec-kind">{r.kind}</span> },
+        { key: 'namespace', header: 'Namespace', sortable: true, ellipsis: true, width: 170, render: (r) => <span className="sec-dim">{r.namespace || '—'}</span> },
+        { key: 'summary', header: 'Vulnerabilities', sortable: true, width: 176, fill: true, accessor: (r) => sevTotal(r.summary), render: (r) => <SevMini summary={r.summary} /> },
       ]}
       rows={rows}
       rowKey={checkKey}

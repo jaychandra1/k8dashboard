@@ -7,6 +7,7 @@ import Icon from './components/Icons';
 import Tooltip from './components/ui/Tooltip';
 import CommandPalette from './components/CommandPalette';
 import KubeConfigModal from './components/KubeConfigModal';
+import TitleBar, { hasTitleBar } from './components/TitleBar';
 import AuthErrorModal from './components/AuthErrorModal';
 import AzureIntegration from './components/AzureIntegration';
 import GkeIntegration from './components/GkeIntegration';
@@ -20,11 +21,11 @@ import useHashRoute from './hooks/useHashRoute';
 import useDocumentTitle from './hooks/useDocumentTitle';
 import useRequest from './hooks/useRequest';
 import { bootstrapTokenFromHash, getToken, onUnauthorized, getJson } from './lib/api';
+import { rememberConnection, rememberedConnection, forgetConnection } from './lib/session';
 import { RESOURCE_TYPES, byKey, pluralKey } from './lib/kinds';
 import { refreshMs } from './components/RefreshControl';
 import useAuthGate from './components/shell/useAuthGate';
 import useContexts from './components/shell/useContexts';
-import usePins from './components/shell/usePins';
 import RemoveClusterDialog from './components/RemoveClusterDialog';
 import Home from './components/Home';
 import Preferences from './components/Preferences';
@@ -108,10 +109,32 @@ function App() {
 
   // Connecting: nothing connects at startup; the app opens on Home and a
   // connection starts when the user picks a cluster (useContexts.connect),
-  // landing on the Dashboard (POST_SWITCH_VIEW). Pins are app settings: Home
-  // shows them before any connection.
-  const { connect, switchContext, afterSwitch, cancel: cancelConnect, disconnect, switching, switchTarget, step: connectStep } = useContexts({ gate, toast });
-  const { pins, togglePin, refetch: refetchPins } = usePins({ enabled: tokenOk, toast });
+  // landing on the Dashboard (POST_SWITCH_VIEW).
+  const { connect, switchContext, afterSwitch, resume, cancel: cancelConnect, disconnect, switching, switchTarget, step: connectStep } = useContexts({ gate, toast });
+
+  // ---- a reload inside a cluster -------------------------------------------
+  // Ctrl+R, Ctrl+Shift+R and F5 reload the page, which starts the app again.
+  // When this window was connected (lib/session) and the backend still holds
+  // that connection, the app comes back to the same cluster on the same page:
+  // the sign-in is checked again and the URL is left alone. A new window, or
+  // the app started again, has nothing remembered and opens on Home.
+  const [resuming, setResuming] = useState(() => (rememberedConnection() ? { context: rememberedConnection() } : null));
+  const resumeStarted = useRef(false);
+  useEffect(() => {
+    if (!resuming || resumeStarted.current || !tokenOk || !gate.configChecked) return;
+    resumeStarted.current = true;
+    const here = configStatus.connected && configStatus.currentContext === resuming.context;
+    if (!here) {
+      // The backend restarted, or is on another cluster: Home, as at startup.
+      forgetConnection();
+      setResuming(null);
+      return;
+    }
+    Promise.resolve(resume(resuming.context)).finally(() => setResuming(null));
+  }, [resuming, tokenOk, gate.configChecked, configStatus.connected, configStatus.currentContext, resume]);
+  useEffect(() => {
+    if (authOk && contextKey) rememberConnection(contextKey);
+  }, [authOk, contextKey]);
   const authOkRef = useRef(authOk); authOkRef.current = authOk;
 
   // ---- remove a cluster (switcher menu, Preferences → Kubernetes) ----------
@@ -120,15 +143,37 @@ function App() {
   // screen comes up.
   const [removeTarget, setRemoveTarget] = useState(null);
   const openRemoveCluster = useCallback((ctx) => { if (ctx) setRemoveTarget(ctx); }, []);
-  const closeRemoveCluster = useCallback(() => setRemoveTarget(null), []);
+
+  // ---- the Switch cluster window, and coming back to it ----------------------
+  // The window (ContextPickerModal) is where a connected user changes, adds or
+  // removes a cluster. A dialog opened from it (add AWS/Azure/Google clusters,
+  // a kubeconfig file, remove a cluster) takes its place, and closing that
+  // dialog — Cancel, the X, or after it has finished — brings the window back,
+  // so the user is where they started. Opened from anywhere else (Home, the
+  // menus, Preferences), the same dialogs just close.
+  const [contextsOpen, setContextsOpen] = useState(false);
+  const pickerReturn = useRef(false);
+  const openContexts = useCallback(() => { pickerReturn.current = false; setContextsOpen(true); }, []);
+  const closeContexts = useCallback(() => setContextsOpen(false), []);
+  const backToPicker = useCallback(() => {
+    if (!pickerReturn.current) return;
+    pickerReturn.current = false;
+    if (authOkRef.current) setContextsOpen(true);
+  }, []);
+  /** Run `open` (a dialog) in the window's place; it comes back when that dialog closes. */
+  const fromPicker = useCallback((open) => (...args) => {
+    setContextsOpen(false);
+    pickerReturn.current = true;
+    open(...args);
+  }, []);
+  const closeRemoveCluster = useCallback(() => { setRemoveTarget(null); backToPicker(); }, [backToPicker]);
   const onClusterRemoved = useCallback((out) => {
     setRemoveTarget(null);
     toast.success(`Removed ${out?.context || 'the cluster'} from your kubeconfig`, { title: 'Cluster' });
-    refetchPins?.();
     // The connected cluster removed: back to Home (no silent connection to another one).
-    if (out?.current && authOkRef.current) disconnect();
+    if (out?.current && authOkRef.current) { pickerReturn.current = false; disconnect(); } else backToPicker();
     gate.fetchConfigStatus();
-  }, [toast, refetchPins, disconnect, gate]);
+  }, [toast, disconnect, gate, backToPicker]);
 
   // ---- context-switch loading screen ------------------------------------
   // Shown over <main> from the moment a switch starts (`switching`) until the
@@ -281,9 +326,10 @@ function App() {
   const openAzure = useCallback((mode) => setCloud({ kind: 'azure', mode: mode === 'az' ? 'az' : null }), []);
   const openAws = useCallback(() => setCloud({ kind: 'aws' }), []);
   const openGke = useCallback(() => setCloud({ kind: 'gke' }), []);
-  const closeCloud = useCallback(() => setCloud(null), []);
+  const closeCloud = useCallback(() => { setCloud(null); backToPicker(); }, [backToPicker]);
   const { setForceConfigModal } = gate;
   const openLocal = useCallback(() => setForceConfigModal(true), [setForceConfigModal]);
+  const closeLocal = useCallback(() => { setForceConfigModal(false); backToPicker(); }, [setForceConfigModal, backToPicker]);
   const closePalette = useCallback(() => setPaletteOpen(false), []);
   const openPalette = useCallback(() => setPaletteOpen(true), []);
   const closeShortcuts = useCallback(() => setShortcutsOpen(false), []);
@@ -310,12 +356,9 @@ function App() {
   // ---- responsive nav drawer ---------------------------------------------
   const drawer = useNavDrawer({ routeKey: `${view}/${route.params.join('/')}` });
 
-  // Searchable context picker (cluster menu "Search contexts…", palette "All
-  // contexts…", desktop Clusters menu). Anything may also dispatch
+  // The Switch cluster window opens from the top-bar cluster button, the
+  // palette and the desktop Clusters menu; anything may also dispatch
   // OPEN_CONTEXTS_EVENT on window to open it.
-  const [contextsOpen, setContextsOpen] = useState(false);
-  const openContexts = useCallback(() => setContextsOpen(true), []);
-  const closeContexts = useCallback(() => setContextsOpen(false), []);
   useEffect(() => {
     window.addEventListener(OPEN_CONTEXTS_EVENT, openContexts);
     return () => window.removeEventListener(OPEN_CONTEXTS_EVENT, openContexts);
@@ -358,23 +401,10 @@ function App() {
   // and the history arrows start where the content column starts. Built here
   // so TopBar stays free of cluster/history logic; memoised so TopBar's
   // React.memo still short-circuits.
-  const { contexts: ctxList, contextsInfo, currentContext } = configStatus;
+  const { contextsInfo, currentContext } = configStatus;
   const topbarLead = useMemo(() => (
     <>
-      <ClusterSwitcher
-        contexts={ctxList || []}
-        contextsInfo={contextsInfo}
-        currentContext={currentContext}
-        pins={pins}
-        onSwitch={switchContext}
-        onTogglePin={togglePin}
-        onOpenContexts={openContexts}
-        onAddAws={openAws}
-        onAddAzure={openAzure}
-        onAddGke={openGke}
-        onRemove={configStatus.demoAvailable && currentContext === 'demo-cluster' ? undefined : openRemoveCluster}
-        onDisconnect={disconnect}
-      />
+      <ClusterSwitcher contextsInfo={contextsInfo} currentContext={currentContext} open={contextsOpen} onOpen={openContexts} />
       <div className="topbar-hist" role="group" aria-label="History">
         <Tooltip content="Back">
           <button type="button" className="topbar-btn" disabled={!canBack} onClick={back} aria-label="Back"><Icon name="arrowLeft" size={16} /></button>
@@ -384,7 +414,7 @@ function App() {
         </Tooltip>
       </div>
     </>
-  ), [ctxList, contextsInfo, currentContext, pins, switchContext, togglePin, openContexts, openAws, openAzure, openGke, openRemoveCluster, disconnect, configStatus.demoAvailable, canBack, canForward, back, forward]);
+  ), [contextsInfo, currentContext, contextsOpen, openContexts, canBack, canForward, back, forward]);
 
   // ---- Home (the landing page) ---------------------------------------------
   // Not connected: Home (or Preferences) fills the window. Old links to cluster
@@ -397,13 +427,11 @@ function App() {
       contextsInfo={configStatus.contextsInfo || []}
       lastConnected={configStatus.lastConnected}
       recent={configStatus.recent || []}
-      pins={pins}
       connected={authOk ? configStatus.currentContext : null}
       connecting={switching ? { context: switchTarget } : null}
       onConnect={connect}
       onOpenDashboard={goDashboard}
       onDisconnect={disconnect}
-      onTogglePin={togglePin}
       onRemove={openRemoveCluster}
       canRemove={canRemoveCluster}
       onAddAws={openAws}
@@ -414,9 +442,10 @@ function App() {
     />
   );
   useEffect(() => {
-    if (!tokenOk || authOk || switching || gate.showAuthError || gate.autoRecovering) return;
+    // While a reload is coming back to its cluster the URL is kept: it is where the user was.
+    if (!tokenOk || authOk || switching || resuming || gate.showAuthError || gate.autoRecovering) return;
     if (view !== 'home' && view !== 'preferences') navigate('home', [], {}, { replace: true });
-  }, [tokenOk, authOk, switching, gate.showAuthError, gate.autoRecovering, view, navigate]);
+  }, [tokenOk, authOk, switching, resuming, gate.showAuthError, gate.autoRecovering, view, navigate]);
 
   // ---- render -------------------------------------------------------------
   const { serverError, showConfigModal, showAuthError, checkingAuth, configChecked, autoRecovering } = gate;
@@ -430,6 +459,8 @@ function App() {
 
   return (
     <div className="app-shell" data-nav={drawer.navState}>
+      {/* The desktop app on Windows: the window's title bar, with the menus in it. */}
+      {hasTitleBar() && <TitleBar title={title} />}
       <TokenPrompt onSuccess={onTokenSuccess} />
 
       {tokenOk && authOk && (
@@ -460,7 +491,7 @@ function App() {
           onAddAws={openAws}
           onAddAzure={openAzure}
           onAddGke={openGke}
-          onClose={configStatus.loaded ? () => gate.setForceConfigModal(false) : undefined}
+          onClose={configStatus.loaded ? closeLocal : undefined}
         />
       )}
 
@@ -573,14 +604,14 @@ function App() {
         <div className="loading-state">
           <LoadingScreen label="Starting K8Board…" hint="Reading your kubeconfig" />
         </div>
-      ) : (switching || checkingAuth) && !showAuthError ? (
+      ) : (switching || checkingAuth || resuming) && !showAuthError ? (
         <div className="loading-state">
           <LoadingScreen
-            context={switchTarget || configStatus.currentContext}
-            label={`Connecting to ${switchTarget || configStatus.currentContext || 'the cluster'}…`}
+            context={switchTarget || resuming?.context || configStatus.currentContext}
+            label={`Connecting to ${switchTarget || resuming?.context || configStatus.currentContext || 'the cluster'}…`}
             hint={autoRecovering ? 'Refreshing credentials…' : undefined}
             steps={CONNECT_STEPS}
-            step={checkingAuth ? 'auth' : connectStep}
+            step={checkingAuth || (resuming && !connectStep) ? 'auth' : connectStep}
             onCancel={cancelConnect}
           />
         </div>
@@ -629,12 +660,13 @@ function App() {
           contextsInfo={configStatus.contextsInfo}
           currentContext={configStatus.currentContext}
           onChange={switchContext}
-          onRemove={openRemoveCluster}
-          canRemove={(ctx) => !(configStatus.demoAvailable && ctx === 'demo-cluster')}
-          onAddAws={openAws}
-          onAddAzure={openAzure}
-          onAddGke={openGke}
-          onAddLocal={openLocal}
+          onRemove={fromPicker(openRemoveCluster)}
+          canRemove={canRemoveCluster}
+          onAddAws={fromPicker(openAws)}
+          onAddAzure={fromPicker(openAzure)}
+          onAddGke={fromPicker(openGke)}
+          onAddLocal={fromPicker(openLocal)}
+          onDisconnect={() => { closeContexts(); disconnect(); }}
         />
       )}
       {tokenOk && removeTarget && (

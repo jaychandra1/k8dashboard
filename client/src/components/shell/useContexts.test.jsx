@@ -125,13 +125,61 @@ describe('useContexts: connecting', () => {
     expect(disconnects()).toBeGreaterThanOrEqual(1);
   });
 
+  it('resume (the page reloaded inside a cluster): signs in again and stays where the user was', async () => {
+    window.location.hash = '#/pod/shop/web-1?ns=shop';
+    const gate = makeGate();
+    const toast = makeToast();
+    const { result } = renderHook(() => useContexts({ gate, toast }));
+    let done;
+    await act(async () => { done = result.current.resume('alpha'); await Promise.resolve(); });
+    await act(async () => { expect(await done).toBe(true); });
+    expect(gate.checkAuth).toHaveBeenCalledTimes(1);
+    // No new selection, no trip to the Dashboard or to Home, no "Connected" toast.
+    expect(api.postJson).not.toHaveBeenCalled();
+    expect(gate.fetchConfigStatus).not.toHaveBeenCalled();
+    expect(window.location.hash).toBe('#/pod/shop/web-1?ns=shop');
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(result.current).toMatchObject({ switching: false, step: null, switchTarget: 'alpha' });
+  });
+
+  it('resume shows the sign-in step while it runs, and a failed sign-in returns false', async () => {
+    let answer;
+    const gate = makeGate({ checkAuth: vi.fn(() => new Promise((r) => { answer = r; })) });
+    const { result } = renderHook(() => useContexts({ gate, toast: makeToast() }));
+    let done;
+    await act(async () => { done = result.current.resume('alpha'); await Promise.resolve(); });
+    expect(result.current).toMatchObject({ switching: true, step: 'auth', switchTarget: 'alpha' });
+    await act(async () => { answer(false); expect(await done).toBe(false); });
+    expect(result.current).toMatchObject({ switching: false, step: null });
+  });
+
+  it('Cancel while resuming: Home, the late answer is dropped, the server lets go', async () => {
+    window.location.hash = '#/pod';
+    sessionStorage.setItem('k8board.connected', 'alpha');
+    let answer;
+    const gate = makeGate({
+      checkAuth: vi.fn(({ isCurrent }) => new Promise((r) => { answer = () => r(isCurrent() ? true : null); })),
+    });
+    const { result } = renderHook(() => useContexts({ gate, toast: makeToast() }));
+    let done;
+    await act(async () => { done = result.current.resume('alpha'); await Promise.resolve(); });
+    act(() => { result.current.cancel(); });
+    expect(window.location.hash).toBe('#/home');
+    expect(sessionStorage.getItem('k8board.connected')).toBeNull();
+    await act(async () => { answer(); expect(await done).toBe(false); });
+    expect(disconnects()).toBeGreaterThanOrEqual(1);
+  });
+
   it('disconnect: the server forgets the connection and Home opens', async () => {
     window.location.hash = '#/cluster';
+    sessionStorage.setItem('k8board.connected', 'alpha');
     const gate = makeGate();
     const { result } = renderHook(() => useContexts({ gate, toast: makeToast() }));
     act(() => { result.current.disconnect(); });
     expect(window.location.hash).toBe('#/home');
     expect(gate.resetAuth).toHaveBeenCalled();
     expect(disconnects()).toBe(1);
+    // A reload after this opens Home: the window no longer remembers the cluster.
+    expect(sessionStorage.getItem('k8board.connected')).toBeNull();
   });
 });

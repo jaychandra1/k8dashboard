@@ -146,6 +146,29 @@ describe('PKCE, authorize URL and the loopback callback', () => {
     );
   });
 
+  test('result page: after a successful sign-in it tries to close its tab, and only that script may run', async () => {
+    const { CLOSE_SCRIPT } = await import('../lib/aws-sso.mjs');
+    assert.match(CLOSE_SCRIPT, /window\.close\(\)/);
+    const ok = resultPage(true);
+    assert.equal(ok.split('<script>').length - 1, 1);
+    assert.ok(ok.includes(`<script>${CLOSE_SCRIPT}</script>`));
+    // The text promises nothing a browser may refuse.
+    assert.match(ok, /You can close this tab\./);
+    // A failed sign-in stays open: the reason is on it.
+    assert.equal(resultPage(false, 'User denied').includes('<script'), false);
+
+    const cb = await startCallbackServer({ state: 'close-state', timeoutMs: 10_000 });
+    await get(`${cb.redirectUri}?code=c&state=close-state`);
+    await cb.result;
+    const done = await get(cb.redirectUri.replace('/oauth/callback', '/oauth/complete'));
+    const hash = crypto.createHash('sha256').update(CLOSE_SCRIPT).digest('base64');
+    const csp = done.headers['content-security-policy'];
+    assert.ok(csp.includes(`script-src 'sha256-${hash}'`), csp);
+    assert.match(csp, /default-src 'none'/);
+    assert.doesNotMatch(csp, /unsafe-inline'; script|script-src[^;]*unsafe/);
+    cb.close();
+  });
+
   test('result page: every colour follows the theme (no fixed white card in dark mode)', () => {
     const html = resultPage(true);
     const dark = html.indexOf('@media (prefers-color-scheme:dark){:root{');

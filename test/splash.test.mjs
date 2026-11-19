@@ -37,3 +37,8 @@ test('the wheel turns, stands still under "reduce motion", and the mark is hidde
   assert.match(html, /<div class="mark" aria-hidden="true">/);
   assert.match(html, /<div class="title">K<span class="eight">8<\/span>Board<\/div>/);
 });
+
+test('the window can be moved while the splash shows: its top strip is a drag region', () => {
+  assert.match(html, /\.drag \{ position: fixed; top: 0; left: 0; right: 0; height: 36px; -webkit-app-region: drag; \}/);
+  assert.match(html, /<body>\s*<div class="drag"><\/div>/);
+});

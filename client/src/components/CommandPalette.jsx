@@ -29,8 +29,8 @@ export default function CommandPalette({ open, onClose, onNavigate, contexts = [
       cmds.push({ id: `nav:${t.key}`, group: 'Apps', label: t.navLabel, icon: t.icon, run: () => onNavigate(t.key) });
     }
     for (const ctx of contexts) cmds.push({ id: `ctx:${ctx}`, group: 'Switch context', label: ctx, icon: 'cluster', hint: ctx === currentContext ? 'current' : '', run: () => onSwitchContext(ctx) });
-    // The searchable, provider-grouped context picker (same dialog as the cluster menu's "Search contexts…").
-    if (onOpenContexts) cmds.push({ id: 'ctx:all', group: 'Switch context', label: 'All contexts…', icon: 'search', hint: contexts.length ? String(contexts.length) : '', run: () => onOpenContexts() });
+    // The Switch cluster window (the same one the top-bar cluster button opens).
+    if (onOpenContexts) cmds.push({ id: 'ctx:all', group: 'Switch context', label: 'Switch cluster…', icon: 'search', hint: contexts.length ? String(contexts.length) : '', run: () => onOpenContexts() });
     cmds.push(
       { id: 'act:refresh', group: 'Actions', label: 'Refresh', icon: 'refresh', run: () => onRefresh?.() },
       { id: 'act:prefs', group: 'Actions', label: 'Open Preferences', icon: 'settings', run: () => onOpenPreferences?.() },

@@ -143,7 +143,7 @@ The backend prints `open http://127.0.0.1:3001/#token=…` at start — open the
 ## Usage
 
 1. **⌘K** (Ctrl+K) — jump to any view, cluster, or action; the toolbar's back/forward arrows retrace your steps.
-2. **Pick a context** — the toolbar's cluster menu (current context name, next to the arrows) switches between your pinned clusters, pins/unpins the current one and opens **All contexts…** (the searchable sidebar selector). The desktop app mirrors it in a native **Clusters** menu.
+2. **Pick a cluster** — the top bar's cluster button (the current cluster's name, next to the arrows) opens the **Switch cluster** window: a searchable list of every cluster, where you can also add, remove or disconnect. The desktop app has it under **Clusters → Switch Cluster…** too.
 3. **Add a cloud cluster** — cluster menu → **Add cluster ▸** → **AWS EKS** or **Azure AKS** discovers and merges clusters into your kubeconfig.
 4. **Click a row** — opens the detail drawer (with live pod metric graphs); the **⋮** menu has Details, Logs, Terminal, Edit YAML.
 5. **AI & agents** — launch from the toolbar; configure in **Preferences → AI / External Tools**.

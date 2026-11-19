@@ -9,7 +9,6 @@ const responses = {
   '/api/config/auth': { ok: true, currentContext: 'test-cluster' },
   '/api/namespaces': { namespaces: ['default', 'kube-system'] },
   '/api/argocd/status': { installed: false },
-  '/api/settings/pins': { pins: ['test-cluster'] },
   '/api/resources/default': { pods: [{ name: 'web-1', namespace: 'default', status: 'Running' }], deployments: [] },
   '/api/resources/kube-system': { pods: [{ name: 'coredns', namespace: 'kube-system', status: 'Running' }], deployments: [], partial: true, errors: [{ kind: 'secrets', error: 'forbidden' }] },
 };
@@ -43,6 +42,15 @@ vi.mock('./components/SecurityCenter', () => ({ default: (p) => <h1>Security {p.
 vi.mock('./components/ArgoCD', () => ({ default: (p) => <h1>Argo {p.view}</h1> }));
 vi.mock('./components/Events', () => ({ default: (p) => <h1>Events {p.namespace}</h1> }));
 vi.mock('./components/AgentPanel', () => ({ default: () => null }));
+// The dialogs the Switch cluster window opens: only their opening and closing matter here.
+vi.mock('./components/AwsIntegration', () => ({ default: ({ onClose }) => <div role="dialog" aria-label="Add AWS EKS clusters"><button type="button" onClick={onClose}>Cancel</button></div> }));
+vi.mock('./components/RemoveClusterDialog', () => ({ default: ({ context, onClose, onRemoved }) => (
+  <div role="dialog" aria-label={`Remove ${context}`}>
+    <button type="button" onClick={onClose}>Cancel</button>
+    <button type="button" onClick={() => onRemoved({ context, current: false })}>Remove it</button>
+    <button type="button" onClick={() => onRemoved({ context, current: true })}>Remove the connected one</button>
+  </div>
+) }));
 vi.mock('./components/Assistant', () => ({ default: () => null }));
 
 import App from './App';
@@ -66,7 +74,7 @@ const go = (hash) => act(async () => { window.location.hash = hash; await new Pr
 
 describe('App routing', () => {
   beforeEach(async () => {
-    _resetHistoryIndex(); window.location.hash = ''; localStorage.clear();
+    _resetHistoryIndex(); window.location.hash = ''; localStorage.clear(); sessionStorage.clear();
     const { getJson } = await import('./lib/api');
     getJson.mockClear();
   });
@@ -117,13 +125,102 @@ describe('App routing', () => {
     expect(screen.getByRole('button', { name: 'Forward' })).toBeEnabled();
   }, 15000);
 
-  it('Disconnect (cluster switcher) goes back to Home', async () => {
+  // Ctrl+R / Ctrl+Shift+R / F5 start the page again: what the window remembers
+  // (sessionStorage) and what the backend still holds decide where it opens.
+  describe('a reload inside a cluster', () => {
+    const backendHolds = (connected, currentContext = 'test-cluster') => {
+      const before = responses['/api/config/status'];
+      responses['/api/config/status'] = { ...before, connected, currentContext };
+      return () => { responses['/api/config/status'] = before; };
+    };
+
+    it('comes back to the same cluster on the same page, without passing through Home', async () => {
+      const restore = backendHolds(true);
+      sessionStorage.setItem('k8board.connected', 'test-cluster');
+      window.location.hash = '#/pod?ns=default';
+      try {
+        renderApp();
+        await waitFor(() => expect(screen.getByRole('navigation', { name: 'Primary' })).toBeInTheDocument(), { timeout: 5000 });
+        await waitFor(() => expect(screen.getByTestId('rv')).toHaveAttribute('data-type', 'pod'));
+        expect(window.location.hash).toBe('#/pod?ns=default');
+        expect(screen.queryByRole('heading', { name: /^Welcome/ })).toBeNull();
+        expect(document.title).toMatch(/^Pods · default · test-cluster — K8Board$/);
+        // The sign-in is checked again; no cluster is selected and nothing is disconnected.
+        expect((await clusterCalls()).filter((u) => u === '/api/config/auth')).toHaveLength(1);
+        const { postJson } = await import('./lib/api');
+        expect(postJson.mock.calls.map(([u]) => u).filter((u) => /config\/(context|disconnect)/.test(u))).toEqual([]);
+        expect(screen.queryByText('Connected to test-cluster')).toBeNull();
+        expect(sessionStorage.getItem('k8board.connected')).toBe('test-cluster');
+      } finally {
+        restore();
+      }
+    }, 15000);
+
+    it('the backend no longer holds the connection (it restarted): Home, and nothing is contacted', async () => {
+      const restore = backendHolds(false);
+      sessionStorage.setItem('k8board.connected', 'test-cluster');
+      window.location.hash = '#/pod';
+      try {
+        renderApp();
+        expect(await screen.findByRole('heading', { name: 'Welcome to K8Board' }, { timeout: 5000 })).toBeInTheDocument();
+        await waitFor(() => expect(window.location.hash).toBe('#/home'));
+        await settle();
+        expect(await clusterCalls()).toEqual([]);
+        expect(sessionStorage.getItem('k8board.connected')).toBeNull();
+      } finally {
+        restore();
+      }
+    }, 15000);
+
+    it('the backend is on another cluster than this window was: Home', async () => {
+      const restore = backendHolds(true, 'other-cluster');
+      sessionStorage.setItem('k8board.connected', 'test-cluster');
+      window.location.hash = '#/pod';
+      try {
+        renderApp();
+        expect(await screen.findByRole('heading', { name: 'Welcome to K8Board' }, { timeout: 5000 })).toBeInTheDocument();
+        await settle();
+        expect(await clusterCalls()).toEqual([]);
+        expect(sessionStorage.getItem('k8board.connected')).toBeNull();
+      } finally {
+        restore();
+      }
+    }, 15000);
+
+    it('a window that never connected opens on Home even when the backend is connected (a new window, a restart)', async () => {
+      const restore = backendHolds(true);
+      window.location.hash = '#/pod';
+      try {
+        renderApp();
+        expect(await screen.findByRole('heading', { name: /^Welcome/ }, { timeout: 5000 })).toBeInTheDocument();
+        await waitFor(() => expect(window.location.hash).toBe('#/home'));
+        await settle();
+        expect(await clusterCalls()).toEqual([]);
+      } finally {
+        restore();
+      }
+    }, 15000);
+
+    it('connecting is what the window remembers; Disconnect forgets it', async () => {
+      renderApp();
+      expect(sessionStorage.getItem('k8board.connected')).toBeNull();
+      const user = await connectFromHome();
+      await waitFor(() => expect(sessionStorage.getItem('k8board.connected')).toBe('test-cluster'));
+      await user.click(screen.getByRole('button', { name: /Switch cluster/ }));
+      await user.click(within(await screen.findByRole('dialog', { name: 'Switch cluster' })).getByRole('button', { name: 'Disconnect' }));
+      expect(await screen.findByRole('heading', { name: /^Welcome/ })).toBeInTheDocument();
+      expect(sessionStorage.getItem('k8board.connected')).toBeNull();
+    }, 15000);
+  });
+
+  it('Disconnect (the Switch cluster window) goes back to Home', async () => {
     renderApp();
     const user = await connectFromHome();
     await user.click(screen.getByRole('button', { name: /Switch cluster/ }));
-    await user.click(within(await screen.findByRole('menu', { name: 'Switch cluster' })).getByRole('menuitem', { name: 'Disconnect' }));
+    await user.click(within(await screen.findByRole('dialog', { name: 'Switch cluster' })).getByRole('button', { name: 'Disconnect' }));
     expect(await screen.findByRole('heading', { name: 'Welcome to K8Board' })).toBeInTheDocument();
     expect(window.location.hash).toBe('#/home');
+    expect(screen.queryByRole('dialog', { name: 'Switch cluster' })).toBeNull();
     const { postJson } = await import('./lib/api');
     expect(postJson).toHaveBeenCalledWith('/api/config/disconnect');
   }, 15000);
@@ -141,41 +238,48 @@ describe('App routing', () => {
     await waitFor(() => expect(window.location.hash).toBe('#/deployment')); // all namespaces = no ns filter
   });
 
-  it('switching cluster from the switcher connects to it, with its steps over the Dashboard', async () => {
+  it('picking a cluster in the Switch cluster window connects to it, with its steps over the Dashboard', async () => {
     renderApp();
     await connectFromHome();
     await go('#/pod?ns=default');
     await waitFor(() => expect(screen.getByTestId('rv')).toBeInTheDocument());
-    const { postJson } = await import('./lib/api');
+    const { postJson, getJson } = await import('./lib/api');
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: /Switch cluster/ }));
-    const menu = await screen.findByRole('menu', { name: 'Switch cluster' });
-    // "other-cluster" is not pinned: it is listed under the All contexts heading.
-    await user.click(within(menu).getByRole('menuitemcheckbox', { name: 'other-cluster' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Switch cluster' });
+    await user.click(within(dialog).getByRole('option', { name: 'other-cluster' }));
     expect(postJson).toHaveBeenCalledWith('/api/config/context', { contextName: 'other-cluster' });
     await waitFor(() => expect(window.location.hash).toBe('#/cluster'));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Switch cluster' })).toBeNull());
     // Overlay inside <main> (sidebar + top bar stay), naming the target cluster.
     const main = screen.getByRole('main');
     await waitFor(() => expect(within(main).getByRole('list', { name: 'Connection steps' })).toBeInTheDocument());
     expect(main).toHaveAttribute('aria-busy', 'true');
     expect(screen.getByRole('navigation', { name: 'Primary' })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText('Connected to other-cluster')).toBeInTheDocument());
+    // Pinned clusters are gone: nothing asks the backend for them.
+    expect(getJson.mock.calls.map(([u]) => u).filter((u) => /pins/.test(u))).toEqual([]);
   }, 15000);
 
-  it('"Search contexts…" and the kubepilot:open-contexts event open the searchable context picker', async () => {
+  it('the cluster button and the kubepilot:open-contexts event open the Switch cluster window', async () => {
     renderApp();
     const user = await connectFromHome();
-    await user.click(screen.getByRole('button', { name: /Switch cluster/ }));
-    await user.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Search contexts…' }));
+    const button = screen.getByRole('button', { name: /Switch cluster/ });
+    expect(button).toHaveAttribute('aria-expanded', 'false');
+    await user.click(button);
+    // The window, not a menu of clusters.
+    expect(screen.queryByRole('menu')).toBeNull();
     const dialog = await screen.findByRole('dialog', { name: 'Switch cluster' });
+    expect(button).toHaveAttribute('aria-expanded', 'true');
     const search = within(dialog).getByRole('combobox');
     await waitFor(() => expect(search).toHaveFocus());
     expect(within(dialog).getAllByRole('option').map((o) => o.textContent)).toEqual(['other-cluster', 'test-cluster']);
     expect(within(dialog).getByRole('option', { name: 'test-cluster' })).toHaveAttribute('aria-selected', 'true');
+    expect(dialog).not.toHaveTextContent(/pin/i);
     await user.keyboard('{Escape}');
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Switch cluster' })).toBeNull());
 
-    // Desktop app path (native Clusters menu → App): same dialog.
+    // Desktop app path (Clusters → Switch Cluster… → App): same window.
     await act(async () => { window.dispatchEvent(new CustomEvent('kubepilot:host', { detail: { type: 'open-contexts' } })); });
     expect(await screen.findByRole('dialog', { name: 'Switch cluster' })).toBeInTheDocument();
     await user.type(screen.getByRole('combobox'), 'oth');
@@ -185,6 +289,60 @@ describe('App routing', () => {
     expect(postJson).toHaveBeenCalledWith('/api/config/context', { contextName: 'other-cluster' });
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Switch cluster' })).toBeNull());
   }, 15000);
+
+  it('Add a cluster from the Switch cluster window: the dialog takes its place, and Cancel comes back to it', async () => {
+    renderApp();
+    const user = await connectFromHome();
+    await user.click(screen.getByRole('button', { name: /Switch cluster/ }));
+    const window1 = await screen.findByRole('dialog', { name: 'Switch cluster' });
+    await user.click(within(within(window1).getByRole('region', { name: 'Add a cluster' })).getByRole('button', { name: 'AWS EKS' }));
+    // One dialog at a time.
+    const aws = await screen.findByRole('dialog', { name: 'Add AWS EKS clusters' });
+    expect(screen.queryByRole('dialog', { name: 'Switch cluster' })).toBeNull();
+    await user.click(within(aws).getByRole('button', { name: 'Cancel' }));
+    // Back where the user was: the same window, still connected to the same cluster.
+    const window2 = await screen.findByRole('dialog', { name: 'Switch cluster' });
+    expect(screen.queryByRole('dialog', { name: 'Add AWS EKS clusters' })).toBeNull();
+    expect(within(window2).getByRole('option', { name: 'test-cluster' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('navigation', { name: 'Primary' })).toBeInTheDocument();
+    // Closed from there, it stays closed.
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  }, 15000);
+
+  it('the same dialog opened from the desktop menu just closes: it did not come from the window', async () => {
+    renderApp();
+    const user = await connectFromHome();
+    await act(async () => { window.dispatchEvent(new CustomEvent('kubepilot:host', { detail: { type: 'add-cluster', provider: 'aws' } })); });
+    await user.click(within(await screen.findByRole('dialog', { name: 'Add AWS EKS clusters' })).getByRole('button', { name: 'Cancel' }));
+    await settle();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  }, 15000);
+
+  it('removing a cluster from the Switch cluster window: Cancel and a finished removal come back to it; removing the connected one goes Home', async () => {
+    renderApp();
+    const user = await connectFromHome();
+    const openWindow = async () => {
+      await user.click(screen.getByRole('button', { name: /Switch cluster/ }));
+      return screen.findByRole('dialog', { name: 'Switch cluster' });
+    };
+    const askToRemove = async (dialog, name) => user.click(within(dialog).getByRole('button', { name: `Remove ${name}` }));
+
+    await askToRemove(await openWindow(), 'other-cluster');
+    const confirm = await screen.findByRole('dialog', { name: 'Remove other-cluster' });
+    expect(screen.queryByRole('dialog', { name: 'Switch cluster' })).toBeNull();
+    await user.click(within(confirm).getByRole('button', { name: 'Cancel' }));
+    const back = await screen.findByRole('dialog', { name: 'Switch cluster' });
+
+    await askToRemove(back, 'other-cluster');
+    await user.click(within(await screen.findByRole('dialog', { name: 'Remove other-cluster' })).getByRole('button', { name: 'Remove it' }));
+    const again = await screen.findByRole('dialog', { name: 'Switch cluster' });
+
+    await askToRemove(again, 'test-cluster');
+    await user.click(within(await screen.findByRole('dialog', { name: 'Remove test-cluster' })).getByRole('button', { name: 'Remove the connected one' }));
+    expect(await screen.findByRole('heading', { name: /^Welcome/ })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Switch cluster' })).toBeNull();
+  }, 20000);
 
   it('restores the view, namespace filter and selection from the hash (once connected)', async () => {
     renderApp();

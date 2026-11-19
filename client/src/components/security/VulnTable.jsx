@@ -123,37 +123,37 @@ export default function VulnTable({ vuln, ns, q = '', onSelect, selected, critic
     accessor: (im) => splitImage(im.image).name, title: (im) => displayImage(im.image), render: nameCell,
   };
   const changeCol = {
-    key: 'change', header: criticalOnly ? 'Since last version' : 'Change', sortable: true,
+    key: 'change', header: criticalOnly ? 'Since last version' : 'Change', sortable: true, width: criticalOnly ? 202 : 110,
     accessor: (im) => { const ch = changeOf(im); return ch ? ch.fixed - ch.added : -Infinity; },
     render: (im) => <ChangeCell im={im} />,
   };
   const columns = criticalOnly ? [
     nameCol,
-    { key: 'namespace', header: 'Namespace', sortable: true, render: (im) => im.namespace || '—' },
-    { key: 'critical', header: 'Critical', sortable: true, accessor: (im) => im.summary?.CRITICAL || 0, align: 'right',
+    { key: 'namespace', header: 'Namespace', sortable: true, ellipsis: true, width: 170, render: (im) => im.namespace || '—' },
+    { key: 'critical', header: 'Critical', sortable: true, width: 116, accessor: (im) => im.summary?.CRITICAL || 0, align: 'right',
       render: (im) => <span className={im.summary?.CRITICAL && isRunning(im) ? 'sec-crit' : 'sec-dim'}>{im.summary?.CRITICAL || 0}</span> },
-    { key: 'fix', header: 'Fix available', sortable: true, accessor: (im) => criticalFix(im).fixable, render: (im) => {
+    { key: 'fix', header: 'Fix available', sortable: true, width: 160, accessor: (im) => criticalFix(im).fixable, render: (im) => {
       const { crit, fixable } = criticalFix(im);
       if (!crit) return <span className="sec-dim">—</span>;
       return <span className={fixable === crit ? 'sec-fix-all' : fixable ? 'sec-fix-some' : 'sec-dim'}>{fixable} of {crit}</span>;
     } },
     changeCol,
-    { key: 'scannedAt', header: 'Scan Date', sortable: true, accessor: (im) => Date.parse(im.scannedAt) || 0, render: (im) => <span className="sec-dim">{im.scannedAt ? formatAgeLong(im.scannedAt) : '—'}</span> },
+    { key: 'scannedAt', header: 'Scan Date', sortable: true, width: 130, fill: true, accessor: (im) => Date.parse(im.scannedAt) || 0, render: (im) => <span className="sec-dim">{im.scannedAt ? formatAgeLong(im.scannedAt) : '—'}</span> },
   ] : [
     nameCol,
-    { key: 'platform', header: 'Platforms', sortable: true, accessor: (im) => im.platform || im.os || '', render: (im) => <span className="sec-dim">{im.platform || im.os || '—'}</span> },
-    { key: 'pods', header: 'Pods', sortable: true, accessor: (im) => new Set((im.workloads || []).filter((w) => w.running !== false).map((w) => `${w.namespace}/${w.name}`)).size, align: 'right' },
-    { key: 'vulns', header: 'Vulnerabilities', sortable: true, accessor: (im) => sevTotal(im.summary), render: (im) => {
+    { key: 'platform', header: 'Platforms', sortable: true, ellipsis: true, width: 130, accessor: (im) => im.platform || im.os || '', render: (im) => <span className="sec-dim">{im.platform || im.os || '—'}</span> },
+    { key: 'pods', header: 'Pods', sortable: true, width: 84, accessor: (im) => new Set((im.workloads || []).filter((w) => w.running !== false).map((w) => `${w.namespace}/${w.name}`)).size, align: 'right' },
+    { key: 'vulns', header: 'Vulnerabilities', sortable: true, width: 176, accessor: (im) => sevTotal(im.summary), render: (im) => {
       const scanned = im.status === 'Scanned' || im.status === 'Failed' || im.status === 'Not running';
       return sevTotal(im.summary) ? <SevMini summary={im.summary} /> : <span className="sec-dim">{scanned ? '—' : '?'}</span>;
     } },
     changeCol,
-    { key: 'secrets', header: 'Secrets', sortable: true, accessor: (im) => im.secrets || 0, align: 'right', render: (im) => {
+    { key: 'secrets', header: 'Secrets', sortable: true, width: 108, accessor: (im) => im.secrets || 0, align: 'right', render: (im) => {
       const scanned = im.status === 'Scanned' || im.status === 'Failed' || im.status === 'Not running';
       if (!scanned) return <span className="sec-dim">?</span>;
       return im.secrets ? <span className="sec-secretnum">{im.secrets}</span> : <span className="sec-dim">—</span>;
     } },
-    { key: 'status', header: 'Status', sortable: true, accessor: (im) => im.status || 'Not Scanned', render: (im) => <span className={STATUS_CLASS[im.status] || 'sec-dim'}>{im.status || 'Not Scanned'}</span> },
+    { key: 'status', header: 'Status', sortable: true, width: 130, fill: true, accessor: (im) => im.status || 'Not Scanned', render: (im) => <span className={STATUS_CLASS[im.status] || 'sec-dim'}>{im.status || 'Not Scanned'}</span> },
   ];
 
   const initialSort = criticalOnly ? { key: 'scannedAt', dir: 'desc' } : { key: 'image', dir: 'asc' };
@@ -224,7 +224,7 @@ function RecentFixes({ images, ns, onSelect }) {
       <DataTable
         caption="What the latest rollouts fixed and introduced"
         columns={[
-          { key: 'workload', header: 'Workload', sortable: true, render: (r) => (
+          { key: 'workload', header: 'Workload', sortable: true, ellipsis: true, width: 340, title: (r) => `${r.workload} · ${r.namespace}`, render: (r) => (
             <span className="sec-imgname">
               <span className="sec-imgname-main"><span className="sec-imgname-text">{r.workload.replace(/^Deployment /, '')}</span></span>
               <span className="sec-imgname-loc">{r.namespace}{r.container ? ` · ${r.container}` : ''}</span>
@@ -237,13 +237,13 @@ function RecentFixes({ images, ns, onSelect }) {
               <span>{splitImage(r.im.image).name}</span>
             </span>
           ) },
-          { key: 'fixed', header: 'Fixed', sortable: true, accessor: (r) => sevTotal(r.resolvedBySeverity), render: (r) => (
+          { key: 'fixed', header: 'Fixed', sortable: true, width: 130, accessor: (r) => sevTotal(r.resolvedBySeverity), render: (r) => (
             sevTotal(r.resolvedBySeverity) ? <span className="sec-chg-sev sec-chg-sev-fixed"><SevMini summary={r.resolvedBySeverity} /></span> : <span className="sec-dim">—</span>
           ) },
-          { key: 'introduced', header: 'New', sortable: true, accessor: (r) => sevTotal(r.introducedBySeverity), render: (r) => (
+          { key: 'introduced', header: 'New', sortable: true, width: 110, accessor: (r) => sevTotal(r.introducedBySeverity), render: (r) => (
             sevTotal(r.introducedBySeverity) ? <SevMini summary={r.introducedBySeverity} /> : <span className="sec-dim">—</span>
           ) },
-          { key: 'revision', header: 'Revision', align: 'right', render: (r) => <span className="sec-dim">{r.previousRevision} → {r.revision}</span> },
+          { key: 'revision', header: 'Revision', align: 'right', width: 120, fill: true, render: (r) => <span className="sec-dim">{r.previousRevision} → {r.revision}</span> },
         ]}
         rows={rows}
         rowKey={(r) => r.key}

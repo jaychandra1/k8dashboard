@@ -24,14 +24,14 @@ import {announce, afterPaint } from '../../lib/a11y';
  *   initialSort={{ key: 'name', dir: 'asc' }} storageKey="pods"
  * />
  *
- * Column widths. By default a column's `width` is a hint and the browser sizes
- * columns by the cells it is given. A virtualised table renders only the rows
- * near the viewport, so those widths change as rows scroll or sort into view:
- * one long status just below the fold widens "Status" for every row above it.
- * With `fixedColumns`, a column that names a `width` is exactly that wide
- * whatever its cells hold (what doesn't fit is cut with an ellipsis and shown
- * in the cell's tooltip), so the layout is the same for every row, sort order
- * and scroll position:
+ * Column widths. Left to itself a browser sizes table columns by the cells it
+ * is given, and a virtualised table renders only the rows near the viewport,
+ * so the widths would change as rows scroll or sort into view: one long status
+ * just below the fold widens "Status" for every row above it. So a column that
+ * names a `width` is exactly that wide whatever its cells hold (what doesn't
+ * fit is cut with an ellipsis and shown in the cell's tooltip), and the layout
+ * is the same for every row, sort order and scroll position. Every table names
+ * a width for every column (ui/tableColumns.js has the helpers):
  *   { width: 160 }                  exactly 160px
  *   { width: 300, maxWidth: 460 }   300px, growing to 460px while the table has spare room
  *                                   (the first such column, when every column has a width).
@@ -39,7 +39,8 @@ import {announce, afterPaint } from '../../lib/a11y';
  *                                   content needs: the widest it has needed in this table,
  *                                   so short names leave no gap and a filter doesn't move it.
  *   { width: 80, fill: true }       at least 80px, plus whatever room is left
- * A column without a `width` is still sized by its content.
+ * A column without a `width` is still sized by its content, and
+ * `fixedColumns={false}` makes every width a hint again (content-sized).
  */
 const SORT_ICON = { asc: 'chevronUp', desc: 'chevronDown' };
 // The checkbox and row-actions columns, in px (fixedColumns pins them too).
@@ -56,7 +57,7 @@ const pinned = (size) => ({ width: size, minWidth: size, maxWidth: size });
  * (Table cells honour min-width / max-width, and a cell's max-width caps what
  * its content may ask for: that is what pins a column in a content-sized table.)
  */
-export function columnSizing(columns, { fixed = false, selectable = false, actions = false, fit = 0 } = {}) {
+export function columnSizing(columns, { fixed = true, selectable = false, actions = false, fit = 0 } = {}) {
   if (!fixed) {
     return columns.map((col) => ({
       // `fill`: this column takes the spare width (the others keep theirs).
@@ -136,7 +137,7 @@ export default function DataTable({
   dense = false,
   overscan = 8,
   maxHeight,
-  fixedColumns = false,
+  fixedColumns = true,
 }) {
   const scrollRef = useRef(null);
   const rowEls = useRef(new Map());
@@ -367,14 +368,17 @@ export default function DataTable({
                 {columns.map((col, ci) => {
                   const content = col.render ? col.render(row, index) : (col.accessor ? col.accessor(row) : row?.[col.key]);
                   const text = typeof content === 'string' || typeof content === 'number' ? String(content) : undefined;
-                  // A cell that can be cut short says what it holds in its tooltip.
+                  // A cell that can be cut short says what it holds in its tooltip: the
+                  // column's own title(), the text it shows, or the row's value for it.
                   const clips = col.ellipsis || sizing[ci].fixed;
+                  const own = row?.[col.key];
+                  const plain = typeof own === 'string' || typeof own === 'number' ? String(own) : undefined;
                   return (
                     <td
                       key={col.key}
                       className={`dt-td${col.ellipsis ? ' dt-ellipsis' : ''}${sizing[ci].fixed ? ' dt-fixed' : ''}${col.align ? ` dt-align-${col.align}` : ''}${col.mono ? ' dt-mono' : ''}${col.className ? ` ${col.className}` : ''}`}
                       style={sizing[ci].td}
-                      title={clips ? (col.title ? col.title(row) : text) : undefined}
+                      title={clips ? (col.title ? col.title(row) : text ?? plain) : undefined}
                     >
                       {content ?? '—'}
                     </td>

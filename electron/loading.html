@@ -14,6 +14,9 @@
         -webkit-user-select: none;
         user-select: none;
       }
+      /* Where the app draws the title bar (Windows, macOS) the window has no
+         native one to drag it by while this page shows: the top strip does it. */
+      .drag { position: fixed; top: 0; left: 0; right: 0; height: 36px; -webkit-app-region: drag; }
       .wrap {
         height: 100%;
         display: flex;
@@ -92,6 +95,7 @@
     </style>
   </head>
   <body>
+    <div class="drag"></div>
     <div class="wrap">
       <div class="mark" aria-hidden="true">
         <svg class="wheel" viewBox="0 0 100 100" width="56" height="56" fill="none" stroke="currentColor" stroke-linecap="round">

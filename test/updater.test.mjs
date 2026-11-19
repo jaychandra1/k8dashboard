@@ -160,7 +160,8 @@ describe('the app holds no release server', () => {
     assert.match(main, /\.\.\.\(process\.platform === 'win32' \? \[\{ label: 'Check for Updates'/);
     assert.doesNotMatch(main, /update-host|updateHost|UPDATE_DIR|INSTALL_KIND|update-result/);
     const preload = fs.readFileSync(path.join(ROOT_DIR, 'electron', 'preload.cjs'), 'utf8');
-    assert.match(preload, /updates: process\.platform === 'win32',/);
+    assert.match(preload, /const windows = process\.platform === 'win32';/);
+    assert.match(preload, /updates: windows,/);
   });
 
   test('messages name no hosting service', () => {

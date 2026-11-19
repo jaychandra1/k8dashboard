@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import Icon from './Icons';
 import DataTable from './ui/DataTable';
+import { nameRoom } from './ui/tableColumns';
 import SearchBox from './ui/SearchBox';
 import Badge from './ui/Badge';
 import EmptyState from './ui/EmptyState';
@@ -32,7 +33,7 @@ export default function Namespaces({ onSelectNamespace, refreshSignal = 0, onNav
 
   const columns = useMemo(() => [
     {
-      key: 'name', header: 'Name', sortable: true, ellipsis: true, width: 300,
+      key: 'name', header: 'Name', sortable: true, ellipsis: true, width: 300, maxWidth: 460, fit: nameRoom,
       render: (ns) => (
         <XLink
           className="xlink resource-name-cell"
@@ -48,7 +49,9 @@ export default function Namespaces({ onSelectNamespace, refreshSignal = 0, onNav
     },
     { key: 'status', header: 'Status', sortable: true, width: 130, accessor: (ns) => ns.status || 'Active', render: (ns) => <Badge status={ns.status || 'Active'} kind="namespace" /> },
     {
-      key: 'labels', header: 'Labels', accessor: (ns) => Object.keys(ns.labels || {}).length,
+      // The labels take the room the other columns leave, on one line; the tooltip has them all.
+      key: 'labels', header: 'Labels', width: 320, fill: true, accessor: (ns) => Object.keys(ns.labels || {}).length,
+      title: (ns) => Object.entries(ns.labels || {}).map(([k, v]) => (v ? `${k}=${v}` : k)).join(', ') || undefined,
       render: (ns) => {
         const entries = Object.entries(ns.labels || {});
         if (!entries.length) return '—';

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import Icon from './Icons';
 import DataTable from './ui/DataTable';
+import { nameRoom } from './ui/tableColumns';
 import Badge from './ui/Badge';
 import Button from './ui/Button';
 import BottomPanel, { PanelFullscreenToggle } from './ui/BottomPanel';
@@ -74,13 +75,13 @@ export default function Helm({ refreshSignal = 0, onNavigate }) {
   );
 
   const columns = useMemo(() => [
-    { key: 'name', header: 'Name', sortable: true, ellipsis: true, width: 260, render: (r) => <span className="resource-name-cell"><Icon name="helm" size={15} className="rn-icon" /><span className="rn-text">{r.name}</span></span>, title: (r) => r.name },
+    { key: 'name', header: 'Name', sortable: true, ellipsis: true, width: 260, maxWidth: 420, fit: nameRoom, render: (r) => <span className="resource-name-cell"><Icon name="helm" size={15} className="rn-icon" /><span className="rn-text">{r.name}</span></span>, title: (r) => r.name },
     { key: 'namespace', header: 'Namespace', sortable: true, ellipsis: true, width: 160, render: (r) => <XLink className="xlink tone-info" link={nsLink(r.namespace)} onNavigate={onNavigate} title={`Filter to ${r.namespace}`}>{r.namespace}</XLink>, title: (r) => r.namespace },
     { key: 'chart', header: 'Chart', sortable: true, ellipsis: true, width: 220, render: (r) => r.chart || '—', title: (r) => r.chart },
-    { key: 'appVersion', header: 'App Version', sortable: true, mono: true, width: 120, render: (r) => r.appVersion || '—' },
-    { key: 'revision', header: 'Revision', sortable: true, align: 'right', mono: true, width: 90, accessor: (r) => Number(r.revision) || 0, render: (r) => r.revision || '—' },
-    { key: 'status', header: 'Status', sortable: true, width: 140, accessor: (r) => r.status || '', render: (r) => <Badge status={r.status || 'unknown'} kind="helm" /> },
-    { key: 'updated', header: 'Updated', sortable: true, align: 'right', mono: true, width: 90, accessor: (r) => parseHelmDate(r.updated)?.getTime() ?? (r.updated ? Date.parse(r.updated) : null), render: (r) => formatAge(r.updated) },
+    { key: 'appVersion', header: 'App Version', sortable: true, mono: true, ellipsis: true, width: 142, render: (r) => r.appVersion || '—' },
+    { key: 'revision', header: 'Revision', sortable: true, align: 'right', mono: true, width: 116, accessor: (r) => Number(r.revision) || 0, render: (r) => r.revision || '—' },
+    { key: 'status', header: 'Status', sortable: true, width: 160, accessor: (r) => r.status || '', render: (r) => <Badge status={r.status || 'unknown'} kind="helm" /> },
+    { key: 'updated', header: 'Updated', sortable: true, align: 'right', mono: true, width: 108, fill: true, accessor: (r) => parseHelmDate(r.updated)?.getTime() ?? (r.updated ? Date.parse(r.updated) : null), render: (r) => formatAge(r.updated) },
   ], [onNavigate]);
 
   const select = (r) => { setSelected(r); setTab('values'); };

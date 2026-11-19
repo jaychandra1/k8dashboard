@@ -72,7 +72,7 @@ Keep the port published on `127.0.0.1`. If you must expose it on a network, put 
 
 **Home lists:**
 - **Last connected:** the cluster you used last, with a **Connect** button.
-- **Clusters:** every context in your kubeconfig, pinned first, then the most recently used, then by name. Each has **Connect**, **Pin** and **Remove** (shown on hover). Use the search box to filter.
+- **Clusters:** every context in your kubeconfig, the most recently used first, then by name. Each has **Connect** and **Remove** (shown on hover). Use the search box to filter.
 - **Badges, read from local files only:** **Signed out of AWS** or **AWS session expired**, from the AWS token cache.
 - **Add cluster:** **AWS EKS**, **Azure AKS** or a **kubeconfig file**. With no kubeconfig at all, Home says so and offers the same choices.
 
@@ -85,20 +85,21 @@ It then opens the **Dashboard** (`#/cluster`), and resource lists load as you op
 
 **If the sign-in fails,** the connection dialog explains why (expired token, unreachable API server, TLS error, missing auth plugin) and offers a fix. For an expired AWS session that's **Sign in with AWS**, which reconnects by itself once you're signed in. The dialog is only about the cluster you're connecting to. **Retry** tries again, and **Back to clusters** returns to Home to pick or add another cluster.
 
-**Leaving a cluster:** **Disconnect** in the cluster menu returns to Home, and stops any background work for that cluster.
+**Leaving a cluster:** **Disconnect** in the Switch cluster window returns to Home, and stops any background work for that cluster.
 
-Switching clusters happens from **one place**: the **cluster menu** at the left end of the top bar (the button showing the current context, above the sidebar, with the back/forward arrows right beside it) — or, in the desktop app, the native **Clusters** menu (between View and Window), which mirrors it. `⌘K` / `Ctrl+K` → type the context name also works. The cluster menu is laid out as:
+Switching clusters happens from **one place**: the **cluster button** at the left end of the top bar (it shows the current cluster, above the sidebar, with the back/forward arrows right beside it). It opens the **Switch cluster** window — also reached from **Clusters → Switch Cluster…** in the desktop app, and from `⌘K` / `Ctrl+K` → *Switch cluster…* (or type a cluster's name there). The window is laid out as:
 
-1. your **pinned** clusters, with a check on the current one — click to switch;
-2. **All contexts** — with up to 12 contexts every context is listed right here (provider icon, check on the current one); with more, **All contexts ▸** opens them as a submenu. **Search contexts…** opens a searchable picker grouped by provider (type to filter, `↑`/`↓` to move, Enter to switch, Esc to close);
-3. **Pin "<context>"** / **Unpin "<context>"** for the current cluster, and **Add cluster ▸** to import an **AWS EKS** or **Azure AKS** cluster.
+1. a **search box** and **every cluster**, grouped by provider, with a check on the connected one — click one (or `↑`/`↓` and Enter) to connect to it. The list scrolls inside the window, so it reads the same with 4 clusters or 40. The bin on a row removes that cluster from your kubeconfig (it asks first);
+2. **Add a cluster** — one row: **AWS EKS**, **Azure AKS**, **Google GKE**, **Kubeconfig**. Each opens its own dialog in the window's place; closing that dialog (Cancel, or when it has finished) brings the Switch cluster window back;
+3. **Disconnect**, next to the name of the cluster you are connected to.
 
-After a switch the app returns to the **Dashboard** of the new cluster (the selection and namespace filter are cleared) behind the loading screen until the new cluster's summary is in — never longer than about 8 seconds, after which the view shows its own loading placeholders. Pins are stored with the app's settings, so the desktop **Clusters** menu shows the same pinned list; its **All contexts…** entry opens the same searchable picker.
+After a switch the app returns to the **Dashboard** of the new cluster (the selection and namespace filter are cleared) behind the loading screen until the new cluster's summary is in — never longer than about 8 seconds, after which the view shows its own loading placeholders. Clusters can't be pinned: the window lists them all, and Home puts the ones you used last first.
 
 ### 1.4 Getting around
 
 - **Sidebar** — the K8Board brand, version and the Preferences gear at the top; then four sections: **Overview** (Dashboard, Nodes, Namespaces, Topology); **Resources** (Workloads — Overview, Pods, Deployments, StatefulSets, DaemonSets, ReplicaSets, Jobs, CronJobs… — then Network, Storage, Config); **Operations** (Events, Helm, Access Control); **Integrations** (Argo CD when installed, Security Center), followed by Custom Resources. Every item is a real link, so keyboard navigation, middle-click and "open in new tab" work.
-- **Cluster menu** — the button at the top of the sidebar with the current context name (hover it for the full name when it is cut short): pinned clusters (check = current), All contexts (inline list or submenu) + Search contexts…, Pin/Unpin, Add cluster ▸ (see §1.3). Fully keyboard operable (Enter or ↓ opens, arrows move, Esc closes). In the desktop app the same list is in the native **Clusters** menu.
+- **Cluster button** — at the left end of the top bar, with the current cluster's name (hover it for the full name when it is cut short). It opens the Switch cluster window (see §1.3); Enter, Space or ↓ open it from the keyboard.
+- **Title bar (desktop app on Windows)** — one slim bar at the top of the window holds the app icon, the menus (**View**, **Clusters**, **Window**, **Help**) and the window title, with the minimise, maximise and close buttons at its right end. It takes the place of the separate title bar and menu row, and the menus and their shortcuts (`Ctrl+R`, `Ctrl+Shift+R`, `F11`…) work as before. macOS and Linux keep their native menus.
 - **Landing page** — **Home** (`#/home`, the clusters to connect to) opens on start. The **Dashboard** (`#/cluster`) opens after every connection. It covers the whole cluster (every namespace):
   - **Top row:** nodes, CPU, memory, pods (with how many are failing) and namespaces.
   - **Health and capacity:** node health, pod health and cluster capacity. A pod counts as failing when a container is crash-looping, can't pull its image, was OOM-killed and so on, even though its phase still says "Running".

@@ -2,6 +2,7 @@ import Icon from '../Icons';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
 import DataTable from '../ui/DataTable';
+import { nameRoom } from '../ui/tableColumns';
 import EmptyState from '../ui/EmptyState';
 import SearchBox from '../ui/SearchBox';
 import Tooltip from '../ui/Tooltip';
@@ -9,19 +10,19 @@ import { formatAge } from '../../lib/format';
 import { SYNC_ORDER, HEALTH_ORDER, syncTone, healthTone, shortRepo, appKey } from './status';
 
 const COLUMNS = [
-  { key: 'name', header: 'Name', sortable: true, ellipsis: true, width: 260, render: (a) => (
+  { key: 'name', header: 'Name', sortable: true, ellipsis: true, width: 260, maxWidth: 420, fit: nameRoom, render: (a) => (
     <span className="resource-name-cell"><Icon name="argocd" size={14} className="rn-icon" /><span className="rn-text">{a.name}</span></span>
   ) },
-  { key: 'project', header: 'Project', sortable: true },
-  { key: 'syncStatus', header: 'Sync', sortable: true, render: (a) => <Badge tone={syncTone(a.syncStatus)}>{a.syncStatus}</Badge> },
-  { key: 'healthStatus', header: 'Health', sortable: true, render: (a) => <Badge tone={healthTone(a.healthStatus)}>{a.healthStatus}</Badge> },
-  { key: 'destination', header: 'Destination', sortable: true, accessor: (a) => a.destNamespace || a.destName || '', render: (a) => a.destNamespace || a.destName || '-' },
+  { key: 'project', header: 'Project', sortable: true, ellipsis: true, width: 140 },
+  { key: 'syncStatus', header: 'Sync', sortable: true, width: 124, render: (a) => <Badge tone={syncTone(a.syncStatus)}>{a.syncStatus}</Badge> },
+  { key: 'healthStatus', header: 'Health', sortable: true, width: 130, render: (a) => <Badge tone={healthTone(a.healthStatus)}>{a.healthStatus}</Badge> },
+  { key: 'destination', header: 'Destination', sortable: true, ellipsis: true, width: 160, accessor: (a) => a.destNamespace || a.destName || '', render: (a) => a.destNamespace || a.destName || '-' },
   { key: 'repoURL', header: 'Repository', sortable: true, ellipsis: true, width: 240, className: 'argo-repo',
     accessor: (a) => (a.multiSource ? '(multi-source)' : shortRepo(a.repoURL)),
     render: (a) => (a.multiSource ? '(multi-source)' : shortRepo(a.repoURL) || '-'),
     title: (a) => a.repoURL || '' },
-  { key: 'revision', header: 'Revision', mono: true, render: (a) => a.revision || '-' },
-  { key: 'age', header: 'Age', sortable: true, accessor: (a) => Date.parse(a.createdAt) || 0, render: (a) => formatAge(a.createdAt), align: 'right', mono: true },
+  { key: 'revision', header: 'Revision', mono: true, ellipsis: true, width: 120, render: (a) => a.revision || '-' },
+  { key: 'age', header: 'Age', sortable: true, accessor: (a) => Date.parse(a.createdAt) || 0, render: (a) => formatAge(a.createdAt), align: 'right', mono: true, width: 80, fill: true },
 ];
 
 /**

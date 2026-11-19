@@ -358,7 +358,7 @@ app.use((req, res, next) => {
   // Real config handlers stay in charge (they are demo-aware).
   if (p === '/api/config/status' || p === '/api/config/context' ||
       p === '/api/config/load' || p === '/api/config/reload' || p === '/api/config/capabilities' ||
-      p === '/api/settings/pins' || p === '/api/config/disconnect' ||
+      p === '/api/config/disconnect' ||
       p.startsWith('/api/config/contexts/')) return next();
   // Auth always "passes" in demo.
   if (p === '/api/config/auth') return res.json({ ok: true, currentContext: demo.DEMO_CONTEXT });
@@ -547,10 +547,11 @@ function readSettings() {
   try { return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8')); } catch { return {}; }
 }
 // Written to a temporary file and renamed over the old one (writePrivateFile),
-// so a crash mid-write never leaves a half-written settings.json — the pins,
-// the MCP switches and Home's recent clusters (written on every connection).
+// so a crash mid-write never leaves a half-written settings.json — the MCP
+// switches and Home's recent clusters (written on every connection).
 function writeSettings(patch) {
   const next = { ...readSettings(), ...patch };
+  delete next.pins; // pinned clusters are gone: an older file's list isn't carried along
   try {
     fs.mkdirSync(CONFIG_DIR, { recursive: true });
     writePrivateFile(configFile('settings.json'), JSON.stringify(next, null, 2));
@@ -627,14 +628,6 @@ app.post('/api/mcp/token', (req, res) => {
   res.json(mcpInfo());
 });
 
-// Pinned clusters — shared by the in-app cluster switcher (top bar) and the
-// desktop app's native "Clusters" menu, so both show the same list. Stored in
-// the same settings.json as mcpAllowWrite. Read-only for MCP callers (GET).
-const MAX_PINS = 50;
-const readPins = () => {
-  const s = readSettings();
-  return Array.isArray(s.pins) ? [...new Set(s.pins.filter(isContextName))].slice(0, MAX_PINS) : [];
-};
 // ---- Connection: the user's explicit Connect ---------------------------------
 // Startup connects to nothing: the UI opens on its Home page and signs in only
 // when the user picks a cluster (POST /api/config/context, then GET
@@ -695,19 +688,6 @@ function localSignInHints(kc, names) {
   } catch { /* hints are optional */ }
   return out;
 }
-
-app.get('/api/settings/pins', (req, res) => {
-  res.json({ pins: readPins() });
-});
-app.put('/api/settings/pins', mcpWriteGate, (req, res) => {
-  const { pins } = req.body || {};
-  if (!Array.isArray(pins) || pins.length > MAX_PINS || !pins.every(isContextName)) {
-    return bad(res, 'pins', `pins must be an array of at most ${MAX_PINS} context names`);
-  }
-  const next = [...new Set(pins)];
-  writeSettings({ pins: next });
-  res.json({ pins: next });
-});
 
 app.get('/api/config/status', (req, res) => {
   let contexts = [], contextsInfo = [], clusters = [];
@@ -972,8 +952,6 @@ app.post('/api/config/contexts/remove', async (req, res) => {
       awsProfileRemoved = true;
     }
 
-    const pins = readPins();
-    if (pins.includes(context)) writeSettings({ pins: pins.filter((p) => p !== context) });
     forgetRecent(context);
 
     // The live config: reload, and keep (or move) the selected cluster.

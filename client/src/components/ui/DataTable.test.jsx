@@ -145,7 +145,8 @@ describe('DataTable', () => {
 });
 
 // A virtualised table renders only the rows near the viewport, and a browser
-// sizes columns by the cells it is given; fixedColumns takes the cells out of it.
+// sizes columns by the cells it is given; a column's width takes the cells out
+// of it (fixedColumns, on unless a table turns it off).
 describe('DataTable column widths', () => {
   const sized = [
     { key: 'name', header: 'Name', sortable: true, ellipsis: true, width: 300, maxWidth: 460 },
@@ -154,15 +155,16 @@ describe('DataTable column widths', () => {
   ];
   const actions = () => [{ label: 'Open', onSelect: () => {} }];
 
-  it('by default a width is a hint: only ellipsis cells are capped (unchanged)', () => {
-    expect(columnSizing(sized)).toEqual([
+  it('fixedColumns off: a width is a hint and only ellipsis cells are capped', () => {
+    expect(columnSizing(sized, { fixed: false })).toEqual([
       { th: { width: 300, minWidth: undefined }, td: { maxWidth: 460 }, fixed: false },
       { th: { width: 160, minWidth: undefined }, td: undefined, fixed: false },
       { th: { width: '100%', minWidth: 80 }, td: undefined, fixed: false },
     ]);
   });
 
-  it('fixedColumns: a sized column is exactly its width, one may stretch, the fill column takes the rest', () => {
+  it('a sized column is exactly its width, one may stretch, the fill column takes the rest (the default)', () => {
+    expect(columnSizing(sized)).toEqual(columnSizing(sized, { fixed: true }));
     const [name, status, age] = columnSizing(sized, { fixed: true, selectable: true, actions: true });
     // Every other column (160 + 80), the checkbox (50) and actions (50) columns, and room for the scrollbar (18).
     const elastic = 'clamp(300px, calc(100cqw - 358px), 460px)';
@@ -200,7 +202,7 @@ describe('DataTable column widths', () => {
     ];
     const widths = () => screen.getAllByRole('columnheader').map((th) => [th.style.width, th.style.minWidth, th.style.maxWidth].join('/'));
     const table = (rowsShown) => (
-      <DataTable columns={sized} rows={rowsShown} rowKey={rowKey} fixedColumns selected={new Set()} onToggleSelect={() => {}} rowActions={actions} />
+      <DataTable columns={sized} rows={rowsShown} rowKey={rowKey} selected={new Set()} onToggleSelect={() => {}} rowActions={actions} />
     );
     const { container, rerender } = render(table(data));
     expect(container.querySelector('.dt-wrap')).toHaveAttribute('data-fixed', 'true');
@@ -224,8 +226,23 @@ describe('DataTable column widths', () => {
     expect(widths()).toEqual(before);
   });
 
-  it('without fixedColumns nothing is pinned', () => {
-    const { container } = render(<DataTable columns={sized} rows={rows} rowKey={rowKey} />);
+  it('a cell that can be cut short has a tooltip: title(), else its text, else the row\'s value', () => {
+    const cols = [
+      { key: 'name', header: 'Name', width: 200, render: (r) => <b>{r.name}</b> },
+      { key: 'status', header: 'Status', width: 120, render: (r) => r.status.toUpperCase() },
+      { key: 'age', header: 'Age', width: 80, fill: true, render: (r) => <i>{r.age}s</i>, title: () => undefined },
+      { key: 'extra', header: 'Extra', width: 90, render: () => <i>node</i> },
+    ];
+    render(<DataTable columns={cols} rows={[rows[0]]} rowKey={rowKey} />);
+    const [name, status, age, extra] = screen.getAllByRole('cell');
+    expect(name).toHaveAttribute('title', 'beta'); // rendered as a node: the row's own value
+    expect(status).toHaveAttribute('title', 'RUNNING'); // the text it shows
+    expect(age).not.toHaveAttribute('title'); // the column said: none
+    expect(extra).not.toHaveAttribute('title'); // nothing plain to say
+  });
+
+  it('fixedColumns={false}: nothing is pinned', () => {
+    const { container } = render(<DataTable columns={sized} rows={rows} rowKey={rowKey} fixedColumns={false} />);
     expect(container.querySelector('.dt-wrap')).not.toHaveAttribute('data-fixed');
     expect(container.querySelector('.dt-fixed')).toBeNull();
     const status = screen.getAllByRole('columnheader')[1];

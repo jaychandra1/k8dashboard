@@ -16,9 +16,9 @@ const ORDER = ['aws', 'azure', 'gcp', 'local', 'other'];
 // Unknown provider tags (e.g. from an older or test-only server) fall into "Other clusters".
 export const providerKeyOf = (provider) => (PROVIDERS[provider] ? provider : 'other');
 
-// Dispatched to pop the searchable context picker open. App owns the picker
-// and listens for this; the top-bar cluster menu ("Search contexts…"), the
-// command palette and the desktop app's native Clusters menu all end up here.
+// Dispatched to open the "Switch cluster" window. App owns it and listens for
+// this; the top-bar cluster button, the command palette and the desktop app's
+// Clusters menu all end up here.
 export const OPEN_CONTEXTS_EVENT = 'kubepilot:open-contexts';
 export function openContextPicker() {
   window.dispatchEvent(new CustomEvent(OPEN_CONTEXTS_EVENT));
@@ -37,7 +37,7 @@ export function openContextPicker() {
  *
  * Used by ContextPickerModal.
  */
-export function ContextList({ contexts = [], contextsInfo, currentContext, onPick, onRemove, canRemove, label = 'Kubernetes contexts', autoFocus = false }) {
+export function ContextList({ contexts = [], contextsInfo, currentContext, onPick, onRemove, canRemove, label = 'Clusters', autoFocus = false }) {
   const id = useId();
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(-1);
@@ -91,11 +91,11 @@ export function ContextList({ contexts = [], contextsInfo, currentContext, onPic
     <div className="ctxp">
       <div className="dd-search">
         <Icon name="search" size={14} />
-        <label htmlFor={`${id}-search`} className="sr-only">Search contexts</label>
+        <label htmlFor={`${id}-search`} className="sr-only">Search clusters</label>
         <input
           id={`${id}-search`}
           type="text"
-          placeholder={`Search ${contexts.length} context${contexts.length === 1 ? '' : 's'}…`}
+          placeholder={`Search ${contexts.length} cluster${contexts.length === 1 ? '' : 's'}…`}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onSearchKey}
@@ -163,51 +163,74 @@ export function ContextList({ contexts = [], contextsInfo, currentContext, onPic
 }
 
 /**
- * "Search contexts…" dialog: every kubeconfig context, grouped by provider,
- * with a search box and keyboard navigation. Picking a context switches to it
- * and closes the dialog. Opened by App for the top-bar cluster menu, the
- * palette's "All contexts…" and the desktop Clusters menu (OPEN_CONTEXTS_EVENT).
+ * The "Switch cluster" window — the one place to change cluster while
+ * connected. Opened by the top-bar cluster button, the palette and the desktop
+ * Clusters menu (OPEN_CONTEXTS_EVENT). Top to bottom:
  *
- *   <ContextPickerModal open onClose contexts contextsInfo currentContext onChange(ctx) onRemove(ctx)? canRemove(ctx)? onAddAws onAddAzure onAddGke onAddLocal />
+ *   search + every cluster, grouped by provider (✓ on the connected one;
+ *     picking one connects to it; the bin on a row removes it from the kubeconfig)
+ *   Add a cluster: AWS EKS · Azure AKS · Google GKE · Kubeconfig (one row)
+ *   Disconnect (back to Home)
+ *
+ * It only ever asks: the caller connects, opens the add/remove dialogs and
+ * comes back here when one of them is cancelled (App, "back to the picker").
+ *
+ *   <ContextPickerModal open onClose contexts contextsInfo currentContext onChange(ctx)
+ *     onRemove(ctx)? canRemove(ctx)? onAddAws onAddAzure onAddGke onAddLocal onDisconnect />
  */
-export default function ContextPickerModal({ open, onClose, contexts = [], contextsInfo, currentContext, onChange, onRemove, canRemove, onAddAws, onAddAzure, onAddGke, onAddLocal }) {
+export default function ContextPickerModal({ open, onClose, contexts = [], contextsInfo, currentContext, onChange, onRemove, canRemove, onAddAws, onAddAzure, onAddGke, onAddLocal, onDisconnect }) {
   const pick = (ctx) => {
     onClose?.();
     if (ctx && ctx !== currentContext) onChange?.(ctx);
   };
-  // The confirmation opens on its own (one dialog at a time).
-  const remove = (ctx) => { onClose?.(); onRemove?.(ctx); };
-  const run = (fn) => () => { onClose?.(); fn?.(); };
-  const canAdd = !!(onAddAws || onAddAzure || onAddGke || onAddLocal);
+  const addOptions = [
+    onAddAws && { key: 'aws', label: 'AWS EKS', icon: 'aws', run: onAddAws },
+    onAddAzure && { key: 'azure', label: 'Azure AKS', icon: 'azure', run: onAddAzure },
+    onAddGke && { key: 'gcp', label: 'Google GKE', icon: 'hexagon', run: onAddGke },
+    onAddLocal && { key: 'local', label: 'Kubeconfig', icon: 'box', run: onAddLocal },
+  ].filter(Boolean);
 
   return (
     <Modal
       open={open}
       onClose={onClose}
       title="Switch cluster"
-      size="sm"
+      size="md"
       className="ctx-picker"
       bodyClassName="ctx-picker-body"
-      footer={canAdd ? (
+      footer={onDisconnect && currentContext ? (
         <div className="ctx-picker-footer">
-          <span className="ctx-picker-add-label"><Icon name="plus" size={13} /> Add cluster</span>
-          {onAddAws && <Button variant="ghost" size="sm" icon="aws" onClick={run(onAddAws)}>AWS EKS</Button>}
-          {onAddAzure && <Button variant="ghost" size="sm" icon="azure" onClick={run(onAddAzure)}>Azure AKS</Button>}
-          {onAddGke && <Button variant="ghost" size="sm" icon="hexagon" onClick={run(onAddGke)}>Google GKE</Button>}
-          {onAddLocal && <Button variant="ghost" size="sm" icon="box" onClick={run(onAddLocal)}>Kubeconfig</Button>}
+          <span className="ctx-picker-current" title={currentContext}>Connected to <b>{currentContext}</b></span>
+          <Button variant="secondary" size="sm" icon="close" onClick={() => onDisconnect()}>Disconnect</Button>
         </div>
       ) : undefined}
     >
       {open && (
-        <ContextList
-          contexts={contexts}
-          contextsInfo={contextsInfo}
-          currentContext={currentContext}
-          onPick={pick}
-          onRemove={onRemove ? remove : undefined}
-          canRemove={canRemove}
-          label="All contexts"
-        />
+        <>
+          <ContextList
+            contexts={contexts}
+            contextsInfo={contextsInfo}
+            currentContext={currentContext}
+            onPick={pick}
+            onRemove={onRemove}
+            canRemove={canRemove}
+            label="Clusters"
+            autoFocus
+          />
+          {addOptions.length > 0 && (
+            <section className="ctx-picker-add" aria-labelledby="ctx-picker-add-h">
+              <h3 id="ctx-picker-add-h" className="ctx-picker-add-h">Add a cluster</h3>
+              <div className="ctx-picker-add-row" style={{ gridTemplateColumns: `repeat(${addOptions.length}, minmax(0, 1fr))` }}>
+                {addOptions.map((o) => (
+                  <button key={o.key} type="button" className="ctx-picker-add-btn" onClick={() => o.run()}>
+                    <Icon name={o.icon} size={16} className={`ctx-provider ctx-provider-${o.key}`} />
+                    <span>{o.label}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+        </>
       )}
     </Modal>
   );

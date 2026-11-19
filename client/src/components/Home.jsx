@@ -11,13 +11,13 @@ import { formatAge } from '../lib/format';
 
 // Home: where K8Board opens. It lists the clusters of the kubeconfig — read
 // from the file only: nothing connects, signs in or calls a cluster API until
-// the user clicks Connect — pinned ones first, then by last use, the last
+// the user clicks Connect — most recently used first, the last
 // connected one tagged "Recently connected", and ways to add a cluster. The
 // badges come from local files too
 // (GET /api/config/status: AWS sign-in state from the token cache). Also shown, inside the app, while connected (#/home).
 //
-//   <Home contexts contextsInfo lastConnected recent pins connected connecting
-//         onConnect onOpenDashboard onDisconnect onTogglePin onRemove canRemove
+//   <Home contexts contextsInfo lastConnected recent connected connecting
+//         onConnect onOpenDashboard onDisconnect onRemove canRemove
 //         onAddAws onAddAzure onAddGke onAddLocal onOpenPreferences />
 
 const SIGN_IN_BADGE = {
@@ -38,15 +38,13 @@ const ROW_LABEL = { other: 'Kubernetes' };
 
 const lastUsedText = (at) => (Number.isFinite(at) ? `last used ${formatAge(new Date(at))} ago` : null);
 
-/** Pinned first, then most recently used, then by name; filtered by `q`. */
-export function orderClusters(contexts, { pins = [], recent = [], q = '' } = {}) {
+/** Most recently used first, then by name; filtered by `q`. */
+export function orderClusters(contexts, { recent = [], q = '' } = {}) {
   const used = new Map(recent.map((r, i) => [r.name, i]));
-  const pinned = new Set(pins);
   const needle = q.trim().toLowerCase();
   return contexts
     .filter((c) => !needle || c.toLowerCase().includes(needle))
-    .sort((a, b) => (Number(pinned.has(b)) - Number(pinned.has(a)))
-      || ((used.has(a) ? used.get(a) : Infinity) - (used.has(b) ? used.get(b) : Infinity))
+    .sort((a, b) => ((used.has(a) ? used.get(a) : Infinity) - (used.has(b) ? used.get(b) : Infinity))
       || a.localeCompare(b));
 }
 
@@ -69,9 +67,9 @@ function ConnectButton({ name, primary, connected, connecting, busy, onConnect, 
 }
 
 export default function Home({
-  contexts = [], contextsInfo = [], lastConnected = null, recent = [], pins = [],
+  contexts = [], contextsInfo = [], lastConnected = null, recent = [],
   connected = null, connecting = null,
-  onConnect, onOpenDashboard, onDisconnect, onTogglePin, onRemove, canRemove,
+  onConnect, onOpenDashboard, onDisconnect, onRemove, canRemove,
   onAddAws, onAddAzure, onAddGke, onAddLocal, onOpenPreferences,
 }) {
   const [q, setQ] = useState('');
@@ -80,9 +78,8 @@ export default function Home({
 
   const infoOf = useMemo(() => new Map(contextsInfo.map((c) => [c.name, c])), [contextsInfo]);
   const usedAt = useMemo(() => new Map(recent.map((r) => [r.name, r.at])), [recent]);
-  const ordered = useMemo(() => orderClusters(contexts, { pins, recent, q }), [contexts, pins, recent, q]);
+  const ordered = useMemo(() => orderClusters(contexts, { recent, q }), [contexts, recent, q]);
   const last = lastConnected && contexts.includes(lastConnected) ? lastConnected : null;
-  const pinnedSet = useMemo(() => new Set(pins), [pins]);
 
   const addItems = [
     onAddAws && { key: 'aws', label: 'AWS EKS', icon: 'aws', onSelect: onAddAws },
@@ -165,7 +162,6 @@ export default function Home({
             ) : (
               <ul className="home-list" aria-label="Clusters in your kubeconfig">
                 {ordered.map((name) => {
-                  const pinned = pinnedSet.has(name);
                   const isConnected = connected === name;
                   const removable = onRemove && (!canRemove || canRemove(name));
                   const badges = clusterBadges(infoOf.get(name));
@@ -183,13 +179,6 @@ export default function Home({
                         {badges.map((b) => <Badge key={b.text} tone={b.tone} size="sm">{b.text}</Badge>)}
                       </span>
                       <span className="home-row-actions">
-                        {onTogglePin && (
-                          <Tooltip content={pinned ? 'Unpin' : 'Pin'}>
-                            <button type="button" className="home-icon-btn" data-on={pinned || undefined} aria-pressed={pinned} aria-label={`${pinned ? 'Unpin' : 'Pin'} ${name}`} onClick={() => onTogglePin(name)}>
-                              <Icon name="pin" size={15} />
-                            </button>
-                          </Tooltip>
-                        )}
                         {removable && (
                           <Tooltip content="Remove from kubeconfig…">
                             <button type="button" className="home-icon-btn home-icon-danger" aria-label={`Remove ${name}`} onClick={() => onRemove(name)}>

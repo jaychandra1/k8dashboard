@@ -5,6 +5,7 @@ import { statusClass } from '../../lib/status';
 import Badge, { StatusDot } from '../ui/Badge';
 import Button from '../ui/Button';
 import DataTable from '../ui/DataTable';
+import { nameRoom } from '../ui/tableColumns';
 import EmptyState from '../ui/EmptyState';
 import { layoutGraph, bfsDepths, edgePath } from '../graph/layout';
 import useGraphViewport, { GRAPH_KEY_HINT } from '../graph/useGraphViewport';
@@ -86,13 +87,13 @@ export default function AppResourceGraph({ app, resources = [], onOpenResource }
           <DataTable
             caption={graphLabel}
             columns={[
-              { key: 'kind', header: 'Kind', sortable: true, width: 170, render: (n) => (
+              { key: 'kind', header: 'Kind', sortable: true, width: 210, render: (n) => (
                 <span className="resource-name-cell"><Icon name={n.isApp ? 'argocd' : (KIND_ICON[n.kind] || 'box')} size={14} className="rn-icon" /><span className="rn-text">{n.kind}</span></span>
               ) },
-              { key: 'name', header: 'Name', sortable: true, ellipsis: true, width: 300 },
-              { key: 'namespace', header: 'Namespace', sortable: true, render: (n) => n.namespace || '—' },
-              { key: 'sync', header: 'Sync', sortable: true, render: (n) => (n.sync ? <Badge tone={syncTone(n.sync)} size="sm">{n.sync}</Badge> : '—') },
-              { key: 'health', header: 'Health', sortable: true, render: (n) => (n.health ? <Badge tone={healthTone(n.health)} size="sm">{n.health}</Badge> : '—') },
+              { key: 'name', header: 'Name', sortable: true, ellipsis: true, width: 300, maxWidth: 460, fit: nameRoom },
+              { key: 'namespace', header: 'Namespace', sortable: true, ellipsis: true, width: 170, render: (n) => n.namespace || '—' },
+              { key: 'sync', header: 'Sync', sortable: true, width: 120, render: (n) => (n.sync ? <Badge tone={syncTone(n.sync)} size="sm">{n.sync}</Badge> : '—') },
+              { key: 'health', header: 'Health', sortable: true, width: 130, fill: true, render: (n) => (n.health ? <Badge tone={healthTone(n.health)} size="sm">{n.health}</Badge> : '—') },
             ]}
             rows={positioned}
             rowKey={(n) => n.id}

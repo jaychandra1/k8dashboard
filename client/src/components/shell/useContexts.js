@@ -1,13 +1,14 @@
 import { useCallback, useRef, useState } from 'react';
 import { postJson, errorMessage } from '../../lib/api';
 import { navigateTo } from '../../hooks/useHashRoute';
+import { forgetConnection } from '../../lib/session';
 
 // Connecting to a cluster. Nothing connects at startup: the app opens on the
 // Home page, and a connection starts only when the user picks a cluster
 // (Home, cluster switcher, context picker, palette, auth-error dialog, the
 // desktop "Clusters" menu). Extracted from App.jsx.
 //
-//   const { connect, switchContext, afterSwitch, cancel, disconnect, switching, switchTarget, step } = useContexts({ gate, toast });
+//   const { connect, switchContext, afterSwitch, resume, cancel, disconnect, switching, switchTarget, step } = useContexts({ gate, toast });
 //
 // connect(ctx): select ctx (POST /api/config/context, when it isn't the
 //   selected one) → sign in (GET /api/config/auth: the kubeconfig's
@@ -16,6 +17,9 @@ import { navigateTo } from '../../hooks/useHashRoute';
 // switchContext(ctx): connect to another cluster (no-op for the current one).
 // afterSwitch(ctx): the same once ctx is already selected (the desktop menu
 //   selects it itself and then tells the renderer).
+// resume(ctx): the page was reloaded inside ctx and the backend still holds
+//   the connection: sign in again and stay on the page the user was on (no trip
+//   to Home or to the Dashboard, no "Connected" toast).
 // cancel() / disconnect(): stop — the server forgets the connection — and go
 //   back to Home. A late answer from a cancelled sign-in is dropped.
 // `switching`: a connection is under way; `step`: its current CONNECT_STEPS key.
@@ -93,6 +97,28 @@ export default function useContexts({ gate, toast, onBeforeSwitch }) {
     return afterSwitch(target, run);
   }, [current, afterSwitch]);
 
+  const resume = useCallback(async (ctx) => {
+    const run = ++runRef.current;
+    const live = () => run === runRef.current;
+    setSwitching(true);
+    setSwitchTarget(ctx || null);
+    setStep('auth');
+    try {
+      const ok = await checkAuth({ isCurrent: live });
+      if (!live()) {
+        // Cancelled while signing in: if it got through anyway, let go again.
+        if (ok) postJson('/api/config/disconnect').catch(() => {});
+        return false;
+      }
+      return !!ok;
+    } finally {
+      if (live()) {
+        setSwitching(false);
+        setStep(null);
+      }
+    }
+  }, [checkAuth]);
+
   const switchContext = useCallback(
     (ctx) => (ctx && ctx !== current ? connect(ctx) : Promise.resolve(false)),
     [current, connect],
@@ -105,11 +131,12 @@ export default function useContexts({ gate, toast, onBeforeSwitch }) {
     setSwitchTarget(null);
     setStep(null);
     resetAuth?.();
+    forgetConnection(); // a reload after this opens Home
     postJson('/api/config/disconnect').catch(() => {});
     navigateTo(HOME_VIEW, [], {});
   }, [resetAuth]);
 
-  return { connect, switchContext, afterSwitch, cancel: leave, disconnect: leave, switching, switchTarget, step };
+  return { connect, switchContext, afterSwitch, resume, cancel: leave, disconnect: leave, switching, switchTarget, step };
 }
 
 export { useContexts };

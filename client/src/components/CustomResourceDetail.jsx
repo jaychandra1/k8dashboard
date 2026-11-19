@@ -5,6 +5,7 @@ import { formatAge } from '../lib/format';
 import Button from './ui/Button';
 import Tooltip from './ui/Tooltip';
 import DataTable from './ui/DataTable';
+import { nameRoom } from './ui/tableColumns';
 import EmptyState from './ui/EmptyState';
 import ErrorState from './ui/ErrorState';
 import YamlViewer from './YamlViewer';
@@ -80,9 +81,9 @@ function KindView({ sel, refreshSignal, onClose, onSelectInstance }) {
           <DataTable
             caption={`${sel.kind || sel.plural} instances`}
             columns={[
-              { key: 'name', header: 'Name', sortable: true, ellipsis: true, width: 320, render: (it) => <span className="xlink resource-name-cell">{it.name}</span> },
-              { key: 'namespace', header: 'Namespace', sortable: true, render: (it) => (hasNs(it.namespace) ? it.namespace : '—') },
-              { key: 'age', header: 'Age', sortable: true, accessor: (it) => Date.parse(it.createdAt) || 0, render: (it) => formatAge(it.createdAt), align: 'right', mono: true },
+              { key: 'name', header: 'Name', sortable: true, ellipsis: true, width: 320, maxWidth: 480, fit: nameRoom, render: (it) => <span className="xlink resource-name-cell">{it.name}</span> },
+              { key: 'namespace', header: 'Namespace', sortable: true, ellipsis: true, width: 200, render: (it) => (hasNs(it.namespace) ? it.namespace : '—') },
+              { key: 'age', header: 'Age', sortable: true, accessor: (it) => Date.parse(it.createdAt) || 0, render: (it) => formatAge(it.createdAt), align: 'right', mono: true, width: 80, fill: true },
             ]}
             rows={items}
             rowKey={(it) => `${it.namespace}/${it.name}`}

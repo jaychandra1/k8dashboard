@@ -9,6 +9,7 @@ import { StatusDot } from './ui/Badge';
 import Button from './ui/Button';
 import ErrorState from './ui/ErrorState';
 import DataTable from './ui/DataTable';
+import { nameRoom } from './ui/tableColumns';
 import EmptyState from './ui/EmptyState';
 import { layoutGraph, edgePath } from './graph/layout';
 import useGraphViewport, { GRAPH_KEY_HINT } from './graph/useGraphViewport';
@@ -178,12 +179,12 @@ export default function Topology({
             <DataTable
               caption={graphLabel}
               columns={[
-                { key: 'kind', header: 'Kind', sortable: true, width: 170, render: (n) => (
+                { key: 'kind', header: 'Kind', sortable: true, width: 210, render: (n) => (
                   <span className="resource-name-cell"><Icon name={KIND_ICON[n.kind] || 'box'} size={14} className="rn-icon" /><span className="rn-text">{n.kind}</span></span>
                 ) },
-                { key: 'name', header: 'Name', sortable: true, ellipsis: true, width: 320 },
-                { key: 'category', header: 'Category', sortable: true, accessor: categoryOf, render: (n) => categoryOf(n) },
-                { key: 'status', header: 'Status', sortable: true, render: (n) => (n.status ? <span className={`tone-${nodeTone(n) || 'muted'}`}>{n.status}</span> : '—') },
+                { key: 'name', header: 'Name', sortable: true, ellipsis: true, width: 320, maxWidth: 480, fit: nameRoom },
+                { key: 'category', header: 'Category', sortable: true, ellipsis: true, width: 170, accessor: categoryOf, render: (n) => categoryOf(n) },
+                { key: 'status', header: 'Status', sortable: true, width: 160, fill: true, render: (n) => (n.status ? <span className={`tone-${nodeTone(n) || 'muted'}`}>{n.status}</span> : '—') },
               ]}
               rows={filtered.nodes}
               rowKey={(n) => n.id}

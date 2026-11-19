@@ -1,143 +1,42 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React from 'react';
 import Icon from './Icons';
-import Menu from './ui/Menu';
 import Tooltip from './ui/Tooltip';
 import { PROVIDERS, providerKeyOf } from './ContextPickerModal';
 
-// Cluster switcher — the ONE place to change cluster. App mounts it at the left
-// end of the top bar, filling the column above the sidebar, with the history
-// arrows to its right. The button fills its container (name ellipsised,
-// chevron pinned right); the menu drops from its left edge at least as wide.
+// Cluster switcher — the button at the left end of the top bar, filling the
+// column above the sidebar. It shows the connected cluster (provider icon +
+// name, ellipsised) and opens the "Switch cluster" window (ContextPickerModal):
+// one searchable list that reads the same with 4 clusters or 40, where a
+// cluster can also be added, removed, or disconnected from.
 //
-// Button: provider icon + current context name (ellipsised). Menu (ui/Menu):
-//   pinned clusters (✓ on the current one; selecting switches context)
-//   ────────
-//   All contexts                 ≤ MAX_INLINE contexts: group heading + every
-//     <ctx> (provider icon, ✓)     context inline · more: an "All contexts ▸" submenu
-//   Search contexts…             → the searchable ContextPickerModal
-//   ────────
-//   Pin / Unpin "<current>"
-//   Remove "<current>"…         → RemoveClusterDialog (confirms what goes)
-//   Disconnect                   → back to Home (the clusters to connect to)
-//   Add cluster ▸                → AWS EKS · Azure AKS · Google GKE
+// It is a button, not a menu: a menu listing every context grows with the
+// kubeconfig and has to be scrolled.
 //
-// The desktop app mirrors the pinned list in its native "Clusters" menu; both
-// read the pins from /api/settings/pins (see shell/usePins.js).
-export const MAX_INLINE = 12;
-
-function ClusterSwitcher({
-  contexts = [], contextsInfo, currentContext, pins = [],
-  onSwitch, onTogglePin, onOpenContexts, onAddAws, onAddAzure, onAddGke, onRemove, onDisconnect,
-}) {
-  const btnRef = useRef(null);
-  const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState({ x: 0, y: 0, w: 0 });
-  // Clicking the trigger while the menu is open: the menu's outside-mousedown
-  // handler already closed it, so the follow-up click must not reopen it.
-  const wasOpenOnDown = useRef(false);
-
-  const providerOf = useMemo(() => {
-    const m = new Map();
-    (contextsInfo || []).forEach((c) => m.set(c.name, providerKeyOf(c.provider)));
-    return (name) => m.get(name) || 'other';
-  }, [contextsInfo]);
-  const currentKey = providerOf(currentContext);
-  const currentP = PROVIDERS[currentKey] || PROVIDERS.other;
-
-  // Only pins that still exist in the kubeconfig (plus the active one).
-  const known = useMemo(() => new Set(contexts), [contexts]);
-  const pinned = useMemo(() => pins.filter((p) => known.has(p) || p === currentContext), [pins, known, currentContext]);
-  const isPinned = !!currentContext && pins.includes(currentContext);
-  const sorted = useMemo(() => [...contexts].sort((a, b) => a.localeCompare(b)), [contexts]);
-
-  // The menu drops down from the button's left edge and is at least as wide
-  // as the button, so it reads as the button unfolding.
-  const openMenu = useCallback(() => {
-    const r = btnRef.current?.getBoundingClientRect?.();
-    setPos({ x: r ? r.left : 0, y: r ? r.bottom + 4 : 0, w: r ? r.width : 0 });
-    setOpen(true);
-  }, []);
-  const close = useCallback(() => setOpen(false), []);
-
-  const items = useMemo(() => {
-    const ctxItem = (ctx, prefix) => ({
-      key: `${prefix}:${ctx}`,
-      label: ctx,
-      icon: (PROVIDERS[providerOf(ctx)] || PROVIDERS.other).icon,
-      checked: ctx === currentContext,
-      onSelect: () => { if (ctx !== currentContext) onSwitch?.(ctx); },
-    });
-
-    const list = pinned.length
-      ? pinned.map((ctx) => ctxItem(ctx, 'pin'))
-      : [{ key: 'none', label: 'No pinned clusters', disabled: true }];
-    list.push({ divider: true });
-
-    const count = sorted.length ? String(sorted.length) : undefined;
-    if (sorted.length && sorted.length <= MAX_INLINE) {
-      list.push({ key: 'all-head', heading: true, label: 'All contexts', hint: count });
-      sorted.forEach((ctx) => list.push(ctxItem(ctx, 'all')));
-    } else if (sorted.length) {
-      list.push({ key: 'all', label: 'All contexts', icon: 'cluster', hint: count, children: sorted.map((ctx) => ctxItem(ctx, 'all')) });
-    }
-    list.push({ key: 'search', label: 'Search contexts…', icon: 'search', onSelect: () => onOpenContexts?.() });
-    list.push({ divider: true });
-
-    if (currentContext) {
-      list.push({ key: 'toggle-pin', label: `${isPinned ? 'Unpin' : 'Pin'} "${currentContext}"`, icon: 'pin', onSelect: () => onTogglePin?.(currentContext) });
-      if (onRemove) list.push({ key: 'remove', label: `Remove "${currentContext}"…`, icon: 'delete', danger: true, onSelect: () => onRemove(currentContext) });
-    }
-    const add = [];
-    if (onAddAws) add.push({ key: 'aws', label: 'AWS EKS', icon: 'aws', onSelect: () => onAddAws() });
-    if (onAddAzure) add.push({ key: 'azure', label: 'Azure AKS', icon: 'azure', onSelect: () => onAddAzure() });
-    if (onAddGke) add.push({ key: 'gke', label: 'Google GKE', icon: 'hexagon', onSelect: () => onAddGke() });
-    if (add.length) list.push({ key: 'add', label: 'Add cluster', icon: 'plus', children: add });
-    if (onDisconnect && currentContext) {
-      list.push({ divider: true });
-      list.push({ key: 'disconnect', label: 'Disconnect', icon: 'close', onSelect: () => onDisconnect() });
-    }
-    return list;
-  }, [pinned, sorted, providerOf, currentContext, isPinned, onSwitch, onTogglePin, onOpenContexts, onAddAws, onAddAzure, onAddGke, onRemove, onDisconnect]);
-
-  const onKeyDown = (e) => {
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (!open) openMenu(); }
-  };
-
-  // Long names ellipsise, so the tooltip carries the full context name.
+//   <ClusterSwitcher contextsInfo currentContext open onOpen />
+function ClusterSwitcher({ contextsInfo, currentContext, open = false, onOpen }) {
+  const info = (contextsInfo || []).find((c) => c.name === currentContext);
+  const key = info ? providerKeyOf(info.provider) : 'other';
+  const provider = PROVIDERS[key] || PROVIDERS.other;
+  // Long names ellipsise, so the tooltip carries the full name.
   const tip = currentContext ? `Switch cluster · ${currentContext}` : 'Switch cluster';
 
   return (
     <div className="cluster-switcher">
       <Tooltip content={tip} placement="bottom">
         <button
-          ref={btnRef}
           type="button"
           className="cluster-switcher-btn"
-          aria-haspopup="menu"
+          aria-haspopup="dialog"
           aria-expanded={open}
           aria-label={`Switch cluster (current: ${currentContext || 'none'})`}
-          onMouseDown={() => { wasOpenOnDown.current = open; }}
-          onClick={() => {
-            if (wasOpenOnDown.current) { wasOpenOnDown.current = false; return; }
-            if (open) close(); else openMenu();
-          }}
-          onKeyDown={onKeyDown}
+          onClick={() => onOpen?.()}
+          onKeyDown={(e) => { if (e.key === 'ArrowDown') { e.preventDefault(); onOpen?.(); } }}
         >
-          <Icon name={currentP.icon} size={15} className={`ctx-provider ctx-provider-${currentKey}`} />
+          <Icon name={provider.icon} size={15} className={`ctx-provider ctx-provider-${key}`} />
           <span className="cluster-switcher-name">{currentContext || 'No cluster'}</span>
           <Icon name="chevronDown" size={12} strokeWidth={2.2} className="cluster-switcher-caret" />
         </button>
       </Tooltip>
-      <Menu
-        open={open}
-        x={pos.x}
-        y={pos.y}
-        minWidth={pos.w}
-        items={items}
-        onClose={close}
-        returnFocusTo={btnRef.current}
-        ariaLabel="Switch cluster"
-      />
     </div>
   );
 }
