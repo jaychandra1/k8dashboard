@@ -7,10 +7,11 @@
 # ------------------------------------------------------------------
 # node:22-alpine — multi-arch index digest resolved 2026-09-21.
 ARG NODE_IMAGE=node:22-alpine@sha256:b6f26b36c8ff49624cfdac716b8ea1138d606df02586a77d364bb5536a634f85
-# golang:1.26.10-alpine — multi-arch index digest resolved 2026-11-07. Only
-# the kubelogin build stage uses it; nothing from it reaches the runtime image
-# except the compiled binary.
-ARG GO_IMAGE=golang:1.26.10-alpine@sha256:87c65a688975c0b1d4585d204874c45ca78354670e3a5f11368c5a492303d696
+# golang:1.26.11-alpine — multi-arch index digest resolved 2026-11-19 (Go
+# 1.26.11 fixes CVE-2026-97054 in net/http). Only the kubelogin build stage
+# uses it; nothing from it reaches the runtime image except the compiled
+# binary, which carries this Go's standard library.
+ARG GO_IMAGE=golang:1.26.11-alpine@sha256:ecb67f987aa1a57794c91d19ade7ae0209f2f0f5496aaef9e6ae85ddf92d02ab
 ARG KUBECTL_VERSION=v1.37.2
 ARG KUBELOGIN_VERSION=v1.36.4
 # Modules raised above what kubelogin ${KUBELOGIN_VERSION} pins, to their

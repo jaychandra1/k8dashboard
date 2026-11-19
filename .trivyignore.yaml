@@ -8,8 +8,7 @@
 # digest or the tool's pinned version in the Dockerfile) over an entry.
 
 vulnerabilities:
-  # kubectl v1.37.2 is the latest Kubernetes release. It was built with Go
-  # 1.26.10 (the standard-library fixes are in), but still vendors
+  # kubectl v1.37.2 is the latest Kubernetes release. It vendors
   # golang.org/x/net v0.57.0 and golang.org/x/text v0.40.0. All three are
   # denial-of-service issues in kubectl, a client K8Board runs only for the
   # pod terminal and port-forward, against the user's own cluster.
@@ -30,3 +29,29 @@ vulnerabilities:
       - usr/local/bin/kubectl
     statement: "golang.org/x/text DoS in kubectl; no kubectl release with x/text >= 0.41.0 yet"
     expired_at: 2027-01-31
+
+  # CVE-2026-97054 (GO-2026-6859), Go standard library, fixed in Go 1.26.11 and
+  # 1.27.4: an HTTP/1 *server* that uses http.MaxBytesReader can crash when its
+  # handler reads the request body while writing the response header.
+  #
+  # kubelogin (kubectl-oidc_login), the one binary here that serves HTTP (its
+  # sign-in callback), is compiled in the Dockerfile with Go 1.26.11: fixed, so
+  # it has no entry. The two below are upstream release binaries, and neither
+  # project has published a build with the fixed Go yet (checked 2026-11-19:
+  # kubectl v1.37.2 and Trivy 0.76.2 are the newest releases). K8Board runs
+  # both as one-shot clients, never as a server: kubectl for the pod terminal
+  # and port-forward, Trivy as `trivy image …` (trivy-scan.js), so the code
+  # the CVE is in does not run.
+  # Remove each when its project ships a release built with Go >= 1.26.11 /
+  # 1.27.4: bump KUBECTL_VERSION (Dockerfile, run.sh) or TRIVY_VERSION
+  # (Dockerfile, trivy-scan.js, scripts/fetch-trivy.mjs, the CI scan).
+  - id: CVE-2026-97054
+    paths:
+      - usr/local/bin/kubectl
+    statement: "Go net/http server crash (MaxBytesReader); kubectl runs as a client here; no kubectl release built with Go >= 1.26.11 yet"
+    expired_at: 2027-01-31
+  - id: CVE-2026-97054
+    paths:
+      - usr/local/bin/trivy
+    statement: "Go net/http server crash (MaxBytesReader); K8Board only runs 'trivy image', never 'trivy server'; no Trivy release built with Go >= 1.27.4 yet"
+    expired_at: 2026-12-31

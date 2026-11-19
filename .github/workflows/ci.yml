@@ -233,9 +233,13 @@ jobs:
           exit 1
 
       # SARIF for Code scanning (when enabled). The gate is the step at the end.
+      # The scanner is the newest Trivy, named here so that the action's own
+      # (older) default is never what scans the image: keep `version` equal to
+      # TRIVY_VERSION in the Dockerfile (test/image-scan.test.mjs checks it).
       - name: Scan image with Trivy
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          version: v0.76.2
           image-ref: k8board:ci
           format: sarif
           output: trivy-image.sarif
@@ -253,8 +257,9 @@ jobs:
       # The gate: a HIGH or CRITICAL vulnerability that has a fix fails CI.
       # One that can't be fixed yet goes in .trivyignore.yaml, scoped to the
       # binary it's in, with the reason and an expiry date, never silently.
+      # (skip-setup-trivy: it runs the Trivy the step above installed.)
       - name: Fail on fixable HIGH/CRITICAL vulnerabilities
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: k8board:ci
           format: table
