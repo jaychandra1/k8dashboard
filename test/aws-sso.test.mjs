@@ -215,7 +215,21 @@ describe('the sign-in page (nothing is left open in the browser)', () => {
     return { ...r, json: JSON.parse(r.body) };
   };
   const statusOf = (cb) => cb.signInUrl.replace('/oauth/start/', '/oauth/status/');
-  const gone = (url) => assert.rejects(get(url), /ECONNREFUSED|socket hang up|ECONNRESET/);
+  // The port closes a moment after the last page was served: wait for that
+  // (up to 5 s) rather than guess how long it takes on this machine.
+  const gone = async (url) => {
+    const until = Date.now() + 5000;
+    for (;;) {
+      try {
+        await get(url);
+      } catch (e) {
+        assert.match(`${e.code} ${e.message}`, /ECONNREFUSED|socket hang up|ECONNRESET/);
+        return;
+      }
+      if (Date.now() > until) assert.fail(`${new URL(url).pathname} still answers`);
+      await new Promise((r) => setTimeout(r, 25));
+    }
+  };
 
   test('it is served at an address only K8Board knows, and names AWS only in an attribute', async () => {
     const cb = await withPage();
@@ -230,10 +244,14 @@ describe('the sign-in page (nothing is left open in the browser)', () => {
     assert.equal(page.body, startPage({ authorizeUrl: cb.authorizeUrl, statusPath: new URL(statusOf(cb)).pathname }));
     assert.ok(page.body.includes(`data-url="${cb.authorizeUrl.replace(/&/g, '&amp;')}"`));
     assert.ok(page.body.includes('data-step="start"'));
-    // Nothing about the environment is shown: the visible text has no address in it.
-    const visible = page.body.replace(/<style>[\s\S]*?<\/style>|<script>[\s\S]*?<\/script>/g, '').replace(/<[^>]+>/g, ' ');
-    assert.doesNotMatch(visible, /amazonaws|https?:|127\.0\.0\.1|client_id/);
-    assert.match(visible, /Sign in to AWS[\s\S]*Continue to AWS/);
+    // Nothing about the environment is shown: AWS's address is in that one
+    // attribute and nowhere else on the page, and no other address is on it.
+    const attribute = `data-url="${cb.authorizeUrl.replace(/&/g, '&amp;')}"`;
+    assert.equal(page.body.split(attribute).length - 1, 1);
+    const rest = page.body.split(attribute).join('');
+    assert.doesNotMatch(rest, /amazonaws|https?:\/\/|127\.0\.0\.1|client_id/);
+    assert.ok(rest.includes('<h1>Sign in to AWS</h1>'));
+    assert.ok(rest.includes('>Continue to AWS</button>'));
     // One script, the fixed one, allowed by its hash; it may ask this server only.
     assert.equal(page.body.split('<script>').length - 1, 1);
     assert.ok(page.body.includes(`<script>${START_SCRIPT}</script>`));

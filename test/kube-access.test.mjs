@@ -126,39 +126,55 @@ describe('the namespaces a user named, per cluster', () => {
     for (const bad of ['', 'QA', 'qa_env', '-qa', 'qa-', 'a'.repeat(64), 'qa env', 'qa/env', '..', null, 7, {}]) assert.equal(isNamespaceName(bad), false, String(bad));
   });
 
+  const entry = (context, ...namespaces) => ({ context, namespaces });
+
   test('the list: the ones added for this cluster and the kubeconfig context\'s, sorted, each once', () => {
-    const settings = { knownNamespaces: { 'qa-eks': ['zeta', 'qaenv', 'qaenv', 'Not_A_Name', 7], other: ['prod'] } };
+    const settings = { knownNamespaces: [entry('qa-eks', 'zeta', 'qaenv', 'qaenv', 'Not_A_Name', 7), entry('other', 'prod')] };
     assert.deepEqual(knownNamespaces(settings, 'qa-eks', null), ['qaenv', 'zeta']);
     assert.deepEqual(knownNamespaces(settings, 'qa-eks', 'alpha'), ['alpha', 'qaenv', 'zeta']);
     assert.deepEqual(knownNamespaces(settings, 'qa-eks', 'qaenv'), ['qaenv', 'zeta']);
     assert.deepEqual(knownNamespaces(settings, 'nobody', 'Bad_Name'), []);
-    for (const s of [undefined, {}, { knownNamespaces: null }, { knownNamespaces: 'x' }, { knownNamespaces: { 'qa-eks': 'qaenv' } }]) assert.deepEqual(knownNamespaces(s, 'qa-eks'), []);
-    // A context called like an object's built-ins is a context like any other.
-    assert.deepEqual(knownNamespaces({ knownNamespaces: {} }, '__proto__'), []);
-    assert.deepEqual(knownNamespaces({ knownNamespaces: {} }, 'constructor'), []);
+    // Anything that isn't the list of entries reads as "none".
+    const notLists = [
+      undefined, {}, { knownNamespaces: null }, { knownNamespaces: 'x' }, { knownNamespaces: { 'qa-eks': ['qaenv'] } },
+      { knownNamespaces: [null, 'qa-eks', { context: 'qa-eks' }, { context: 7, namespaces: ['x'] }, { context: 'qa-eks', namespaces: 'qaenv' }] },
+    ];
+    for (const s of notLists) assert.deepEqual(knownNamespaces(s, 'qa-eks'), []);
+  });
+
+  test('a cluster\'s name is a value, never a property name', () => {
+    // Names that are an object's built-ins are contexts like any other, and stay apart.
+    let s = {};
+    for (const [context, ns] of [['__proto__', 'ns-a'], ['constructor', 'ns-b'], ['toString', 'ns-c'], ['qa-eks', 'ns-d']]) s = { knownNamespaces: withKnownNamespace(s, context, ns) };
+    assert.deepEqual(s.knownNamespaces, [entry('__proto__', 'ns-a'), entry('constructor', 'ns-b'), entry('qa-eks', 'ns-d'), entry('toString', 'ns-c')]);
+    assert.deepEqual(knownNamespaces(s, '__proto__'), ['ns-a']);
+    assert.deepEqual(knownNamespaces(s, 'hasOwnProperty'), []);
+    assert.equal({}.namespaces, undefined);
+    assert.equal(Object.getPrototypeOf(s.knownNamespaces), Array.prototype);
+    // It survives the file it is kept in.
+    assert.deepEqual(JSON.parse(JSON.stringify(s)).knownNamespaces, s.knownNamespaces);
   });
 
   test('adding and removing change one cluster only, and leave the setting tidy', () => {
-    let s = { knownNamespaces: { other: ['prod'] }, mcpAllowWrite: true };
+    let s = { knownNamespaces: [entry('other', 'prod')], mcpAllowWrite: true };
     s = { ...s, knownNamespaces: withKnownNamespace(s, 'qa-eks', 'qaenv') };
     s = { ...s, knownNamespaces: withKnownNamespace(s, 'qa-eks', 'alpha') };
     s = { ...s, knownNamespaces: withKnownNamespace(s, 'qa-eks', 'qaenv') };
-    assert.deepEqual(s.knownNamespaces, { other: ['prod'], 'qa-eks': ['alpha', 'qaenv'] });
+    assert.deepEqual(s.knownNamespaces, [entry('other', 'prod'), entry('qa-eks', 'alpha', 'qaenv')]);
     assert.deepEqual(withKnownNamespace(s, 'qa-eks', 'Bad_Name'), s.knownNamespaces);
     assert.deepEqual(withKnownNamespace(s, '', 'x'), s.knownNamespaces);
     s = { ...s, knownNamespaces: withoutKnownNamespace(s, 'qa-eks', 'alpha') };
-    assert.deepEqual(s.knownNamespaces, { other: ['prod'], 'qa-eks': ['qaenv'] });
-    assert.deepEqual(withoutKnownNamespace(s, 'qa-eks', 'qaenv'), { other: ['prod'] }, 'a cluster left with none is dropped');
-    assert.deepEqual(withoutKnownNamespace(s, 'other'), { 'qa-eks': ['qaenv'] }, 'a removed cluster takes its list with it');
-    assert.deepEqual(withoutKnownNamespace({}, 'x', 'y'), {});
-    const proto = withKnownNamespace({}, '__proto__', 'qaenv');
-    assert.deepEqual(Object.keys(proto), ['__proto__']);
-    assert.equal({}.qaenv, undefined);
+    assert.deepEqual(s.knownNamespaces, [entry('other', 'prod'), entry('qa-eks', 'qaenv')]);
+    assert.deepEqual(withoutKnownNamespace(s, 'qa-eks', 'qaenv'), [entry('other', 'prod')], 'a cluster left with none is dropped');
+    assert.deepEqual(withoutKnownNamespace(s, 'other'), [entry('qa-eks', 'qaenv')], 'a removed cluster takes its list with it');
+    assert.deepEqual(withoutKnownNamespace({}, 'x', 'y'), []);
+    // A cluster listed twice in the file counts once.
+    assert.deepEqual(withKnownNamespace({ knownNamespaces: [entry('c', 'a'), entry('c', 'b')] }, 'c', 'z'), [entry('c', 'a', 'z')]);
   });
 
   test('a cluster keeps at most MAX_KNOWN_NAMESPACES', () => {
     let s = {};
     for (let i = 0; i < MAX_KNOWN_NAMESPACES + 10; i++) s = { knownNamespaces: withKnownNamespace(s, 'c', `ns-${String(i).padStart(3, '0')}`) };
-    assert.equal(s.knownNamespaces.c.length, MAX_KNOWN_NAMESPACES);
+    assert.equal(s.knownNamespaces[0].namespaces.length, MAX_KNOWN_NAMESPACES);
   });
 });

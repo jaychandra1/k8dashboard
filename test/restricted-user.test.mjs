@@ -78,13 +78,13 @@ describe('a Role in one namespace: connecting and finding the namespace', () => 
     // Asked of the cluster with the one request every signed-in user may make.
     const review = t.cluster.requests.filter((q) => q.path.endsWith('/selfsubjectrulesreviews')).at(-1);
     assert.deepEqual([review.method, review.body.spec], ['POST', { namespace: 'qaenv' }]);
-    assert.deepEqual(settingsOf(t.srv).knownNamespaces, { 'qa-eks': ['qaenv'] });
+    assert.deepEqual(settingsOf(t.srv).knownNamespaces, [{ context: 'qa-eks', namespaces: ['qaenv'] }]);
     assert.deepEqual((await t.call('/api/namespaces')).body, {
       namespaces: ['qaenv'], details: [{ name: 'qaenv', status: 'Active', createdAt: null, labels: {} }], restricted: true,
     });
     // Twice is once.
     await t.call('/api/namespaces/known', { method: 'POST', body: { name: 'qaenv' } });
-    assert.deepEqual(settingsOf(t.srv).knownNamespaces, { 'qa-eks': ['qaenv'] });
+    assert.deepEqual(settingsOf(t.srv).knownNamespaces, [{ context: 'qa-eks', namespaces: ['qaenv'] }]);
   });
 
   test('an AI agent (MCP) cannot change that list', async () => {
@@ -191,7 +191,7 @@ describe('a Role in one namespace: what it does not allow is said plainly', () =
   test('a namespace can be taken off the list again', async () => {
     const r = await t.call('/api/namespaces/known/qaenv', { method: 'DELETE' });
     assert.deepEqual([r.status, r.body], [200, { namespaces: [], removed: 'qaenv' }]);
-    assert.deepEqual(settingsOf(t.srv).knownNamespaces, {});
+    assert.deepEqual(settingsOf(t.srv).knownNamespaces, []);
     assert.deepEqual((await t.call('/api/namespaces')).body.namespaces, []);
     assert.equal((await t.call('/api/namespaces/known/Not_A_Name', { method: 'DELETE' })).status, 400);
   });

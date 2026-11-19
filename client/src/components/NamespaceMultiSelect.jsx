@@ -44,7 +44,13 @@ export default function NamespaceMultiSelect({ namespaces = [], selected = [ALL]
     if (!open) return undefined;
     setActive(0);
     if (nothingYet) return undefined;
-    const cancelRaf = afterPaint(() => listRef.current?.focus({ preventScroll: true }));
+    const cancelRaf = afterPaint(() => {
+      // Not when the user is already elsewhere in the picker (typing in the
+      // "add" field): the list must not take the focus away from there.
+      const at = document.activeElement;
+      if (at && at !== triggerRef.current && containerRef.current?.contains(at)) return;
+      listRef.current?.focus({ preventScroll: true });
+    });
     return () => cancelRaf();
     // Only when it opens: adding the first namespace must not move the focus.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -85,8 +91,12 @@ export default function NamespaceMultiSelect({ namespaces = [], selected = [ALL]
 
   const closeAndFocus = () => { setOpen(false); triggerRef.current?.focus(); };
 
+  // The list takes the focus a moment after the picker opens (after the next
+  // paint); until then, and after Shift+Tab back to the button, Escape arrives
+  // here. It closes the picker from here too.
   const onTriggerKey = (e) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); setOpen(true); }
+    else if (e.key === 'Escape' && open) { e.preventDefault(); e.stopPropagation(); setOpen(false); }
   };
 
   const onListKey = (e) => {

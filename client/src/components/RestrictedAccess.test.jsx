@@ -2,7 +2,7 @@
 // nothing cluster-wide): they add their namespace by name, lists say "no
 // access" for what isn't theirs, and nothing reads as a failure.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, within, waitFor, cleanup, act } from '@testing-library/react';
+import { render, screen, within, waitFor, cleanup, act, fireEvent } from '@testing-library/react';
 import { renderHook } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import NamespaceMultiSelect from './NamespaceMultiSelect';
@@ -111,11 +111,45 @@ describe('the namespace picker', () => {
     // The field is outside the listbox (a listbox holds options only).
     expect(within(screen.getByRole('listbox')).queryByRole('textbox')).toBeNull();
     await user.keyboard('{Escape}');
+    // Closed, wherever the focus was when Escape came (see the next test).
+    expect(screen.queryByRole('listbox')).toBeNull();
 
     rerender(<ToastProvider><NamespaceAccessProvider value={access}><NamespaceMultiSelect namespaces={['qaenv', 'stage']} selected={['qaenv']} onChange={onChange} /></NamespaceAccessProvider></ToastProvider>);
     await user.click(screen.getByRole('button', { name: 'Namespaces: qaenv' }));
-    await user.type(screen.getByRole('textbox', { name: 'Namespace name' }), 'team-b{Enter}');
+    await user.type(await screen.findByRole('textbox', { name: 'Namespace name' }), 'team-b{Enter}');
     await waitFor(() => expect(onChange).toHaveBeenCalledWith(['qaenv', 'team-b']));
+  });
+
+  // The list takes the focus a moment after the picker opens (after the next
+  // paint). Escape pressed before that arrives at the button, and used to be
+  // ignored there: the picker stayed open.
+  it('Escape closes the picker while the focus is still on its button', async () => {
+    const user = userEvent.setup();
+    within$(accessWith(['qaenv']), <NamespaceMultiSelect namespaces={['qaenv']} selected={['all']} onChange={() => {}} />);
+    const trigger = screen.getByRole('button', { name: 'Namespaces: qaenv' });
+    await user.click(trigger);
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+    // Escape on the button itself, as when it is pressed before the list took the focus.
+    fireEvent.keyDown(trigger, { key: 'Escape' });
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    // …and the next click opens it (it does not close a picker left open).
+    await user.click(trigger);
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+  });
+
+  // …and the other half of that moment: someone already in the "add" field
+  // when the list would take the focus keeps it (their typing stays in the field).
+  it('the list does not take the focus away from the "add" field', async () => {
+    const user = userEvent.setup();
+    within$(accessWith(['qaenv']), <NamespaceMultiSelect namespaces={['qaenv']} selected={['all']} onChange={() => {}} />);
+    await user.click(screen.getByRole('button', { name: 'Namespaces: qaenv' }));
+    const field = screen.getByRole('textbox', { name: 'Namespace name' });
+    act(() => field.focus());
+    // Well past the paint after which the list focuses itself.
+    await act(async () => { await new Promise((r) => setTimeout(r, 120)); });
+    expect(field).toHaveFocus();
+    expect(screen.getByRole('listbox')).not.toHaveFocus();
   });
 
   it('keyboard: Tab goes from the list to the field, Escape there closes the picker', async () => {
@@ -123,8 +157,8 @@ describe('the namespace picker', () => {
     within$(accessWith(['qaenv']), <NamespaceMultiSelect namespaces={['qaenv']} selected={['all']} onChange={() => {}} />);
     const trigger = screen.getByRole('button', { name: 'Namespaces: qaenv' });
     await user.click(trigger);
-    await act(async () => { await new Promise((r) => setTimeout(r, 30)); });
-    expect(screen.getByRole('listbox')).toHaveFocus();
+    // The list takes the focus after the next paint: wait for it, however long that is here.
+    await waitFor(() => expect(screen.getByRole('listbox')).toHaveFocus());
     await user.tab();
     expect(screen.getByRole('textbox', { name: 'Namespace name' })).toHaveFocus();
     await user.keyboard('{Escape}');
