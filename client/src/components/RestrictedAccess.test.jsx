@@ -1,6 +1,7 @@
 // A user who was given part of a cluster (a Role in a namespace or two, and
 // nothing cluster-wide): they add their namespace by name, lists say "no
 // access" for what isn't theirs, and nothing reads as a failure.
+import { useState } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, within, waitFor, cleanup, act, fireEvent } from '@testing-library/react';
 import { renderHook } from '@testing-library/react';
@@ -11,7 +12,7 @@ import Cluster from './Cluster';
 import Namespaces from './Namespaces';
 import ErrorState from './ui/ErrorState';
 import { ToastProvider } from './Toast';
-import { NamespaceAccessProvider, AddNamespaceForm, RESTRICTED_HINT } from './shell/NamespaceAccess';
+import { NamespaceAccessProvider, AddNamespaceForm, RESTRICTED_HINT, parseNamespaceNames } from './shell/NamespaceAccess';
 import useNamespaces from './shell/useNamespaces';
 import useResourceFanOut from './shell/useResourceFanOut';
 
@@ -29,6 +30,7 @@ const forbidden = (message) => new ApiError({ status: 403, code: 'forbidden', me
 function accessWith(initial = [], { restricted = true } = {}) {
   const state = { restricted, namespaces: [...initial] };
   state.add = vi.fn(async (name) => {
+    if (!/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/.test(name)) throw new ApiError({ status: 400, code: 'invalid_param', message: 'A namespace name has lowercase letters, digits and "-" only, e.g. qa-env.' });
     if (name === 'prodenv') throw noAccess(name);
     state.namespaces = [...state.namespaces, name];
   });
@@ -49,9 +51,104 @@ describe('adding a namespace by name', () => {
     const field = screen.getByRole('textbox', { name: 'Namespace name' });
     expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled();
     await user.type(field, '  QAenv {Enter}');
-    await waitFor(() => expect(onAdded).toHaveBeenCalledWith('qaenv'));
+    await waitFor(() => expect(onAdded).toHaveBeenCalledWith(['qaenv']));
     expect(access.add).toHaveBeenCalledWith('qaenv');
     expect(field).toHaveValue('');
+  });
+
+  it('what was typed is read as names: commas, semicolons or spaces between, each once', () => {
+    expect(parseNamespaceNames('qaenv')).toEqual(['qaenv']);
+    expect(parseNamespaceNames(' qaenv, stage ,team-b ')).toEqual(['qaenv', 'stage', 'team-b']);
+    expect(parseNamespaceNames('qaenv stage;team-b\n  QAenv,,')).toEqual(['qaenv', 'stage', 'team-b']);
+    for (const none of ['', '  ', ' , ; ', null, undefined]) expect(parseNamespaceNames(none)).toEqual([]);
+  });
+
+  it('several at once: each is added, in the order typed, and all of them are reported', async () => {
+    const access = accessWith();
+    const onAdded = vi.fn();
+    const user = userEvent.setup();
+    within$(access, <AddNamespaceForm onAdded={onAdded} />);
+    const field = screen.getByRole('textbox', { name: 'Namespace name' });
+    await user.type(field, 'qaenv, stage ,Team-B qaenv');
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+    await waitFor(() => expect(onAdded).toHaveBeenCalledWith(['qaenv', 'stage', 'team-b']));
+    expect(access.add.mock.calls.map(([n]) => n)).toEqual(['qaenv', 'stage', 'team-b']);
+    expect(field).toHaveValue('');
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('several, some refused: the others are added all the same; it says which, and keeps the refused ones to correct', async () => {
+    const access = accessWith();
+    const onAdded = vi.fn();
+    const user = userEvent.setup();
+    within$(access, <AddNamespaceForm onAdded={onAdded} />);
+    const field = screen.getByRole('textbox', { name: 'Namespace name' });
+    await user.type(field, 'qaenv, prodenv, qa_env, stage{Enter}');
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Not added: prodenv (no access), qa_env (not a namespace name). Check the names, or ask your cluster administrator.');
+    expect(screen.getByText('Added qaenv, stage.')).toBeInTheDocument();
+    expect(access.namespaces).toEqual(['qaenv', 'stage']);
+    expect(field).toHaveValue('prodenv, qa_env');
+    expect(field).toHaveAttribute('aria-invalid', 'true');
+    // Not "all added": the caller is not sent anywhere while there is something to read.
+    expect(onAdded).not.toHaveBeenCalled();
+    // Correcting it clears both lines.
+    await user.clear(field);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText('Added qaenv, stage.')).toBeNull();
+  });
+
+  it('several, none of them the user\'s: one line names each', async () => {
+    const user = userEvent.setup();
+    within$(accessWith(), <AddNamespaceForm />);
+    await user.type(screen.getByRole('textbox', { name: 'Namespace name' }), 'prodenv Bad_Name{Enter}');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Not added: prodenv (no access), bad_name (not a namespace name).');
+    expect(screen.queryByText(/^Added /)).toBeNull();
+  });
+
+  // An empty list that asked for a namespace has rows as soon as the first
+  // one is added: the form is gone before the rest are done.
+  function Vanishing({ access, onAdded }) {
+    const [shown, setShown] = useState(true);
+    const value = { ...access, add: async (name) => { await access.add(name); setShown(false); } };
+    return <NamespaceAccessProvider value={value}>{shown ? <AddNamespaceForm leavesWhenAdded onAdded={onAdded} /> : <p>the list</p>}</NamespaceAccessProvider>;
+  }
+
+  it('the form going away part-way: the rest are still added, and what was refused is said in a notice', async () => {
+    const access = accessWith();
+    const onAdded = vi.fn();
+    const user = userEvent.setup();
+    render(<ToastProvider><Vanishing access={access} onAdded={onAdded} /></ToastProvider>);
+    await user.type(screen.getByRole('textbox', { name: 'Namespace name' }), 'qaenv, prodenv, stage{Enter}');
+    expect(await screen.findByText('the list')).toBeInTheDocument();
+    expect(await screen.findByText('Added qaenv, stage. Not added: prodenv (no access). Check the names, or ask your cluster administrator.')).toBeInTheDocument();
+    expect(access.namespaces).toEqual(['qaenv', 'stage']);
+    expect(onAdded).not.toHaveBeenCalled();
+  });
+
+  it('…whichever name comes first, and nothing added keeps the form (and says it there)', async () => {
+    const access = accessWith();
+    const user = userEvent.setup();
+    render(<ToastProvider><Vanishing access={access} /></ToastProvider>);
+    await user.type(screen.getByRole('textbox', { name: 'Namespace name' }), 'prodenv, bad_name{Enter}');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Not added: prodenv (no access), bad_name (not a namespace name).');
+    expect(screen.queryByText('the list')).toBeNull();
+    // The refused one typed first, the good one last: still said in the notice.
+    const field = screen.getByRole('textbox', { name: 'Namespace name' });
+    await user.clear(field);
+    await user.type(field, 'prodenv, qaenv{Enter}');
+    expect(await screen.findByText('Added qaenv. Not added: prodenv (no access). Check the names, or ask your cluster administrator.')).toBeInTheDocument();
+    expect(await screen.findByText('the list')).toBeInTheDocument();
+  });
+
+  it('…and when all were fine, they are reported although the form is gone', async () => {
+    const access = accessWith();
+    const onAdded = vi.fn();
+    const user = userEvent.setup();
+    render(<ToastProvider><Vanishing access={access} onAdded={onAdded} /></ToastProvider>);
+    await user.type(screen.getByRole('textbox', { name: 'Namespace name' }), 'qaenv, stage{Enter}');
+    await waitFor(() => expect(onAdded).toHaveBeenCalledWith(['qaenv', 'stage']));
+    expect(screen.queryByText(/Not added/)).toBeNull();
   });
 
   it('a namespace the user has nothing in: the reason, on the field, and nothing is reported', async () => {
@@ -97,6 +194,15 @@ describe('the namespace picker', () => {
     await waitFor(() => expect(onChange).toHaveBeenCalledWith(['qaenv']));
     // Typing a name is not typing in the list: nothing was toggled.
     expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('several names at once are all selected', async () => {
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+    within$(accessWith(), <NamespaceMultiSelect namespaces={[]} selected={['all']} onChange={onChange} />);
+    await user.click(screen.getByRole('button', { name: 'Namespaces: Add a namespace' }));
+    await user.type(screen.getByRole('textbox', { name: 'Namespace name' }), 'qaenv, stage{Enter}');
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith(['qaenv', 'stage']));
   });
 
   it('with namespaces: "all" is all of theirs; one namespace is named; another can be added to the selection', async () => {
@@ -304,7 +410,7 @@ describe('the Dashboard of a sign-in that sees part of the cluster', () => {
     expect(onSummaryLoaded).toHaveBeenCalledWith('qa-eks');
     expect(screen.getByRole('heading', { name: 'Add your namespace' })).toBeInTheDocument();
     await user.type(screen.getByRole('textbox', { name: 'Namespace name' }), 'qaenv{Enter}');
-    await waitFor(() => expect(onOpenNamespace).toHaveBeenCalledWith('qaenv'));
+    await waitFor(() => expect(onOpenNamespace).toHaveBeenCalledWith(['qaenv']));
   });
 
   it('with namespaces: each opens, and another can be added', async () => {
@@ -314,7 +420,7 @@ describe('the Dashboard of a sign-in that sees part of the cluster', () => {
     await screen.findByRole('heading', { name: 'Your namespaces' }, SLOW);
     expect(screen.getByRole('heading', { name: 'Add another namespace' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Open namespace stage' }));
-    expect(onOpenNamespace).toHaveBeenCalledWith('stage');
+    expect(onOpenNamespace).toHaveBeenCalledWith(['stage']);
   });
 
   it('may list namespaces, but nothing cluster-wide: straight to the list of namespaces', async () => {

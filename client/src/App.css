@@ -4521,6 +4521,7 @@ button.nav-section-title:focus-visible, a.nav-item:focus-visible { outline: 2px 
 .ns-add-input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
 .ns-add-input[aria-invalid='true'] { border-color: var(--red); }
 .ns-add-error { margin: 0; font-size: 0.75rem; line-height: 1.45; color: var(--red); }
+.ns-add-note { margin: 0; font-size: 0.75rem; line-height: 1.45; color: var(--text-secondary); }
 .ns-restricted-bar {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   margin: 0 22px 12px; padding: 9px 12px;

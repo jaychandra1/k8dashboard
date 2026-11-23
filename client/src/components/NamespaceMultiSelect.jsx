@@ -205,7 +205,7 @@ export default function NamespaceMultiSelect({ namespaces = [], selected = [ALL]
             <AddNamespaceForm
               compact
               autoFocus={nothingYet}
-              onAdded={(ns) => onChange(isAllSelected ? [ns] : Array.from(new Set([...selected, ns])))}
+              onAdded={(names) => onChange(isAllSelected ? names : Array.from(new Set([...selected, ...names])))}
             />
           </div>
         )}

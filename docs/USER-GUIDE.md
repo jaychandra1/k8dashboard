@@ -308,7 +308,8 @@ Many people are given a `Role` in one or two namespaces and nothing cluster-wide
 
 **As that user.** After you connect, the Dashboard says *You have access to part of this cluster* instead of a summary (you can't see nodes or every namespace). Such a sign-in usually can't list the cluster's namespaces either, and Kubernetes has no way to ask "which namespaces are mine?", so you tell K8Board once:
 
-- Type the namespace's name under **Add your namespace** and choose **Add**. K8Board asks the cluster what you may do there; a name you have nothing in (a typo, another team's namespace) is refused, with the reason under the field.
+- Type the namespace's name under **Add your namespace** and choose **Add**. For several, type them with commas between (`qaenv, stage, team-b`). K8Board asks the cluster what you may do in each; a name you have nothing in (a typo, another team's namespace) is refused, with the reason under the field, and the others are added all the same.
+- Given access to another namespace later? Add it the same way at any time: from the namespace picker of any list, from **Namespaces**, or from the Dashboard (*Add another namespace*).
 - The namespace is remembered for that cluster. It is in the namespace picker of every list from then on (*All my namespaces* means the ones you added), you can add more from the picker, and **Namespaces** lists them with *Remove from my namespaces* in each row's menu.
 - If your kubeconfig context names a namespace, that one is there without adding it.
 

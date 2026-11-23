@@ -133,13 +133,15 @@ const forbidden = (user, verb, t) => {
  * Start it. { server, url, requests, objects, close() }:
  *   requests — every request it answered: { method, path, verb, status, contentType, body }
  *   objects  — the store (see clusterObjects), which PATCH / PUT / POST / DELETE change
- * Options: user, namespace, rules (the Role); clusterRules (rules that hold
+ * Options: user, namespace (one name, or a list: the same Role in each), rules
+ * (the Role); clusterRules (rules that hold
  * everywhere, as from a ClusterRoleBinding: e.g. "may list namespaces");
  * incompleteRules (the rules review says it could not see everything, as with
  * a webhook authoriser).
  */
 export function startRbacCluster({ user = QA_USER, namespace = QA_NAMESPACE, rules = QA_RULES, clusterRules = [], incompleteRules = false } = {}) {
-  const allowed = (t, verb) => allows(rules, namespace, t, verb) || allows(clusterRules, t.namespace, t, verb);
+  const roleNamespaces = [namespace].flat();
+  const allowed = (t, verb) => roleNamespaces.some((ns) => allows(rules, ns, t, verb)) || allows(clusterRules, t.namespace, t, verb);
   const objects = clusterObjects();
   const requests = [];
   const server = http.createServer((req, res) => {
@@ -168,7 +170,7 @@ export function startRbacCluster({ user = QA_USER, namespace = QA_NAMESPACE, rul
         const ns = body?.spec?.namespace || '';
         return send(201, {
           kind: 'SelfSubjectRulesReview', apiVersion: 'authorization.k8s.io/v1', metadata: {}, spec: { namespace: ns },
-          status: { resourceRules: [...BASIC_RULES, ...clusterRules, ...(ns === namespace ? rules : [])], nonResourceRules: [{ verbs: ['get'], nonResourceURLs: ['/api', '/api/*', '/apis', '/apis/*', '/version', '/healthz'] }], incomplete: incompleteRules },
+          status: { resourceRules: [...BASIC_RULES, ...clusterRules, ...(roleNamespaces.includes(ns) ? rules : [])], nonResourceRules: [{ verbs: ['get'], nonResourceURLs: ['/api', '/api/*', '/apis', '/apis/*', '/version', '/healthz'] }], incomplete: incompleteRules },
         });
       }
       if (p === '/apis/authorization.k8s.io/v1/selfsubjectaccessreviews' && req.method === 'POST') {

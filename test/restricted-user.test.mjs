@@ -57,7 +57,8 @@ describe('a Role in one namespace: connecting and finding the namespace', () => 
   });
 
   test('adding a namespace: only a real name, and only one the user has something in', async () => {
-    for (const name of ['', 'Bad_Name', '-qa', 'qa-', 'a'.repeat(64), 'qa env', '../etc', 42]) {
+    // One name a request: the form sends one request per name typed.
+    for (const name of ['', 'Bad_Name', '-qa', 'qa-', 'a'.repeat(64), 'qa env', 'qaenv,stage', 'qaenv, stage', '../etc', 42]) {
       const r = await t.call('/api/namespaces/known', { method: 'POST', body: { name } });
       assert.deepEqual([r.status, r.body.code, r.body.field], [400, 'invalid_param', 'name'], JSON.stringify(name));
     }
@@ -194,6 +195,28 @@ describe('a Role in one namespace: what it does not allow is said plainly', () =
     assert.deepEqual(settingsOf(t.srv).knownNamespaces, []);
     assert.deepEqual((await t.call('/api/namespaces')).body.namespaces, []);
     assert.equal((await t.call('/api/namespaces/known/Not_A_Name', { method: 'DELETE' })).status, 400);
+  });
+});
+
+describe('a Role in two namespaces', () => {
+  test('each is added by name (one request a name); both are listed, and each has its own lists', async () => {
+    const t = await setup({ cluster: { namespace: ['qaenv', 'default'] } });
+    try {
+      for (const name of ['qaenv', 'default']) {
+        const r = await t.call('/api/namespaces/known', { method: 'POST', body: { name } });
+        assert.deepEqual([r.status, r.body.added, r.body.verified], [200, name, true]);
+      }
+      assert.deepEqual((await t.call('/api/namespaces')).body.namespaces, ['default', 'qaenv']);
+      assert.deepEqual(settingsOf(t.srv).knownNamespaces, [{ context: 'qa-eks', namespaces: ['default', 'qaenv'] }]);
+      assert.equal((await t.call('/api/resources/qaenv')).body.pods.length, 3);
+      assert.equal((await t.call('/api/resources/default')).status, 200);
+      // A third one they have nothing in is still refused, and changes nothing.
+      assert.equal((await t.call('/api/namespaces/known', { method: 'POST', body: { name: 'prodenv' } })).status, 403);
+      assert.deepEqual((await t.call('/api/namespaces')).body.namespaces, ['default', 'qaenv']);
+      // Taking one off leaves the other.
+      await t.call('/api/namespaces/known/default', { method: 'DELETE' });
+      assert.deepEqual(settingsOf(t.srv).knownNamespaces, [{ context: 'qa-eks', namespaces: ['qaenv'] }]);
+    } finally { await t.stop(); }
   });
 });
 

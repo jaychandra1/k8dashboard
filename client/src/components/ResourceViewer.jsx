@@ -306,7 +306,7 @@ export default function ResourceViewer({
       icon="namespace"
       title="Add your namespace"
       hint={RESTRICTED_HINT}
-      action={<AddNamespaceForm autoFocus onAdded={(ns) => onNamespaceChange?.([ns])} />}
+      action={<AddNamespaceForm autoFocus leavesWhenAdded onAdded={(names) => onNamespaceChange?.(names)} />}
     />
   ) : noAccess && !q ? (
     <EmptyState

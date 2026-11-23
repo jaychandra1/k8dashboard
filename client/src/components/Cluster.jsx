@@ -218,7 +218,7 @@ function LimitedAccess({ title, version, refetching, onOpenNamespace, onBrowse }
                   <ul className="limited-access-list">
                     {namespaces.map((ns) => (
                       <li key={ns}>
-                        <button type="button" className="limited-access-ns" onClick={() => onOpenNamespace?.(ns)} aria-label={`Open namespace ${ns}`}>
+                        <button type="button" className="limited-access-ns" onClick={() => onOpenNamespace?.([ns])} aria-label={`Open namespace ${ns}`}>
                           <Icon name="namespace" size={15} />
                           <span>{ns}</span>
                           <Icon name="chevronRight" size={14} />
@@ -231,10 +231,10 @@ function LimitedAccess({ title, version, refetching, onOpenNamespace, onBrowse }
               <div className="limited-access-block">
                 <h3>{namespaces.length ? 'Add another namespace' : 'Add your namespace'}</h3>
                 <p className="limited-access-hint">
-                  Type its name as your administrator gave it to you. K8Board checks that you have access there and
-                  remembers it for this cluster.
+                  Type its name as your administrator gave it to you; for several, separate the names with commas.
+                  K8Board checks that you have access there and remembers it for this cluster.
                 </p>
-                <AddNamespaceForm autoFocus={namespaces.length === 0} onAdded={(ns) => onOpenNamespace?.(ns)} />
+                <AddNamespaceForm autoFocus={namespaces.length === 0} onAdded={(names) => onOpenNamespace?.(names)} />
               </div>
             </>
           ) : (
@@ -254,7 +254,7 @@ function LimitedAccess({ title, version, refetching, onOpenNamespace, onBrowse }
 // `onSummaryLoaded(contextName)` fires on every successful summary fetch with
 // the context the payload belongs to; the shell uses it to end the
 // context-switch loading screen once the new cluster's data is on screen.
-// `onOpenNamespace(name)` opens one namespace's Pods: what the Dashboard of a
+// `onOpenNamespace(names)` opens the Pods of those namespaces: what the Dashboard of a
 // sign-in that sees only part of the cluster offers instead of a summary.
 export default function Cluster({ refreshSignal = 0, context, onSummaryLoaded, onOpen, onOpenNamespace }) {
   useDocumentTitle('Dashboard');
